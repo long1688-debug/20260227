@@ -1,0 +1,45 @@
+{
+  "name": "training-teaching-system-server",
+  "version": "1.0.0",
+  "description": "实训教学实践系统 - 服务端",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "package": "pkg . --targets node18-win-x64 --output dist/TrainingTeachingSystem-Server.exe",
+    "build": "npm run package"
+  },
+  "keywords": [
+    "training",
+    "education",
+    "websocket",
+    "api",
+    "server"
+  ],
+  "author": "Your Team",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "pkg": "^5.8.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "config": {
+    "httpPort": 8080,
+    "wsPort": 8081
+  },
+  "pkg": {
+    "assets": [
+      "data/**/*",
+      "config/**/*"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist"
+  }
+}

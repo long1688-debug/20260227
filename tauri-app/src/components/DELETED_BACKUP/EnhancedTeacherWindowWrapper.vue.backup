@@ -1,0 +1,36 @@
+<template>
+  <div class="enhanced-teacher-window-wrapper">
+    <!-- 使用我们新创建的增强版教师窗口组件 -->
+    <enhanced-teacher-window />
+  </div>
+</template>
+
+<script setup>
+// 导入增强版教师窗口组件
+import EnhancedTeacherWindow from './EnhancedTeacherWindow.vue';
+
+// 这里可以添加一些全局状态管理或事件处理
+// 例如监听布局切换、信号源变化等
+
+// 组件挂载时的初始化
+const onMounted = () => {
+  console.log('Enhanced Teacher Window Wrapper mounted');
+};
+
+// 组件卸载时的清理
+const onUnmounted = () => {
+  console.log('Enhanced Teacher Window Wrapper unmounted');
+};
+</script>
+
+<style scoped lang="scss">
+.enhanced-teacher-window-wrapper {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-color-page, #f5f7fa);
+  border-radius: 8px;
+  overflow: hidden;
+}
+</style>

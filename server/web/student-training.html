@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生实训 - 实训教学系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            transition: transform 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+
+        .stat-card .value {
+            font-size: 36px;
+            font-weight: bold;
+        }
+
+        .section-title {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+            padding-left: 15px;
+        }
+
+        .course-list {
+            display: grid;
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .course-card {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+
+        .course-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+        }
+
+        .course-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .course-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .course-badge {
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        .course-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #666;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎓 学生实训平台</h1>
+            <p>在线实训课程、提交实验报告、查看学习进度</p>
+        </div>
+
+        <div class="content">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>进行中课程</h3>
+                    <div class="value" id="activeCourses">--</div>
+                </div>
+                <div class="stat-card">
+                    <h3>已完成任务</h3>
+                    <div class="value" id="completedTasks">--</div>
+                </div>
+                <div class="stat-card">
+                    <h3>平均成绩</h3>
+                    <div class="value" id="averageScore">--</div>
+                </div>
+                <div class="stat-card">
+                    <h3>学习时长(小时)</h3>
+                    <div class="value" id="studyHours">--</div>
+                </div>
+            </div>
+
+            <h2 class="section-title">📚 实训课程列表</h2>
+            <div id="courseList" class="course-list">
+                <div class="loading">正在加载课程列表...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080';
+
+        // 加载统计数据
+        async function loadStats() {
+            try {
+                // 模拟数据，实际应该从API获取
+                document.getElementById('activeCourses').textContent = '5';
+                document.getElementById('completedTasks').textContent = '23';
+                document.getElementById('averageScore').textContent = '87.5';
+                document.getElementById('studyHours').textContent = '128';
+            } catch (error) {
+                console.error('加载统计数据失败:', error);
+            }
+        }
+
+        // 加载课程列表
+        async function loadCourses() {
+            try {
+                const courseList = document.getElementById('courseList');
+                
+                // 模拟课程数据
+                const courses = [
+                    {
+                        title: 'Python编程基础',
+                        progress: 75,
+                        students: 45,
+                        tasks: 12,
+                        deadline: '2026-05-01'
+                    },
+                    {
+                        title: '数据结构与算法',
+                        progress: 60,
+                        students: 38,
+                        tasks: 15,
+                        deadline: '2026-05-15'
+                    },
+                    {
+                        title: 'Web开发实战',
+                        progress: 45,
+                        students: 42,
+                        tasks: 10,
+                        deadline: '2026-06-01'
+                    }
+                ];
+
+                courseList.innerHTML = courses.map(course => `
+                    <div class="course-card">
+                        <div class="course-header">
+                            <div class="course-title">${course.title}</div>
+                            <div class="course-badge">进行中</div>
+                        </div>
+                        <div class="course-info">
+                            <div class="info-item">
+                                <span>👥</span>
+                                <span>${course.students} 名学生</span>
+                            </div>
+                            <div class="info-item">
+                                <span>📝</span>
+                                <span>${course.tasks} 个任务</span>
+                            </div>
+                            <div class="info-item">
+                                <span>⏰</span>
+                                <span>截止: ${course.deadline}</span>
+                            </div>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${course.progress}%"></div>
+                        </div>
+                        <div style="margin-top: 15px; text-align: right;">
+                            <button class="btn btn-primary" onclick="enterCourse('${course.title}')">进入课程</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('加载课程列表失败:', error);
+                document.getElementById('courseList').innerHTML = 
+                    '<div class="error">加载课程列表失败，请稍后重试</div>';
+            }
+        }
+
+        // 进入课程
+        function enterCourse(courseName) {
+            alert(`正在进入课程: ${courseName}`);
+            // 实际应该跳转到课程详情页面
+        }
+
+        // 页面加载时初始化
+        window.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadCourses();
+        });
+    </script>
+</body>
+</html>

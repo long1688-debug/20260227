@@ -1,0 +1,104 @@
+# 实训教学系统 - Docker 开发环境配置
+# 用于本地开发的后端服务容器化
+
+version: '3.8'
+
+services:
+  # 主后端服务
+  server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.node
+    container_name: training-server
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+      - "${WS_PORT:-8081}:8081"
+    volumes:
+      # 挂载源代码，实现热重载
+      - ./server:/app/server
+      - ./package.json:/app/package.json
+      # 数据持久化
+      - server-data:/app/server/data
+      # 避免 node_modules 冲突
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - HTTP_PORT=8080
+      - WS_PORT=8081
+      - WATCHPACK_POLLING=true
+    working_dir: /app
+    command: >
+      sh -c "npm install && cd server && npm install && npm run dev"
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on: []
+    labels:
+      - "app.description=实训教学系统 - 主服务器"
+      - "app.port=8080"
+
+  # 许可证管理服务
+  license:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.node
+    container_name: training-license
+    restart: unless-stopped
+    ports:
+      - "${LICENSE_PORT:-8082}:8082"
+    volumes:
+      # 挂载源代码
+      - ./server:/app/server
+      - ./package.json:/app/package.json
+      # 数据持久化
+      - license-data:/app/server/license_data
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - LICENSE_PORT=8082
+      - WATCHPACK_POLLING=true
+    working_dir: /app
+    command: >
+      sh -c "npm install && cd server && npm install && npm run dev:license"
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "app.description=实训教学系统 - 许可证服务器"
+      - "app.port=8082"
+
+
+# 网络配置
+networks:
+  training-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# 数据卷
+volumes:
+  server-data:
+    driver: local
+    name: training-server-data
+  license-data:
+    driver: local
+    name: training-license-data
+
+# 输出配置
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"

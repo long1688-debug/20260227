@@ -1,0 +1,10 @@
+[package]
+name = "ole32-sys"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+name = "ole32"
+
+[dependencies]
+winapi = "0.2.8"

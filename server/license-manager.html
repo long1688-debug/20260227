@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>软件授权管理系统</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Microsoft YaHei', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      opacity: 0.9;
+      font-size: 14px;
+    }
+
+    .main-content {
+      padding: 30px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 30px;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 15px;
+    }
+
+    .tab {
+      padding: 12px 25px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 500;
+      color: #666;
+      border-radius: 8px;
+      transition: all 0.3s;
+    }
+
+    .tab.active {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .tab:hover:not(.active) {
+      background: #f5f5f5;
+    }
+
+    .section {
+      display: none;
+    }
+
+    .section.active {
+      display: block;
+    }
+
+    .card {
+      background: #f9f9f9;
+      border-radius: 12px;
+      padding: 25px;
+      margin-bottom: 20px;
+    }
+
+    .card h3 {
+      margin-bottom: 20px;
+      color: #333;
+      font-size: 18px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: #666;
+      font-weight: 500;
+    }
+
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .btn {
+      padding: 12px 25px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 500;
+      transition: all 0.3s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .btn-secondary {
+      background: #6b7280;
+      color: white;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .stat-card h4 {
+      font-size: 32px;
+      margin-bottom: 5px;
+    }
+
+    .stat-card p {
+      opacity: 0.9;
+      font-size: 14px;
+    }
+
+    .table-container {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+
+    th {
+      background: #f5f5f5;
+      font-weight: 600;
+      color: #333;
+    }
+
+    tr:hover {
+      background: #f9f9f9;
+    }
+
+    .status-badge {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .status-active {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status-used {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-expired {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-right: 5px;
+    }
+
+    .tag-pro {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .tag-trial {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .code-display {
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      background: #f5f5f5;
+      padding: 8px 12px;
+      border-radius: 4px;
+      word-break: break-all;
+    }
+
+    .alert {
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .alert.show {
+      display: block;
+    }
+
+    .alert-success {
+      background: #d1fae5;
+      color: #065f46;
+      border: 1px solid #10b981;
+    }
+
+    .alert-error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #ef4444;
+    }
+
+    .alert-info {
+      background: #dbeafe;
+      color: #1e40af;
+      border: 1px solid #3b82f6;
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .loading.show {
+      display: block;
+    }
+
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.show {
+      display: flex;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      max-width: 800px;
+      max-height: 80vh;
+      overflow-y: auto;
+      width: 90%;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      color: #333;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 28px;
+      cursor: pointer;
+      color: #999;
+    }
+
+    .close-btn:hover {
+      color: #333;
+    }
+
+    .generated-codes {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .generated-code-item {
+      padding: 10px;
+      border-bottom: 1px solid #e0e0e0;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+
+    .generated-code-item:last-child {
+      border-bottom: none;
+    }
+
+    .search-box {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .search-box input {
+      flex: 1;
+      padding: 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 10px;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .pagination button {
+      padding: 8px 15px;
+      border: 1px solid #e0e0e0;
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .pagination button:hover:not(:disabled) {
+      background: #f5f5f5;
+    }
+
+    .pagination button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .pagination button.active {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔐 软件授权管理系统</h1>
+      <p>Training Teaching System License Management</p>
+    </div>
+
+    <div class="main-content">
+      <!-- 登录状态显示 -->
+      <div id="loginStatus" class="card" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <strong>👤 管理员：</strong>
+            <span id="adminName">加载中...</span>
+          </div>
+          <button class="btn btn-danger" onclick="logout()">退出登录</button>
+        </div>
+      </div>
+
+      <!-- 登录表单 -->
+      <div id="loginForm" class="card">
+        <h3>🔑 管理员登录</h3>
+        <form onsubmit="handleLogin(event)">
+          <div class="form-group">
+            <label>用户名</label>
+            <input type="text" id="loginUsername" placeholder="请输入用户名" required>
+          </div>
+          <div class="form-group">
+            <label>密码</label>
+            <input type="password" id="loginPassword" placeholder="请输入密码" required>
+          </div>
+          <button type="submit" class="btn btn-primary">登录</button>
+        </form>
+        <p style="margin-top: 15px; color: #999; font-size: 13px;">
+          默认账号：admin / admin123
+        </p>
+      </div>
+
+      <!-- 主内容区 -->
+      <div id="mainContent" style="display: none;">
+        <!-- 标签页 -->
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('dashboard')">📊 仪表板</button>
+          <button class="tab" onclick="switchTab('generate')">🔑 生成注册码</button>
+          <button class="tab" onclick="switchTab('codes')">📋 注册码管理</button>
+          <button class="tab" onclick="switchTab('activations')">📱 激活记录</button>
+        </div>
+
+        <!-- 提示信息 -->
+        <div id="alertBox" class="alert"></div>
+
+        <!-- 仪表板 -->
+        <div id="dashboardSection" class="section active">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <h4 id="totalCodes">0</h4>
+              <p>总注册码数</p>
+            </div>
+            <div class="stat-card">
+              <h4 id="activeCodes">0</h4>
+              <p>可用注册码</p>
+            </div>
+            <div class="stat-card">
+              <h4 id="usedCodes">0</h4>
+              <p>已激活注册码</p>
+            </div>
+            <div class="stat-card">
+              <h4 id="expiredCodes">0</h4>
+              <p>已过期注册码</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>📈 激活趋势</h3>
+            <div style="height: 200px; display: flex; align-items: flex-end; gap: 20px; padding: 20px 0;">
+              <!-- 简单的柱状图 -->
+              <div id="activationChart" style="display: flex; align-items: flex-end; gap: 10px; height: 100%; width: 100%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 生成注册码 -->
+        <div id="generateSection" class="section">
+          <div class="card">
+            <h3>🔑 批量生成注册码</h3>
+            <form onsubmit="handleGenerateCodes(event)">
+              <div class="form-group">
+                <label>授权类型</label>
+                <select id="licenseType">
+                  <option value="permanent">永久授权 (PRO)</option>
+                  <option value="trial">试用授权 (TRL)</option>
+                </select>
+              </div>
+              <div class="form-group" id="trialMonthsGroup" style="display: none;">
+                <label>试用期限（月）</label>
+                <input type="number" id="trialMonths" min="1" max="12" value="3">
+              </div>
+              <div class="form-group">
+                <label>生成数量</label>
+                <input type="number" id="generateCount" min="1" max="100" value="10">
+              </div>
+              <div class="form-group">
+                <label>用户名称（可选）</label>
+                <input type="text" id="userName" placeholder="批量用户名">
+              </div>
+              <div class="form-group">
+                <label>指定机器码（可选，每行一个）- 激活时绑定</label>
+                <textarea id="machineCodes" rows="5" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px;" placeholder="如果需要预绑定机器码，请在此输入&#10;每行一个机器码&#10;留空则激活时才绑定机器码"></textarea>
+                <small style="color: #666; font-size: 12px;">注意：新系统不再强制要求预绑定机器码，可以在激活时绑定</small>
+              </div>
+              <button type="submit" class="btn btn-primary">🔐 生成注册码</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- 注册码管理 -->
+        <div id="codesSection" class="section">
+          <div class="card">
+            <h3>📋 注册码列表</h3>
+            <div class="search-box">
+              <input type="text" id="searchCode" placeholder="搜索注册码、用户名或机器码..." oninput="searchCodes()">
+              <select id="filterStatus" onchange="searchCodes()" style="width: 150px;">
+                <option value="">全部状态</option>
+                <option value="active">可用</option>
+                <option value="used">已使用</option>
+                <option value="expired">已过期</option>
+              </select>
+              <select id="filterType" onchange="searchCodes()" style="width: 150px;">
+                <option value="">全部类型</option>
+                <option value="permanent">永久授权</option>
+                <option value="trial">试用授权</option>
+              </select>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>注册码</th>
+                    <th>类型</th>
+                    <th>用户名</th>
+                    <th>机器码</th>
+                    <th>状态</th>
+                    <th>创建时间</th>
+                    <th>有效期</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="codesTableBody">
+                  <!-- 动态加载 -->
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination" id="codesPagination">
+              <!-- 动态生成 -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 激活记录 -->
+        <div id="activationsSection" class="section">
+          <div class="card">
+            <h3>📱 激活记录</h3>
+            <div class="search-box">
+              <input type="text" id="searchActivation" placeholder="搜索机器码或注册码..." oninput="searchActivations()">
+              <select id="filterResult" onchange="searchActivations()" style="width: 150px;">
+                <option value="">全部结果</option>
+                <option value="success">成功</option>
+                <option value="failed">失败</option>
+              </select>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>机器码</th>
+                    <th>注册码</th>
+                    <th>操作类型</th>
+                    <th>结果</th>
+                    <th>设备信息</th>
+                  </tr>
+                </thead>
+                <tbody id="activationsTableBody">
+                  <!-- 动态加载 -->
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination" id="activationsPagination">
+              <!-- 动态生成 -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 生成结果模态框 -->
+  <div id="resultModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>✅ 注册码生成成功</h3>
+        <button class="close-btn" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="generated-codes" id="generatedCodesContainer">
+        <!-- 动态生成 -->
+      </div>
+      <div style="margin-top: 20px; text-align: center;">
+        <button class="btn btn-primary" onclick="copyGeneratedCodes()">📋 复制全部</button>
+        <button class="btn btn-success" onclick="exportGeneratedCodes()">💾 导出文件</button>
+        <button class="btn btn-secondary" onclick="closeModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 加载中 -->
+  <div id="loadingOverlay" class="loading">
+    <div class="spinner"></div>
+    <p>加载中...</p>
+  </div>
+
+  <script>
+    // API 地址
+    const API_BASE = 'http://localhost:8080/api';
+    let adminToken = null;
+    let adminInfo = null;
+    let currentPage = 1;
+    let currentActivationsPage = 1;
+    let generatedCodes = [];
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', function() {
+      checkLoginStatus();
+      setupLicenseTypeListener();
+    });
+
+    // 设置授权类型监听器
+    function setupLicenseTypeListener() {
+      const licenseType = document.getElementById('licenseType');
+      const trialMonthsGroup = document.getElementById('trialMonthsGroup');
+      
+      licenseType.addEventListener('change', function() {
+        if (this.value === 'trial') {
+          trialMonthsGroup.style.display = 'block';
+        } else {
+          trialMonthsGroup.style.display = 'none';
+        }
+      });
+    }
+
+    // 检查登录状态
+    function checkLoginStatus() {
+      const token = localStorage.getItem('adminToken');
+      const admin = localStorage.getItem('adminInfo');
+      
+      if (token && admin) {
+        adminToken = token;
+        adminInfo = JSON.parse(admin);
+        showMainContent();
+      } else {
+        showLoginForm();
+      }
+    }
+
+    // 显示登录表单
+    function showLoginForm() {
+      document.getElementById('loginForm').style.display = 'block';
+      document.getElementById('mainContent').style.display = 'none';
+      document.getElementById('loginStatus').style.display = 'none';
+    }
+
+    // 显示主内容
+    function showMainContent() {
+      document.getElementById('loginForm').style.display = 'none';
+      document.getElementById('mainContent').style.display = 'block';
+      document.getElementById('loginStatus').style.display = 'block';
+      document.getElementById('adminName').textContent = adminInfo.username;
+      
+      // 加载数据
+      loadDashboardStats();
+      loadCodes();
+      loadActivations();
+    }
+
+    // 处理登录
+    async function handleLogin(event) {
+      event.preventDefault();
+      
+      const username = document.getElementById('loginUsername').value;
+      const password = document.getElementById('loginPassword').value;
+      
+      showLoading();
+      
+      try {
+        const response = await fetch(`${API_BASE}/admin/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          adminToken = 'generated-' + Date.now(); // 简化处理
+          adminInfo = result.admin;
+          localStorage.setItem('adminToken', adminToken);
+          localStorage.setItem('adminInfo', JSON.stringify(adminInfo));
+          
+          showMainContent();
+          showAlert('登录成功！', 'success');
+        } else {
+          showAlert(result.message || '登录失败', 'error');
+        }
+      } catch (error) {
+        console.error('登录错误:', error);
+        showAlert('登录失败，请检查服务器连接', 'error');
+      } finally {
+        hideLoading();
+      }
+    }
+
+    // 退出登录
+    function logout() {
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminInfo');
+      adminToken = null;
+      adminInfo = null;
+      showLoginForm();
+      showAlert('已退出登录', 'info');
+    }
+
+    // 切换标签页
+    function switchTab(tabName) {
+      // 更新标签按钮
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+      });
+      event.target.classList.add('active');
+      
+      // 更新内容区域
+      document.querySelectorAll('.section').forEach(section => {
+        section.classList.remove('active');
+      });
+      
+      const sectionMap = {
+        'dashboard': 'dashboardSection',
+        'generate': 'generateSection',
+        'codes': 'codesSection',
+        'activations': 'activationsSection'
+      };
+      
+      document.getElementById(sectionMap[tabName]).classList.add('active');
+    }
+
+    // 显示提示
+    function showAlert(message, type = 'info') {
+      const alertBox = document.getElementById('alertBox');
+      alertBox.textContent = message;
+      alertBox.className = `alert alert-${type} show`;
+      
+      setTimeout(() => {
+        alertBox.classList.remove('show');
+      }, 3000);
+    }
+
+    // 显示/隐藏加载
+    function showLoading() {
+      document.getElementById('loadingOverlay').classList.add('show');
+    }
+
+    function hideLoading() {
+      document.getElementById('loadingOverlay').classList.remove('show');
+    }
+
+    // 加载仪表板统计
+    async function loadDashboardStats() {
+      try {
+        const response = await fetch(`${API_BASE}/admin/stats`);
+        const result = await response.json();
+        
+        if (result.success) {
+          document.getElementById('totalCodes').textContent = result.data.total || 0;
+          document.getElementById('activeCodes').textContent = result.data.active || 0;
+          document.getElementById('usedCodes').textContent = result.data.used || 0;
+          document.getElementById('expiredCodes').textContent = result.data.expired || 0;
+          
+          // 生成简单图表
+          renderChart(result.data.activations || []);
+        }
+      } catch (error) {
+        console.error('加载统计失败:', error);
+      }
+    }
+
+    // 渲染图表
+    function renderChart(activations) {
+      const chartContainer = document.getElementById('activationChart');
+      chartContainer.innerHTML = '';
+      
+      if (activations.length === 0) {
+        chartContainer.innerHTML = '<p style="text-align: center; color: #999;">暂无数据</p>';
+        return;
+      }
+      
+      // 获取最近7天的数据
+      const recentDays = 7;
+      const dayData = {};
+      const now = new Date();
+      
+      for (let i = recentDays - 1; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        dayData[dateStr] = 0;
+      }
+      
+      activations.forEach(act => {
+        const dateStr = act.timestamp.split('T')[0];
+        if (dayData.hasOwnProperty(dateStr)) {
+          dayData[dateStr]++;
+        }
+      });
+      
+      const maxValue = Math.max(...Object.values(dayData), 1);
+      
+      Object.entries(dayData).forEach(([date, count]) => {
+        const bar = document.createElement('div');
+        const height = (count / maxValue) * 100;
+        bar.style.cssText = `
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          width: ${100 / recentDays}%;
+          height: ${Math.max(height, 5)}%;
+          border-radius: 4px 4px 0 0;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          color: white;
+          font-size: 12px;
+          font-weight: bold;
+          padding-bottom: 5px;
+          min-height: 20px;
+        `;
+        bar.textContent = count || '';
+        bar.title = `${date}: ${count} 次激活`;
+        
+        chartContainer.appendChild(bar);
+      });
+    }
+
+    // 生成注册码
+    async function handleGenerateCodes(event) {
+      event.preventDefault();
+      
+      const licenseType = document.getElementById('licenseType').value;
+      const trialMonths = document.getElementById('trialMonths').value;
+      const count = parseInt(document.getElementById('generateCount').value);
+      const userName = document.getElementById('userName').value;
+      
+      showLoading();
+      
+      try {
+        // 调用后端API生成注册码
+        const response = await fetch('/api/generate-codes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            count,
+            licenseType,
+            trialMonths: licenseType === 'trial' ? parseInt(trialMonths) : 0,
+            userName: userName || `用户${Date.now()}`
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.message || '生成注册码失败');
+        }
+        
+        generatedCodes = result.codes;
+        
+        showGeneratedCodes();
+        showAlert(`成功生成 ${count} 个注册码`, 'success');
+        
+      } catch (error) {
+        console.error('生成失败:', error);
+        showAlert('生成注册码失败', 'error');
+      } finally {
+        hideLoading();
+      }
+    }
+
+    // 生成随机机器码（仅用于展示，不再作为注册码前缀）
+    function generateRandomMachineCode() {
+      return Math.random().toString(36).substring(2, 18).toUpperCase();
+    }
+
+    // 生成注册码（使用固定的TRNG前缀，不依赖机器码）
+    function generateRegistrationCode(machineCode, licenseType, trialMonths) {
+      const prefix = 'TRNG';  // 使用固定前缀，不再使用机器码前缀
+      const typeCode = licenseType === 'permanent' ? 'PRO' : 'TRL';
+      const part1 = Math.random().toString(36).substring(2, 10).toUpperCase();
+      const part2 = Math.random().toString(36).substring(2, 10).toUpperCase();
+      const part3 = Math.random().toString(36).substring(2, 6).toUpperCase();
+      
+      return `${prefix}-${typeCode}-${part1}-${part2}-${part3}`;
+    }
+
+    // 显示生成的注册码
+    function showGeneratedCodes() {
+      const container = document.getElementById('generatedCodesContainer');
+      container.innerHTML = '';
+      
+      generatedCodes.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = 'generated-code-item';
+        const machineCodeText = item.machineCode ? `绑定机器码: ${item.machineCode}` : '未绑定机器码';
+        div.innerHTML = `
+          <strong>${index + 1}.</strong> ${item.code}
+          <br><small>${machineCodeText} | 类型: ${item.licenseType === 'permanent' ? '永久' : '试用'}</small>
+        `;
+        container.appendChild(div);
+      });
+      
+      document.getElementById('resultModal').classList.add('show');
+    }
+
+    // 复制生成的注册码
+    function copyGeneratedCodes() {
+      const text = generatedCodes.map((item, index) => {
+        const machineCodeText = item.machineCode ? ` (绑定机器码: ${item.machineCode})` : '';
+        return `${index + 1}. ${item.code}${machineCodeText}`;
+      }).join('\n');
+      
+      navigator.clipboard.writeText(text).then(() => {
+        showAlert('已复制到剪贴板', 'success');
+      }).catch(() => {
+        showAlert('复制失败', 'error');
+      });
+    }
+
+    // 导出生成的注册码
+    function exportGeneratedCodes() {
+      const content = generatedCodes.map(item => {
+        const machineCode = item.machineCode || '未绑定';
+        return `${item.code}\t${machineCode}\t${item.licenseType}\t${item.userName}\t${item.status}\t${item.createdAt}`;
+      }).join('\n');
+      
+      const blob = new Blob([
+        '注册码\t机器码\t类型\t用户名\t状态\t创建时间\n',
+        content
+      ], { type: 'text/plain;charset=utf-8' });
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `注册码_${new Date().toISOString().split('T')[0]}.txt`;
+      a.click();
+      
+      URL.revokeObjectURL(url);
+      showAlert('文件已下载', 'success');
+    }
+
+    // 关闭模态框
+    function closeModal() {
+      document.getElementById('resultModal').classList.remove('show');
+    }
+
+    // 加载注册码列表
+    async function loadCodes() {
+      try {
+        // 模拟数据，实际应该从API获取
+        const mockCodes = [];
+        for (let i = 0; i < 20; i++) {
+          mockCodes.push({
+            id: i + 1,
+            code: generateRegistrationCode('TRNG', i % 3 === 0 ? 'trial' : 'permanent', i % 3 === 0 ? 3 : 0),
+            licenseType: i % 3 === 0 ? 'trial' : 'permanent',
+            userName: i % 5 === 0 ? `客户公司${i}` : '',
+            machineCode: null, // 新系统默认不预绑定机器码
+            status: i % 4 === 0 ? 'used' : (i % 7 === 0 ? 'expired' : 'active'),
+            createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
+            expiresAt: i % 3 === 0 ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString() : null
+          });
+        }
+        
+        renderCodesTable(mockCodes);
+      } catch (error) {
+        console.error('加载注册码失败:', error);
+      }
+    }
+
+    // 渲染注册码表格
+    function renderCodesTable(codes) {
+      const tbody = document.getElementById('codesTableBody');
+      tbody.innerHTML = '';
+      
+      if (codes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #999;">暂无数据</td></tr>';
+        return;
+      }
+      
+      codes.forEach(code => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><div class="code-display">${code.code}</div></td>
+          <td>
+            <span class="tag ${code.licenseType === 'permanent' ? 'tag-pro' : 'tag-trial'}">
+              ${code.licenseType === 'permanent' ? '永久' : '试用'}
+            </span>
+          </td>
+          <td>${code.userName || '-'}</td>
+          <td><small>${code.machineCode || '未绑定'}</small></td>
+          <td>
+            <span class="status-badge status-${code.status}">
+              ${code.status === 'active' ? '可用' : (code.status === 'used' ? '已使用' : '已过期')}
+            </span>
+          </td>
+          <td>${new Date(code.createdAt).toLocaleDateString()}</td>
+          <td>${code.expiresAt ? new Date(code.expiresAt).toLocaleDateString() : '永久'}</td>
+          <td>
+            <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 12px;" onclick="copyCode('${code.code}')">复制</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 复制单个注册码
+    function copyCode(code) {
+      navigator.clipboard.writeText(code).then(() => {
+        showAlert('已复制到剪贴板', 'success');
+      }).catch(() => {
+        showAlert('复制失败', 'error');
+      });
+    }
+
+    // 搜索注册码
+    function searchCodes() {
+      const searchTerm = document.getElementById('searchCode').value.toLowerCase();
+      const statusFilter = document.getElementById('filterStatus').value;
+      const typeFilter = document.getElementById('filterType').value;
+      
+      // 这里应该调用API搜索，暂时重新加载
+      loadCodes();
+    }
+
+    // 加载激活记录
+    async function loadActivations() {
+      try {
+        // 模拟数据
+        const mockActivations = [];
+        for (let i = 0; i < 15; i++) {
+          mockActivations.push({
+            id: i + 1,
+            timestamp: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
+            machineCode: generateRandomMachineCode(),
+            registrationCode: generateRegistrationCode(generateRandomMachineCode(), 'permanent', 0),
+            action: i % 2 === 0 ? 'activate' : 'verify',
+            result: i % 5 === 0 ? 'failed' : 'success',
+            deviceInfo: `Windows 10 - ${new Date().toLocaleString()}`
+          });
+        }
+        
+        renderActivationsTable(mockActivations);
+      } catch (error) {
+        console.error('加载激活记录失败:', error);
+      }
+    }
+
+    // 渲染激活记录表格
+    function renderActivationsTable(activations) {
+      const tbody = document.getElementById('activationsTableBody');
+      tbody.innerHTML = '';
+      
+      if (activations.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #999;">暂无数据</td></tr>';
+        return;
+      }
+      
+      activations.forEach(act => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${new Date(act.timestamp).toLocaleString()}</td>
+          <td><small>${act.machineCode}</small></td>
+          <td><div class="code-display">${act.registrationCode.substring(0, 20)}...</div></td>
+          <td>${act.action === 'activate' ? '激活' : '验证'}</td>
+          <td>
+            <span class="status-badge ${act.result === 'success' ? 'status-active' : 'status-expired'}">
+              ${act.result === 'success' ? '成功' : '失败'}
+            </span>
+          </td>
+          <td><small>${act.deviceInfo}</small></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 搜索激活记录
+    function searchActivations() {
+      const searchTerm = document.getElementById('searchActivation').value.toLowerCase();
+      const resultFilter = document.getElementById('filterResult').value;
+      
+      // 这里应该调用API搜索，暂时重新加载
+      loadActivations();
+    }
+  </script>
+</body>
+</html>

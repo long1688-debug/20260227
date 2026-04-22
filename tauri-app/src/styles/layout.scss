@@ -1,0 +1,180 @@
+// 主布局样式
+.teacher-window {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0A101A;
+  color: #FFFFFF;
+}
+
+// 主内容区
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+// 视频区域
+.video-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #0A101A;
+  overflow: hidden;
+}
+
+// 视频网格
+.video-grid {
+  flex: 1;
+  display: grid;
+  padding: 10px;
+  gap: 10px;
+  overflow: hidden;
+
+  // 1 分屏
+  &.layout-1 {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  // 2 分屏
+  &.layout-2 {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  // 4 分屏
+  &.layout-4 {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+  }
+
+  // 6 分屏（索引5）
+  &.layout-5 {
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+  }
+
+  // 9 分屏（索引7）
+  &.layout-7 {
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+  }
+
+  // 16 分屏（索引10）
+  &.layout-10 {
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+  }
+
+  // 🎯 画中画布局 - 覆盖默认 grid 样式
+  &.layout-pip {
+    display: block !important;
+    padding: 0;
+    gap: 0;
+    position: relative;
+    background: #000;
+  }
+}
+
+// 侧边栏
+.side-panel {
+  width: 420px;
+  background: #0F2035;
+  border-left: 1px solid #1A2A3A;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+// 面板通用样式
+.panel-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 15px 15px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #1A2A3A;
+}
+
+.panel-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #FFFFFF;
+  margin: 0;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+// 对话框通用样式
+.el-dialog {
+  background: #0F2035;
+  
+  .el-dialog__header {
+    background: #1A2A3A;
+    border-bottom: 1px solid #2A3A4A;
+  }
+  
+  .el-dialog__title {
+    color: #FFFFFF;
+  }
+  
+  .el-dialog__body {
+    color: #E0E1DD;
+  }
+  
+  .el-dialog__footer {
+    border-top: 1px solid #2A3A4A;
+  }
+}
+
+// 表格样式
+.el-table {
+  background: #0F2035;
+  color: #E0E1DD;
+  
+  th {
+    background: #1A2A3A;
+    color: #FFFFFF;
+  }
+  
+  tr {
+    background: #0F2035;
+    
+    &:hover {
+      background: #1A2A3A !important;
+    }
+  }
+  
+  td {
+    border-color: #2A3A4A;
+  }
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0A101A;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1A2A3A;
+  border-radius: 4px;
+  
+  &:hover {
+    background: #2A3A4A;
+  }
+}

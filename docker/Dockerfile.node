@@ -1,0 +1,43 @@
+# 实训教学系统 - Node.js 后端开发镜像
+# 用于开发环境的后端服务容器
+
+FROM node:18-alpine
+
+# 安装基础工具
+RUN apk add --no-cache \
+    curl \
+    git \
+    tini \
+    bash \
+    && rm -rf /var/cache/apk/*
+
+# 设置工作目录参数
+ARG WORKDIR=/app
+WORKDIR ${WORKDIR}
+
+# 复制 package.json 先安装依赖（利用缓存）
+COPY package*.json ./
+COPY server/package*.json ./server/ 2>/dev/null || true
+COPY tauri-app/package*.json ./tauri-app/ 2>/dev/null || true
+
+# 安装依赖（开发环境）
+RUN npm ci --only=production || npm install --legacy-peer-deps && \
+    npm cache clean --force
+
+# 复制源代码
+COPY . .
+
+# 创建非 root 用户
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs ${WORKDIR}
+USER nodejs
+
+# 暴露端口（根据实际服务调整）
+EXPOSE 3001 8080 8081 5173 9229
+
+# 使用 tini 作为 init 系统
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# 默认命令（可被 docker-compose 覆盖）
+CMD ["node", "server/server.js"]

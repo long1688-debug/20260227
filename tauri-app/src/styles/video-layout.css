@@ -1,0 +1,149 @@
+/* 视频布局系统样式 - 使用 Tailwind CSS */
+
+/* 基础重置 */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* 视频单元格动画 */
+.video-cell {
+  will-change: transform, box-shadow;
+  backface-visibility: hidden;
+}
+
+.video-cell-dragging {
+  opacity: 0.9;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6) !important;
+}
+
+/* 按钮悬停效果 */
+button {
+  transition: all 0.15s ease;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+/* 布局按钮激活状态动画 */
+@keyframes pulse-blue {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0);
+  }
+}
+
+button.bg-blue-600 {
+  animation: pulse-blue 2s infinite;
+}
+
+/* 视频单元格占位符 */
+.video-cell-placeholder {
+  background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+}
+
+/* 加载动画 */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    #1f2937 25%,
+    #374151 50%,
+    #1f2937 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* 网格背景线条 */
+.grid-background line {
+  pointer-events: none;
+}
+
+/* 工具提示样式 */
+.tooltip {
+  position: absolute;
+  z-index: 1000;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: 12px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 最大化模式 */
+.maximized-overlay {
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 拖拽预览 */
+.drag-preview {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10000;
+  opacity: 0.8;
+  transform: scale(1.02);
+}
+
+/* 焦点状态 */
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* 禁用选择 */
+.select-none {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 性能优化：减少重绘 */
+.video-cell {
+  contain: layout style paint;
+}
+
+/* 隐藏的视频项（最大化切换时） */
+.video-item-hidden {
+  display: none !important;
+}

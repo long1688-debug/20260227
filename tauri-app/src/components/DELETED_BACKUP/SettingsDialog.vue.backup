@@ -1,0 +1,317 @@
+<template>
+  <el-dialog
+    :model-value="visible"
+    @update:model-value="$emit('update:visible', $event)"
+    title="系统设置"
+    width="1000px"
+    top="3vh"
+    :close-on-click-modal="false"
+    class="settings-dialog"
+  >
+    <div class="settings-dialog-content">
+      <el-tabs 
+        :model-value="activeTab" 
+        @update:model-value="$emit('update:activeTab', $event)"
+        class="settings-tabs"
+      >
+        <!-- 录像设置 -->
+        <el-tab-pane label="录像设置" name="recording">
+          <div class="settings-section">
+            <el-form label-width="140px">
+              <el-form-item label="录像文件存放位置">
+                <div class="path-input-group">
+                  <el-input 
+                    :model-value="settings.recordingPath" 
+                    placeholder="请选择录像文件存放路径" 
+                    readonly 
+                  />
+                  <el-button type="primary" @click="$emit('select-path')">
+                    <el-icon><Folder /></el-icon> 浏览
+                  </el-button>
+                  <el-button @click="$emit('reset-path')">
+                    <el-icon><RefreshLeft /></el-icon> 重置
+                  </el-button>
+                </div>
+                <div class="form-tip">当前路径：{{ settings.recordingPath }}</div>
+              </el-form-item>
+
+              <el-form-item label="录像文件格式">
+                <el-select 
+                  :model-value="settings.recordingFormat" 
+                  @update:model-value="$emit('update:setting', { key: 'recordingFormat', value: $event })"
+                  placeholder="请选择格式"
+                >
+                  <el-option label="MP4 (.mp4)" value="mp4" />
+                  <el-option label="WebM (.webm)" value="webm" />
+                  <el-option label="AVI (.avi)" value="avi" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item label="自动分段录制">
+                <el-switch 
+                  :model-value="settings.autoSegment" 
+                  @update:model-value="$emit('update:setting', { key: 'autoSegment', value: $event })"
+                />
+                <span class="form-tip" style="margin-left: 10px">启用后每 30 分钟自动分段</span>
+              </el-form-item>
+            </el-form>
+          </div>
+        </el-tab-pane>
+
+        <!-- 视频参数设置 -->
+        <el-tab-pane label="视频参数" name="video">
+          <div class="settings-section">
+            <el-form label-width="140px">
+              <el-form-item label="视频窗口分辨率">
+                <el-select 
+                  :model-value="settings.videoResolution" 
+                  @update:model-value="$emit('update:setting', { key: 'videoResolution', value: $event })"
+                  placeholder="请选择分辨率" 
+                  style="width: 200px"
+                >
+                  <el-option label="4K (3840×2160)" value="4k" />
+                  <el-option label="2K (2560×1440)" value="2k" />
+                  <el-option label="1080P (1920×1080)" value="1080p" />
+                  <el-option label="720P (1280×720)" value="720p" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item label="视频帧率">
+                <el-select 
+                  :model-value="settings.videoFrameRate" 
+                  @update:model-value="$emit('update:setting', { key: 'videoFrameRate', value: $event })"
+                  placeholder="请选择帧率" 
+                  style="width: 150px"
+                >
+                  <el-option label="60 FPS" :value="60" />
+                  <el-option label="30 FPS" :value="30" />
+                  <el-option label="24 FPS" :value="24" />
+                  <el-option label="15 FPS" :value="15" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item label="视频码率">
+                <el-select 
+                  :model-value="settings.videoBitrate" 
+                  @update:model-value="$emit('update:setting', { key: 'videoBitrate', value: $event })"
+                  placeholder="请选择码率" 
+                  style="width: 150px"
+                >
+                  <el-option label="8000 kbps" :value="8000" />
+                  <el-option label="6000 kbps" :value="6000" />
+                  <el-option label="4000 kbps" :value="4000" />
+                  <el-option label="2500 kbps" :value="2500" />
+                  <el-option label="1500 kbps" :value="1500" />
+                  <el-option label="自定义" :value="0" />
+                </el-select>
+                <el-input-number
+                  v-if="settings.videoBitrate === 0"
+                  :model-value="customVideoBitrate"
+                  @update:model-value="$emit('update:customVideoBitrate', $event)"
+                  :min="500"
+                  :max="20000"
+                  :step="100"
+                  style="margin-left: 10px"
+                />
+                <span class="form-tip" style="margin-left: 10px">kbps</span>
+              </el-form-item>
+
+              <el-form-item label="视频编码器">
+                <el-select 
+                  :model-value="settings.videoEncoder" 
+                  @update:model-value="$emit('update:setting', { key: 'videoEncoder', value: $event })"
+                  placeholder="请选择编码器"
+                >
+                  <el-option label="H.264 (兼容性好)" value="h264" />
+                  <el-option label="H.265 (高效压缩)" value="h265" />
+                  <el-option label="VP9 (Web 优化)" value="vp9" />
+                </el-select>
+              </el-form-item>
+            </el-form>
+          </div>
+        </el-tab-pane>
+
+        <!-- 直播参数设置 -->
+        <el-tab-pane label="直播参数" name="live">
+          <div class="settings-section">
+            <el-form label-width="140px">
+              <el-form-item label="直播分辨率">
+                <el-select 
+                  :model-value="settings.liveResolution" 
+                  @update:model-value="$emit('update:setting', { key: 'liveResolution', value: $event })"
+                  placeholder="请选择分辨率" 
+                  style="width: 200px"
+                >
+                  <el-option label="4K (3840×2160)" value="4k" />
+                  <el-option label="2K (2560×1440)" value="2k" />
+                  <el-option label="1080P (1920×1080)" value="1080p" />
+                  <el-option label="720P (1280×720)" value="720p" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item label="直播帧率">
+                <el-select 
+                  :model-value="settings.liveFrameRate" 
+                  @update:model-value="$emit('update:setting', { key: 'liveFrameRate', value: $event })"
+                  placeholder="请选择帧率" 
+                  style="width: 150px"
+                >
+                  <el-option label="60 FPS" :value="60" />
+                  <el-option label="30 FPS" :value="30" />
+                  <el-option label="24 FPS" :value="24" />
+                  <el-option label="15 FPS" :value="15" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item label="直播码率">
+                <el-select 
+                  :model-value="settings.liveBitrate" 
+                  @update:model-value="$emit('update:setting', { key: 'liveBitrate', value: $event })"
+                  placeholder="请选择码率" 
+                  style="width: 150px"
+                >
+                  <el-option label="8000 kbps" :value="8000" />
+                  <el-option label="6000 kbps" :value="6000" />
+                  <el-option label="4000 kbps" :value="4000" />
+                  <el-option label="2500 kbps" :value="2500" />
+                  <el-option label="1500 kbps" :value="1500" />
+                  <el-option label="自定义" :value="0" />
+                </el-select>
+                <el-input-number
+                  v-if="settings.liveBitrate === 0"
+                  :model-value="customLiveBitrate"
+                  @update:model-value="$emit('update:customLiveBitrate', $event)"
+                  :min="500"
+                  :max="20000"
+                  :step="100"
+                  style="margin-left: 10px"
+                />
+                <span class="form-tip" style="margin-left: 10px">kbps</span>
+              </el-form-item>
+
+              <el-form-item label="直播协议">
+                <el-select 
+                  :model-value="settings.liveProtocol" 
+                  @update:model-value="$emit('update:setting', { key: 'liveProtocol', value: $event })"
+                  placeholder="请选择协议"
+                >
+                  <el-option label="RTMP" value="rtmp" />
+                  <el-option label="RTSP" value="rtsp" />
+                  <el-option label="SRT" value="srt" />
+                  <el-option label="WebRTC" value="webrtc" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item label="推流地址">
+                <el-input 
+                  :model-value="settings.streamUrl" 
+                  @update:model-value="$emit('update:setting', { key: 'streamUrl', value: $event })"
+                  placeholder="rtmp://server/live/stream" 
+                />
+              </el-form-item>
+
+              <el-form-item label="推流密钥">
+                <el-input 
+                  :model-value="settings.streamKey" 
+                  @update:model-value="$emit('update:setting', { key: 'streamKey', value: $event })"
+                  type="password" 
+                  placeholder="请输入推流密钥" 
+                  show-password 
+                />
+              </el-form-item>
+            </el-form>
+          </div>
+        </el-tab-pane>
+
+        <!-- 注册 -->
+        <el-tab-pane label="注册" name="registration">
+          <div class="registration-in-settings">
+            <slot name="registration"></slot>
+          </div>
+        </el-tab-pane>
+
+        <!-- 关于 -->
+        <el-tab-pane label="关于" name="about">
+          <div class="about-in-settings">
+            <slot name="about"></slot>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </div>
+    
+    <template #footer>
+      <div v-if="activeTab === 'recording' || activeTab === 'video' || activeTab === 'live'">
+        <el-button @click="$emit('reset')">
+          <el-icon><RefreshLeft /></el-icon> 恢复默认
+        </el-button>
+        <el-button type="primary" @click="$emit('save')">
+          <el-icon><Check /></el-icon> 保存设置
+        </el-button>
+      </div>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup>
+const props = defineProps({
+  visible: {
+    type: Boolean,
+    default: false
+  },
+  activeTab: {
+    type: String,
+    default: 'recording'
+  },
+  settings: {
+    type: Object,
+    default: () => ({})
+  },
+  customVideoBitrate: {
+    type: Number,
+    default: 3000
+  },
+  customLiveBitrate: {
+    type: Number,
+    default: 2500
+  }
+});
+
+defineEmits([
+  'update:visible',
+  'update:activeTab',
+  'update:setting',
+  'update:customVideoBitrate',
+  'update:customLiveBitrate',
+  'save',
+  'reset',
+  'select-path',
+  'reset-path'
+]);
+</script>
+
+<style scoped lang="scss">
+.settings-dialog-content {
+  min-height: 400px;
+}
+
+.settings-section {
+  padding: 16px 0;
+}
+
+.path-input-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: var(--text-secondary, #ADB5BD);
+  margin-top: 4px;
+}
+
+.registration-in-settings,
+.about-in-settings {
+  padding: 16px 0;
+}
+</style>

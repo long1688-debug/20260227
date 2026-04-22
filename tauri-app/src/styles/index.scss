@@ -1,0 +1,16 @@
+/**
+ * 样式入口文件
+ * 统一导入所有全局样式
+ */
+
+// 变量定义（必须在最前面）
+@import './variables.scss';
+
+// 布局样式
+@import './layout.scss';
+
+// 动画样式（待创建）
+// @import './animations.scss';
+
+// 公共组件样式（待创建）
+// @import './common.scss';

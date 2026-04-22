@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>布局独立性测试运行器</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .controls {
+      padding: 20px 30px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #e9ecef;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: #e9ecef;
+      color: #495057;
+    }
+
+    .btn-secondary:hover {
+      background: #dee2e6;
+    }
+
+    .btn-success {
+      background: #28a745;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #218838;
+    }
+
+    .delay-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: auto;
+    }
+
+    .delay-control label {
+      font-size: 14px;
+      color: #495057;
+    }
+
+    .delay-control input {
+      width: 80px;
+      padding: 8px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .results {
+      padding: 30px;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .summary-card {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .summary-card .number {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .summary-card.total .number { color: #667eea; }
+    .summary-card.passed .number { color: #28a745; }
+    .summary-card.failed .number { color: #dc3545; }
+    .summary-card.rate .number { color: #17a2b8; }
+
+    .summary-card .label {
+      font-size: 14px;
+      color: #6c757d;
+    }
+
+    .test-log {
+      background: #f8f9fa;
+      border-radius: 8px;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .test-log-header {
+      padding: 15px 20px;
+      background: #e9ecef;
+      font-weight: 600;
+      font-size: 16px;
+      position: sticky;
+      top: 0;
+    }
+
+    .log-entry {
+      padding: 15px 20px;
+      border-bottom: 1px solid #e9ecef;
+      font-size: 14px;
+    }
+
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+
+    .log-entry.passed {
+      border-left: 4px solid #28a745;
+      background: linear-gradient(90deg, rgba(40, 167, 69, 0.05) 0%, transparent 100%);
+    }
+
+    .log-entry.failed {
+      border-left: 4px solid #dc3545;
+      background: linear-gradient(90deg, rgba(220, 53, 69, 0.05) 0%, transparent 100%);
+    }
+
+    .log-entry .icon {
+      font-size: 20px;
+      margin-right: 10px;
+    }
+
+    .log-entry .test-name {
+      font-weight: 600;
+      color: #212529;
+      margin-bottom: 5px;
+    }
+
+    .log-entry .message {
+      color: #6c757d;
+      margin-left: 30px;
+    }
+
+    .log-entry .timestamp {
+      color: #adb5bd;
+      font-size: 12px;
+      margin-left: 30px;
+    }
+
+    .console-output {
+      margin-top: 30px;
+      background: #1e1e1e;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .console-header {
+      padding: 10px 20px;
+      background: #2d2d2d;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .console-header button {
+      background: none;
+      border: 1px solid #555;
+      color: #fff;
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .console-header button:hover {
+      background: #3d3d3d;
+    }
+
+    .console-content {
+      padding: 15px 20px;
+      color: #d4d4d4;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #6c757d;
+    }
+
+    .empty-state .icon {
+      font-size: 48px;
+      margin-bottom: 15px;
+      opacity: 0.5;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: #e9ecef;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .progress-bar .progress {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      transition: width 0.3s;
+      width: 0%;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🧪 布局独立性测试套件</h1>
+      <p>验证不同分屏布局之间的信号源绑定独立性</p>
+    </div>
+
+    <div class="controls">
+      <button id="runAllTests" class="btn btn-primary">
+        <span>▶️</span> 运行所有测试
+      </button>
+      <button id="runLayoutTest" class="btn btn-secondary">
+        <span>📋</span> 布局独立性测试
+      </button>
+      <button id="runSourceTest" class="btn btn-secondary">
+        <span>🔗</span> 信号源绑定测试
+      </button>
+      <button id="runDoubleClickTest" class="btn btn-secondary">
+        <span>🖱️</span> 双击全屏测试
+      </button>
+      <button id="clearResults" class="btn btn-secondary">
+        <span>🗑️</span> 清空结果
+      </button>
+      <button id="exportResults" class="btn btn-success">
+        <span>📥</span> 导出报告
+      </button>
+
+      <div class="delay-control">
+        <label for="delayTime">操作延迟 (ms):</label>
+        <input type="number" id="delayTime" value="1000" min="100" step="100">
+      </div>
+    </div>
+
+    <div class="progress-bar">
+      <div id="progress" class="progress"></div>
+    </div>
+
+    <div class="results">
+      <div class="summary">
+        <div class="summary-card total">
+          <div class="number" id="totalTests">0</div>
+          <div class="label">总测试数</div>
+        </div>
+        <div class="summary-card passed">
+          <div class="number" id="passedTests">0</div>
+          <div class="label">通过</div>
+        </div>
+        <div class="summary-card failed">
+          <div class="number" id="failedTests">0</div>
+          <div class="label">失败</div>
+        </div>
+        <div class="summary-card rate">
+          <div class="number" id="passRate">0%</div>
+          <div class="label">通过率</div>
+        </div>
+      </div>
+
+      <div class="test-log" id="testLog">
+        <div class="empty-state">
+          <div class="icon">📝</div>
+          <p>点击"运行所有测试"开始测试</p>
+        </div>
+      </div>
+
+      <div class="console-output">
+        <div class="console-header">
+          <span>控制台输出</span>
+          <button id="clearConsole">清空</button>
+        </div>
+        <div class="console-content" id="consoleContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="layout-independence-test.js"></script>
+  <script>
+    // DOM 元素
+    const runAllTestsBtn = document.getElementById('runAllTests');
+    const runLayoutTestBtn = document.getElementById('runLayoutTest');
+    const runSourceTestBtn = document.getElementById('runSourceTest');
+    const runDoubleClickTestBtn = document.getElementById('runDoubleClickTest');
+    const clearResultsBtn = document.getElementById('clearResults');
+    const exportResultsBtn = document.getElementById('exportResults');
+    const delayTimeInput = document.getElementById('delayTime');
+    const progress = document.getElementById('progress');
+    const testLog = document.getElementById('testLog');
+    const consoleContent = document.getElementById('consoleContent');
+    const clearConsoleBtn = document.getElementById('clearConsole');
+
+    // 状态
+    let isRunning = false;
+    let testRunner = null;
+
+    // 初始化
+    function init() {
+      // 劫持 console.log 以显示在页面上
+      hijackConsole();
+      
+      // 绑定事件
+      runAllTestsBtn.addEventListener('click', runAllTests);
+      runLayoutTestBtn.addEventListener('click', runLayoutTest);
+      runSourceTestBtn.addEventListener('click', runSourceTest);
+      runDoubleClickTestBtn.addEventListener('click', runDoubleClickTest);
+      clearResultsBtn.addEventListener('click', clearResults);
+      exportResultsBtn.addEventListener('click', exportResults);
+      clearConsoleBtn.addEventListener('click', () => {
+        consoleContent.textContent = '';
+      });
+      delayTimeInput.addEventListener('change', () => {
+        if (testRunner) {
+          testRunner.delay = parseInt(delayTimeInput.value);
+        }
+      });
+    }
+
+    // 劫持 console 方法
+    function hijackConsole() {
+      const originalLog = console.log;
+      const originalWarn = console.warn;
+      const originalError = console.error;
+
+      console.log = function(...args) {
+        originalLog.apply(console, args);
+        appendToConsole('log', args);
+      };
+
+      console.warn = function(...args) {
+        originalWarn.apply(console, args);
+        appendToConsole('warn', args);
+      };
+
+      console.error = function(...args) {
+        originalError.apply(console, args);
+        appendToConsole('error', args);
+      };
+    }
+
+    // 添加到控制台输出
+    function appendToConsole(type, args) {
+      const timestamp = new Date().toLocaleTimeString();
+      const prefix = type === 'error' ? '❌' : type === 'warn' ? '⚠️' : 'ℹ️';
+      const message = args.map(arg => {
+        if (typeof arg === 'object') {
+          return JSON.stringify(arg, null, 2);
+        }
+        return String(arg);
+      }).join(' ');
+      
+      const line = document.createElement('div');
+      line.innerHTML = `<span style="color: #666">[${timestamp}]</span> ${prefix} ${message}`;
+      consoleContent.appendChild(line);
+      consoleContent.scrollTop = consoleContent.scrollHeight;
+    }
+
+    // 运行所有测试
+    async function runAllTests() {
+      if (isRunning) return;
+      
+      isRunning = true;
+      setButtonsState(false);
+      clearResults();
+      
+      try {
+        // 获取测试套件
+        if (typeof layoutIndependenceTest === 'undefined') {
+          alert('请确保已正确加载测试脚本');
+          return;
+        }
+        
+        testRunner = layoutIndependenceTest;
+        testRunner.delay = parseInt(delayTimeInput.value);
+        testRunner.testResults = [];
+        
+        // 劫持测试结果添加方法以更新UI
+        const originalAddResult = testRunner.addTestResult.bind(testRunner);
+        testRunner.addTestResult = function(testName, passed, message) {
+          originalAddResult(testName, passed, message);
+          updateUI();
+        };
+        
+        await testRunner.runAllTests();
+        
+      } catch (error) {
+        console.error('测试运行失败:', error);
+        alert('测试运行失败: ' + error.message);
+      } finally {
+        isRunning = false;
+        setButtonsState(true);
+        progress.style.width = '100%';
+        setTimeout(() => {
+          progress.style.width = '0%';
+        }, 1000);
+      }
+    }
+
+    // 运行单个测试
+    async function runTest(testName, testFunction) {
+      if (isRunning) return;
+      
+      isRunning = true;
+      setButtonsState(false);
+      
+      try {
+        if (typeof layoutIndependenceTest === 'undefined') {
+          alert('请确保已正确加载测试脚本');
+          return;
+        }
+        
+        testRunner = layoutIndependenceTest;
+        testRunner.delay = parseInt(delayTimeInput.value);
+        testRunner.testResults = [];
+        
+        const originalAddResult = testRunner.addTestResult.bind(testRunner);
+        testRunner.addTestResult = function(testName, passed, message) {
+          originalAddResult(testName, passed, message);
+          updateUI();
+        };
+        
+        await testFunction();
+        
+      } catch (error) {
+        console.error(`${testName}运行失败:`, error);
+        alert(`${testName}运行失败: ` + error.message);
+      } finally {
+        isRunning = false;
+        setButtonsState(true);
+      }
+    }
+
+    function runLayoutTest() {
+      runTest('布局独立性测试', () => testRunner.testLayoutIndependence());
+    }
+
+    function runSourceTest() {
+      runTest('信号源绑定测试', () => testRunner.testSourceBindingIndependence());
+    }
+
+    function runDoubleClickTest() {
+      runTest('双击全屏测试', () => testRunner.testDoubleClickMaximize());
+    }
+
+    // 更新UI
+    function updateUI() {
+      if (!testRunner) return;
+      
+      const results = testRunner.testResults;
+      const passed = results.filter(r => r.passed).length;
+      const failed = results.filter(r => !r.passed).length;
+      const total = results.length;
+      
+      // 更新统计卡片
+      document.getElementById('totalTests').textContent = total;
+      document.getElementById('passedTests').textContent = passed;
+      document.getElementById('failedTests').textContent = failed;
+      document.getElementById('passRate').textContent = total > 0 ? ((passed / total) * 100).toFixed(1) + '%' : '0%';
+      
+      // 更新进度条
+      const progress = (total / 15) * 100; // 假设总共约15个测试项
+      document.getElementById('progress').style.width = Math.min(progress, 100) + '%';
+      
+      // 更新测试日志
+      if (results.length > 0) {
+        testLog.innerHTML = results.map((result, index) => `
+          <div class="log-entry ${result.passed ? 'passed' : 'failed'}">
+            <span class="icon">${result.passed ? '✅' : '❌'}</span>
+            <div class="test-name">${result.testName}</div>
+            <div class="message">${result.message}</div>
+            <div class="timestamp">${new Date(result.timestamp).toLocaleTimeString()}</div>
+          </div>
+        `).join('');
+        
+        // 滚动到最新
+        testLog.scrollTop = testLog.scrollHeight;
+      }
+    }
+
+    // 清空结果
+    function clearResults() {
+      if (testRunner) {
+        testRunner.testResults = [];
+      }
+      
+      document.getElementById('totalTests').textContent = '0';
+      document.getElementById('passedTests').textContent = '0';
+      document.getElementById('failedTests').textContent = '0';
+      document.getElementById('passRate').textContent = '0%';
+      progress.style.width = '0%';
+      
+      testLog.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">📝</div>
+          <p>点击"运行所有测试"开始测试</p>
+        </div>
+      `;
+    }
+
+    // 设置按钮状态
+    function setButtonsState(enabled) {
+      runAllTestsBtn.disabled = !enabled;
+      runLayoutTestBtn.disabled = !enabled;
+      runSourceTestBtn.disabled = !enabled;
+      runDoubleClickTestBtn.disabled = !enabled;
+      clearResultsBtn.disabled = !enabled;
+      exportResultsBtn.disabled = !enabled || !testRunner || testRunner.testResults.length === 0;
+      
+      if (enabled) {
+        runAllTestsBtn.innerHTML = '<span>▶️</span> 运行所有测试';
+      } else {
+        runAllTestsBtn.innerHTML = '<span class="loading"></span> 测试运行中...';
+      }
+    }
+
+    // 导出报告
+    function exportResults() {
+      if (!testRunner || testRunner.testResults.length === 0) {
+        alert('没有可导出的测试结果');
+        return;
+      }
+      
+      const results = testRunner.testResults;
+      const passed = results.filter(r => r.passed).length;
+      const failed = results.filter(r => !r.passed).length;
+      const total = results.length;
+      
+      let report = `==================== 布局独立性测试报告 ====================\n`;
+      report += `生成时间: ${new Date().toLocaleString()}\n`;
+      report += `总测试数: ${total}\n`;
+      report += `通过: ${passed}\n`;
+      report += `失败: ${failed}\n`;
+      report += `通过率: ${((passed / total) * 100).toFixed(1)}%\n`;
+      report += `\n`;
+      
+      report += `详细结果:\n`;
+      report += `====================================================\n\n`;
+      
+      results.forEach((result, index) => {
+        report += `${index + 1}. ${result.testName}\n`;
+        report += `   状态: ${result.passed ? '✅ 通过' : '❌ 失败'}\n`;
+        report += `   消息: ${result.message}\n`;
+        report += `   时间: ${result.timestamp}\n`;
+        report += `   测试套件: ${result.testSuite}\n`;
+        report += `\n`;
+      });
+      
+      report += `====================================================\n`;
+      
+      // 创建下载链接
+      const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `layout-test-report-${Date.now()}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // 页面加载完成后初始化
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

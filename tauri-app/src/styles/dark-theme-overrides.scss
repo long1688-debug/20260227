@@ -1,0 +1,244 @@
+/**
+ * 深色主题样式覆盖 - 专门用于强制覆盖 Element Plus 组件样式
+ * 这些样式必须在 Element Plus 样式之后加载
+ */
+
+// 全局变量覆盖
+:root {
+  --el-color-primary: #4CC9F0;
+  --el-color-success: #4ade80;
+  --el-color-warning: #facc15;
+  --el-color-danger: #ef4444;
+  
+  --el-bg-color: #0D1B2A;
+  --el-bg-color-page: #0D1B2A;
+  --el-bg-color-overlay: #1B263B;
+  
+  --el-text-color-primary: #E0E1DD;
+  --el-text-color-regular: #C9D1D9;
+  --el-text-color-secondary: #8B949E;
+  --el-text-color-placeholder: #6E7681;
+  --el-text-color-disabled: #484F58;
+  
+  --el-border-color: #21262D;
+  --el-border-color-light: #30363D;
+  
+  --el-table-bg-color: #0D1B2A;
+  --el-table-header-bg-color: #141f2e;
+  --el-table-row-bg-color: #0D1B2A;
+  --el-table-row-bg-color-hover: rgba(255, 255, 255, 0.05);
+  --el-table-row-bg-color-striped: #141f2e;
+  --el-table-header-text-color: #E0E1DD;
+  --el-table-text-color: #E0E1DD;
+  --el-table-border-color: #1A2A3A;
+}
+
+// 强制覆盖 Element Plus 默认样式
+body {
+  --el-color-primary: #4CC9F0 !important;
+  --el-bg-color: #0D1B2A !important;
+  --el-bg-color-page: #0D1B2A !important;
+  --el-bg-color-overlay: #1B263B !important;
+  --el-text-color-primary: #E0E1DD !important;
+  --el-text-color-regular: #C9D1D9 !important;
+  --el-text-color-secondary: #8B949E !important;
+  --el-border-color: #21262D !important;
+  --el-border-color-light: #30363D !important;
+  
+  --el-table-bg-color: #0D1B2A !important;
+  --el-table-header-bg-color: #141f2e !important;
+  --el-table-row-bg-color: #0D1B2A !important;
+  --el-table-row-bg-color-hover: rgba(255, 255, 255, 0.05) !important;
+  --el-table-row-bg-color-striped: #141f2e !important;
+  --el-table-header-text-color: #E0E1DD !important;
+  --el-table-text-color: #E0E1DD !important;
+  --el-table-border-color: #1A2A3A !important;
+}
+
+// ============ 表格样式强制覆盖 - 使用最强选择器优先级 ============
+// 使用 body 作为父选择器 + :deep() 确保最高优先级
+body .el-table,
+body :deep(.el-table),
+.teacher-window .el-table,
+.teacher-window :deep(.el-table),
+*:deep(.el-table) {
+  --el-table-bg-color: #0D1B2A !important;
+  --el-table-header-bg-color: #141f2e !important;
+  --el-table-row-bg-color: #0D1B2A !important;
+  --el-table-row-bg-color-hover: rgba(255, 255, 255, 0.05) !important;
+  --el-table-row-bg-color-striped: #141f2e !important;
+  --el-table-header-text-color: #E0E1DD !important;
+  --el-table-text-color: #E0E1DD !important;
+  --el-table-border-color: #1A2A3A !important;
+  
+  background-color: #0D1B2A !important;
+  border-color: #1A2A3A !important;
+  color: #E0E1DD !important;
+  
+  &::before {
+    background-color: transparent !important;
+    height: 0 !important;
+  }
+  
+  // 直接覆盖内部元素
+  & th {
+    background-color: #141f2e !important;
+    color: #E0E1DD !important;
+    border-bottom-color: #2d3a4f !important;
+  }
+  
+  & td {
+    background-color: #0D1B2A !important;
+    color: #E0E1DD !important;
+    border-bottom-color: #1A2A3A !important;
+  }
+}
+
+// ============ 额外的表头样式强制覆盖 ============
+// 针对表头行的额外覆盖
+body .el-table .el-table__header-wrapper thead,
+body :deep(.el-table .el-table__header-wrapper thead),
+.teacher-window :deep(.el-table .el-table__header-wrapper thead),
+*:deep(.el-table .el-table__header-wrapper thead) {
+  background-color: #141f2e !important;
+}
+
+body .el-table .el-table__header-wrapper thead tr,
+body :deep(.el-table .el-table__header-wrapper thead tr),
+.teacher-window :deep(.el-table .el-table__header-wrapper thead tr),
+*:deep(.el-table .el-table__header-wrapper thead tr) {
+  background-color: #141f2e !important;
+}
+
+body .el-table .el-table__header-wrapper thead tr th,
+body :deep(.el-table .el-table__header-wrapper thead tr th),
+.teacher-window :deep(.el-table .el-table__header-wrapper thead tr th),
+*:deep(.el-table .el-table__header-wrapper thead tr th) {
+  background-color: #141f2e !important;
+  color: #E0E1DD !important;
+  border-bottom-color: #2d3a4f !important;
+}
+
+// 覆盖 el-table__header-cell 类
+body .el-table .el-table__header-cell,
+body :deep(.el-table .el-table__header-cell),
+.teacher-window :deep(.el-table .el-table__header-cell),
+*:deep(.el-table .el-table__header-cell) {
+  background-color: #141f2e !important;
+  color: #E0E1DD !important;
+}
+
+// 针对 th 的额外覆盖（最强优先级）
+.el-table th.el-table__cell {
+  background-color: #141f2e !important;
+  color: #E0E1DD !important;
+  border-bottom-color: #2d3a4f !important;
+}
+
+// 表头行 - 强制覆盖
+body .el-table__header,
+body :deep(.el-table__header),
+.teacher-window :deep(.el-table__header),
+*:deep(.el-table__header),
+body .el-table__header-wrapper,
+body :deep(.el-table__header-wrapper),
+.teacher-window :deep(.el-table__header-wrapper),
+*:deep(.el-table__header-wrapper),
+body .el-table__header-wrapper .el-table__header-row,
+body :deep(.el-table__header-wrapper .el-table__header-row),
+.teacher-window :deep(.el-table__header-wrapper .el-table__header-row),
+*:deep(.el-table__header-wrapper .el-table__header-row) {
+  background-color: #141f2e !important;
+}
+
+// 表头单元格 - 强制覆盖（包含 th 元素）
+body .el-table__header-wrapper .el-table__header-row .el-table__cell,
+body :deep(.el-table__header-wrapper .el-table__header-row .el-table__cell),
+.teacher-window :deep(.el-table__header-wrapper .el-table__header-row .el-table__cell),
+*:deep(.el-table__header-wrapper .el-table__header-row .el-table__cell),
+// Element Plus 表头可能使用 th 元素
+body .el-table th,
+body :deep(.el-table th),
+.teacher-window :deep(.el-table th),
+*:deep(.el-table th) {
+  background-color: #141f2e !important;
+  color: #E0E1DD !important;
+  border-bottom-color: #2d3a4f !important;
+}
+
+// 表体容器 - 强制覆盖
+body .el-table__body-wrapper,
+body :deep(.el-table__body-wrapper),
+.teacher-window :deep(.el-table__body-wrapper),
+*:deep(.el-table__body-wrapper) {
+  background-color: #0D1B2A !important;
+}
+
+// 表体行 - 强制覆盖
+body .el-table__body-wrapper .el-table__row,
+body :deep(.el-table__body-wrapper .el-table__row),
+.teacher-window :deep(.el-table__body-wrapper .el-table__row),
+*:deep(.el-table__body-wrapper .el-table__row) {
+  background-color: #0D1B2A !important;
+  
+  &.el-table__row--striped {
+    background-color: #141f2e !important;
+    
+    .el-table__cell {
+      background-color: #141f2e !important;
+    }
+  }
+  
+  .el-table__cell {
+    background-color: inherit !important;
+    color: #E0E1DD !important;
+    border-bottom-color: #1A2A3A !important;
+  }
+  
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    
+    .el-table__cell {
+      background-color: rgba(255, 255, 255, 0.05) !important;
+    }
+  }
+}
+
+// 表格空状态 - 强制覆盖
+body .el-table__empty-block,
+body :deep(.el-table__empty-block),
+.teacher-window :deep(.el-table__empty-block),
+*:deep(.el-table__empty-block) {
+  background-color: #0D1B2A !important;
+  
+  .el-empty__text {
+    color: #6c757d !important;
+  }
+}
+
+// 表格标签 - 强制覆盖
+body .el-table .el-tag,
+body :deep(.el-table .el-tag),
+.teacher-window :deep(.el-table .el-tag),
+*:deep(.el-table .el-tag) {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #E0E1DD !important;
+  border: none !important;
+}
+
+// 表格多选框 - 强制覆盖
+body .el-table .el-checkbox__inner,
+body :deep(.el-table .el-checkbox__inner),
+.teacher-window :deep(.el-table .el-checkbox__inner),
+*:deep(.el-table .el-checkbox__inner) {
+  background-color: #1B263B !important;
+  border-color: #415A77 !important;
+}
+
+// 表格排序图标 - 强制覆盖
+body .el-table .el-table__column-sort,
+body :deep(.el-table .el-table__column-sort),
+.teacher-window :deep(.el-table .el-table__column-sort),
+*:deep(.el-table .el-table__column-sort) {
+  color: #4CC9F0 !important;
+}

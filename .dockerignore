@@ -1,0 +1,78 @@
+# 实训教学系统 - Docker 忽略文件
+# 类似于 .gitignore，用于 Docker 构建上下文
+
+# 依赖目录
+node_modules/
+**/node_modules/**
+server/node_modules/
+electron-app/node_modules/
+
+# 构建输出
+dist/
+**/dist/**
+electron-app/dist/
+electron-app/out/
+server/dist/
+
+# 日志文件
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 测试
+coverage/
+*.test.js
+*.spec.js
+__tests__/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+
+# 数据文件（开发时挂载，不需要构建）
+server/data/
+server/license_data/
+
+# 文档（不需要放入容器）
+docs/
+*.md
+!README.md
+
+# 脚本文件（Windows 专用）
+*.bat
+*.ps1
+*.cmd
+
+# Makefile（容器内不使用）
+Makefile
+
+# Docker 配置文件本身
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+.gitignore
+
+# Qwen 配置
+.qwen/
+
+# 其他
+.git/
+.gitignore
+.eslintignore
+.prettierrc

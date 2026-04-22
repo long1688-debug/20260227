@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统监控 - 实训教学系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        .panel {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .panel-title {
+            font-size: 20px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .metric-card {
+            background: #0f3460;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #4facfe;
+            margin-bottom: 5px;
+        }
+
+        .metric-label {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .services-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .service-item {
+            background: #0f3460;
+            padding: 15px 20px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .service-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .service-name {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .service-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status-online {
+            background: #00b894;
+            color: white;
+        }
+
+        .status-offline {
+            background: #ff7675;
+            color: white;
+        }
+
+        .logs-section {
+            grid-column: 1 / -1;
+        }
+
+        .logs-filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .filter-select {
+            background: #0f3460;
+            color: white;
+            border: 1px solid #667eea;
+            padding: 8px 15px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .logs-container {
+            background: #0a0a1a;
+            border: 1px solid #667eea;
+            border-radius: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+        }
+
+        .log-item {
+            padding: 10px;
+            border-bottom: 1px solid #1a1a2e;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .log-time {
+            color: #667eea;
+            margin-right: 10px;
+        }
+
+        .log-level {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-right: 10px;
+            font-size: 11px;
+        }
+
+        .log-info { background: #0984e3; }
+        .log-success { background: #00b894; }
+        .log-warning { background: #fdcb6e; }
+        .log-error { background: #ff7675; }
+
+        .log-category {
+            color: #6c5ce7;
+            margin-right: 10px;
+        }
+
+        .log-message {
+            color: #dfe6e9;
+        }
+
+        .logs-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .action-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .action-btn:hover {
+            background: #764ba2;
+        }
+
+        .action-btn.danger {
+            background: #ff7675;
+        }
+
+        .action-btn.danger:hover {
+            background: #d63031;
+        }
+
+        .statistics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4facfe;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #888;
+            font-size: 12px;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #1a1a2e;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            transition: width 0.3s;
+        }
+
+        .progress-cpu { background: linear-gradient(90deg, #667eea, #764ba2); }
+        .progress-memory { background: linear-gradient(90deg, #4facfe, #00f2fe); }
+        .progress-disk { background: linear-gradient(90deg, #fa709a, #fee140); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🖥️ 系统监控中心</h1>
+        <p>实时监控系统状态、服务运行和日志信息</p>
+    </div>
+
+    <div class="container">
+        <!-- 系统指标 -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>📊 系统指标</span>
+                <button class="refresh-btn" onclick="refreshMetrics()">🔄 刷新</button>
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value" id="cpuValue">0%</div>
+                    <div class="metric-label">CPU 使用率</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill progress-cpu" id="cpuProgress" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="memoryValue">0%</div>
+                    <div class="metric-label">内存使用率</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill progress-memory" id="memoryProgress" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="diskValue">0%</div>
+                    <div class="metric-label">磁盘使用率</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill progress-disk" id="diskProgress" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="uptimeValue">0h</div>
+                    <div class="metric-label">系统运行时间</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 服务状态 -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>🔌 服务状态</span>
+                <button class="refresh-btn" onclick="refreshServices()">🔄 刷新</button>
+            </div>
+            <div class="services-list" id="servicesList">
+                <div class="service-item">
+                    <div class="service-info">
+                        <span class="service-name">加载中...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 统计信息 -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>📈 统计信息</span>
+            </div>
+            <div class="statistics-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalLogs">0</div>
+                    <div class="stat-label">总日志数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="recentLogs">0</div>
+                    <div class="stat-label">最近1小时日志</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="onlineServices">0/0</div>
+                    <div class="stat-label">在线服务</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志查看 -->
+        <div class="panel logs-section">
+            <div class="panel-title">
+                <span>📝 系统日志</span>
+                <div style="display: flex; gap: 10px;">
+                    <button class="refresh-btn" onclick="refreshLogs()">🔄 刷新</button>
+                    <button class="action-btn" onclick="exportLogs()">📤 导出</button>
+                    <button class="action-btn danger" onclick="clearLogs()">🗑️ 清空</button>
+                </div>
+            </div>
+            <div class="logs-filters">
+                <select class="filter-select" id="logLevelFilter" onchange="filterLogs()">
+                    <option value="all">所有级别</option>
+                    <option value="info">信息</option>
+                    <option value="success">成功</option>
+                    <option value="warning">警告</option>
+                    <option value="error">错误</option>
+                </select>
+                <select class="filter-select" id="logCategoryFilter" onchange="filterLogs()">
+                    <option value="">所有类别</option>
+                    <option value="系统">系统</option>
+                    <option value="WebSocket">WebSocket</option>
+                    <option value="API">API</option>
+                    <option value="服务">服务</option>
+                </select>
+            </div>
+            <div class="logs-container" id="logsContainer">
+                <div class="log-item">加载日志中...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080';
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshAll();
+            // 每30秒自动刷新
+            setInterval(refreshAll, 30000);
+        });
+
+        async function refreshAll() {
+            await Promise.all([
+                refreshMetrics(),
+                refreshServices(),
+                refreshStatistics(),
+                refreshLogs()
+            ]);
+        }
+
+        async function refreshMetrics() {
+            try {
+                const response = await fetch(`${API_BASE}/api/monitor/metrics`);
+                const result = await response.json();
+
+                if (result.success) {
+                    const metrics = result.data;
+                    document.getElementById('cpuValue').textContent = `${metrics.cpu.toFixed(1)}%`;
+                    document.getElementById('memoryValue').textContent = `${metrics.memory.toFixed(1)}%`;
+                    document.getElementById('diskValue').textContent = `${metrics.disk.toFixed(1)}%`;
+
+                    document.getElementById('cpuProgress').style.width = `${metrics.cpu}%`;
+                    document.getElementById('memoryProgress').style.width = `${metrics.memory}%`;
+                    document.getElementById('diskProgress').style.width = `${metrics.disk}%`;
+
+                    const uptime = metrics.uptime;
+                    const hours = Math.floor(uptime / 3600);
+                    const minutes = Math.floor((uptime % 3600) / 60);
+                    document.getElementById('uptimeValue').textContent = `${hours}h ${minutes}m`;
+                }
+            } catch (error) {
+                console.error('获取系统指标失败:', error);
+            }
+        }
+
+        async function refreshServices() {
+            try {
+                const response = await fetch(`${API_BASE}/api/monitor/services`);
+                const result = await response.json();
+
+                if (result.success) {
+                    const servicesList = document.getElementById('servicesList');
+                    servicesList.innerHTML = result.data.map(service => `
+                        <div class="service-item">
+                            <div class="service-info">
+                                <span class="service-name">${service.name}</span>
+                            </div>
+                            <span class="service-status ${service.status === 'online' ? 'status-online' : 'status-offline'}">
+                                ${service.status === 'online' ? '在线' : '离线'}
+                            </span>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('获取服务状态失败:', error);
+            }
+        }
+
+        async function refreshStatistics() {
+            try {
+                const response = await fetch(`${API_BASE}/api/monitor/statistics`);
+                const result = await response.json();
+
+                if (result.success) {
+                    const stats = result.data;
+                    document.getElementById('totalLogs').textContent = stats.totalLogs;
+                    document.getElementById('recentLogs').textContent = stats.recentLogs;
+                    document.getElementById('onlineServices').textContent = `${stats.onlineServices}/${stats.totalServices}`;
+                }
+            } catch (error) {
+                console.error('获取统计信息失败:', error);
+            }
+        }
+
+        async function refreshLogs() {
+            try {
+                const level = document.getElementById('logLevelFilter').value;
+                const category = document.getElementById('logCategoryFilter').value;
+
+                const url = new URL(`${API_BASE}/api/monitor/logs`);
+                url.searchParams.append('level', level);
+                if (category) url.searchParams.append('category', category);
+
+                const response = await fetch(url);
+                const result = await response.json();
+
+                if (result.success) {
+                    const logsContainer = document.getElementById('logsContainer');
+                    if (result.data.data.length === 0) {
+                        logsContainer.innerHTML = '<div class="log-item">暂无日志</div>';
+                    } else {
+                        logsContainer.innerHTML = result.data.data.map(log => `
+                            <div class="log-item">
+                                <span class="log-time">[${log.time}]</span>
+                                <span class="log-level log-${log.level}">${log.level.toUpperCase()}</span>
+                                <span class="log-category">[${log.category}]</span>
+                                <span class="log-message">${log.message}</span>
+                            </div>
+                        `).join('');
+                    }
+                }
+            } catch (error) {
+                console.error('获取日志失败:', error);
+            }
+        }
+
+        function filterLogs() {
+            refreshLogs();
+        }
+
+        async function clearLogs() {
+            if (!confirm('确定要清空所有日志吗？')) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/monitor/logs/clear`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    alert('日志已清空');
+                    refreshLogs();
+                }
+            } catch (error) {
+                console.error('清空日志失败:', error);
+                alert('清空日志失败');
+            }
+        }
+
+        async function exportLogs() {
+            try {
+                const response = await fetch(`${API_BASE}/api/monitor/logs/export`);
+                const content = await response.text();
+
+                const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `server_logs_${new Date().getTime()}.txt`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('导出日志失败:', error);
+                alert('导出日志失败');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API测试 - 实训教学系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #FACC15 0%, #F59E0B 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #FACC15 0%, #F59E0B 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .api-list {
+            display: grid;
+            gap: 15px;
+            margin-bottom: 40px;
+        }
+
+        .api-item {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            border-left: 4px solid #FACC15;
+            transition: all 0.3s;
+        }
+
+        .api-item:hover {
+            box-shadow: 0 5px 15px rgba(250, 204, 21, 0.2);
+        }
+
+        .api-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .api-method {
+            padding: 5px 12px;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+        }
+
+        .api-method.get {
+            background: #48bb78;
+        }
+
+        .api-method.post {
+            background: #4299e1;
+        }
+
+        .api-method.put {
+            background: #ed8936;
+        }
+
+        .api-method.delete {
+            background: #f56565;
+        }
+
+        .api-path {
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .api-desc {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        .api-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #FACC15 0%, #F59E0B 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(250, 204, 21, 0.4);
+        }
+
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .result-panel {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 30px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .result-panel pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .result-panel .json-key {
+            color: #9cdcfe;
+        }
+
+        .result-panel .json-string {
+            color: #ce9178;
+        }
+
+        .result-panel .json-number {
+            color: #b5cea8;
+        }
+
+        .result-panel .json-boolean {
+            color: #569cd6;
+        }
+
+        .filter-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 10px 20px;
+            border: 2px solid #FACC15;
+            background: white;
+            color: #333;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .filter-btn.active {
+            background: #FACC15;
+            color: white;
+        }
+
+        .filter-btn:hover {
+            background: #FACC15;
+            color: white;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 300px;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #FACC15;
+        }
+
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-item {
+            background: linear-gradient(135deg, #FACC15 0%, #F59E0B 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-item h3 {
+            font-size: 14px;
+            margin-bottom: 5px;
+            opacity: 0.9;
+        }
+
+        .stat-item .value {
+            font-size: 28px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 API 测试中心</h1>
+            <p>接口测试、性能监控、日志查看、调试工具</p>
+        </div>
+
+        <div class="content">
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <h3>API总数</h3>
+                    <div class="value" id="apiCount">--</div>
+                </div>
+                <div class="stat-item">
+                    <h3>测试次数</h3>
+                    <div class="value" id="testCount">0</div>
+                </div>
+                <div class="stat-item">
+                    <h3>成功率</h3>
+                    <div class="value" id="successRate">--</div>
+                </div>
+                <div class="stat-item">
+                    <h3>平均响应时间</h3>
+                    <div class="value" id="avgResponse">--</div>
+                </div>
+            </div>
+
+            <div class="filter-bar">
+                <button class="filter-btn active" onclick="filterAPI('all')">全部</button>
+                <button class="filter-btn" onclick="filterAPI('get')">GET</button>
+                <button class="filter-btn" onclick="filterAPI('post')">POST</button>
+                <button class="filter-btn" onclick="filterAPI('coco')">COCO数据集</button>
+                <input type="text" class="search-box" placeholder="搜索API..." id="searchBox" oninput="searchAPI()">
+            </div>
+
+            <div id="apiList" class="api-list">
+                <div class="loading">正在加载API列表...</div>
+            </div>
+
+            <div class="result-panel" id="resultPanel" style="display: none;">
+                <pre id="resultContent"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080';
+        let testCount = 0;
+        let successCount = 0;
+        let totalResponseTime = 0;
+
+        // API列表
+        const apis = [
+            { method: 'GET', path: '/api/status', desc: '获取系统状态', category: 'system' },
+            { method: 'GET', path: '/api/health', desc: '健康检查', category: 'system' },
+            { method: 'GET', path: '/api/health/deep', desc: '深度健康检查', category: 'system' },
+            { method: 'POST', path: '/api/login', desc: '用户登录', category: 'auth', body: { username: 'admin', password: 'admin123' } },
+            { method: 'GET', path: '/api/users', desc: '获取用户列表', category: 'user' },
+            { method: 'GET', path: '/api/user', desc: '获取当前用户', category: 'user' },
+            { method: 'GET', path: '/api/classes', desc: '获取班级列表', category: 'class' },
+            { method: 'GET', path: '/api/students', desc: '获取学生列表', category: 'student' },
+            { method: 'GET', path: '/api/tasks', desc: '获取任务列表', category: 'task' },
+            { method: 'GET', path: '/api/recordings', desc: '获取录制列表', category: 'recording' },
+            { method: 'GET', path: '/api/coco/stats', desc: '获取COCO数据集统计', category: 'coco' },
+            { method: 'GET', path: '/api/coco/images', desc: '获取COCO图像列表', category: 'coco', params: { limit: 10 } },
+            { method: 'GET', path: '/api/coco/random', desc: '获取随机COCO图像', category: 'coco' },
+            { method: 'GET', path: '/api/coco/image/{id}', desc: '获取COCO图像文件', category: 'coco' },
+            { method: 'GET', path: '/api/coco/annotations/{id}', desc: '获取图像标注信息', category: 'coco' },
+            { method: 'POST', path: '/api/coco/detect/{id}', desc: '检测图像中的目标', category: 'coco' },
+            { method: 'POST', path: '/api/coco/evaluate', desc: '运行模型评估', category: 'coco', body: { imageIds: [] } },
+            { method: 'GET', path: '/api/vision/history', desc: '获取视觉分析历史', category: 'vision' },
+            { method: 'GET', path: '/api/whisper/status', desc: '获取Whisper状态', category: 'whisper' },
+            { method: 'GET', path: '/api/live/status', desc: '获取直播状态', category: 'live' },
+            { method: 'GET', path: '/api/screen-share/status', desc: '获取屏幕共享状态', category: 'screen' }
+        ];
+
+        // 过滤API
+        function filterAPI(filter) {
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            let filtered = apis;
+            if (filter !== 'all') {
+                if (filter === 'coco') {
+                    filtered = apis.filter(api => api.category === 'coco');
+                } else {
+                    filtered = apis.filter(api => api.method.toLowerCase() === filter);
+                }
+            }
+
+            renderAPI(filtered);
+        }
+
+        // 搜索API
+        function searchAPI() {
+            const query = document.getElementById('searchBox').value.toLowerCase();
+            const filtered = apis.filter(api => 
+                api.path.toLowerCase().includes(query) || 
+                api.desc.toLowerCase().includes(query)
+            );
+            renderAPI(filtered);
+        }
+
+        // 渲染API列表
+        function renderAPI(apiList) {
+            document.getElementById('apiCount').textContent = apiList.length;
+
+            const apiListEl = document.getElementById('apiList');
+            apiListEl.innerHTML = apiList.map(api => `
+                <div class="api-item">
+                    <div class="api-header">
+                        <span class="api-method ${api.method.toLowerCase()}">${api.method}</span>
+                        <span class="api-path">${api.path}</span>
+                    </div>
+                    <div class="api-desc">${api.desc}</div>
+                    <div class="api-actions">
+                        <button class="btn btn-primary" onclick="testAPI('${api.method}', '${api.path}', ${api.body ? "'" + JSON.stringify(api.body).replace(/'/g, "\\'") + "'" : 'null'})">
+                            🧪 测试
+                        </button>
+                        <button class="btn btn-secondary" onclick="copyPath('${api.path}')">
+                            📋 复制路径
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 测试API
+        async function testAPI(method, path, body) {
+            const startTime = Date.now();
+            testCount++;
+            document.getElementById('testCount').textContent = testCount;
+
+            const resultPanel = document.getElementById('resultPanel');
+            const resultContent = document.getElementById('resultContent');
+            resultPanel.style.display = 'block';
+            resultContent.textContent = `正在测试 ${method} ${path}...`;
+
+            try {
+                const url = path.includes('{id}') 
+                    ? `${API_BASE}${path.replace('{id}', 'test123')}` 
+                    : `${API_BASE}${path}`;
+
+                const options = {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' }
+                };
+
+                if (body && method === 'POST') {
+                    options.body = JSON.stringify(body);
+                }
+
+                const response = await fetch(url, options);
+                const data = await response.json();
+                const responseTime = Date.now() - startTime;
+
+                totalResponseTime += responseTime;
+                document.getElementById('avgResponse').textContent = `${Math.round(totalResponseTime / testCount)}ms`;
+
+                if (response.ok) {
+                    successCount++;
+                    document.getElementById('successRate').textContent = `${Math.round(successCount / testCount * 100)}%`;
+                }
+
+                resultContent.innerHTML = `<span class="json-key">请求</span>: ${method} ${url}
+<span class="json-key">状态码</span>: <span class="json-number">${response.status}</span>
+<span class="json-key">响应时间</span>: <span class="json-number">${responseTime}ms</span>
+<span class="json-key">响应内容</span>:
+${syntaxHighlight(JSON.stringify(data, null, 2))}`;
+            } catch (error) {
+                const responseTime = Date.now() - startTime;
+                totalResponseTime += responseTime;
+                
+                resultContent.innerHTML = `<span class="json-key">请求</span>: ${method} ${API_BASE}${path}
+<span class="json-key">错误</span>: <span style="color: #f56565;">${error.message}</span>
+<span class="json-key">响应时间</span>: <span class="json-number">${responseTime}ms</span>`;
+            }
+        }
+
+        // JSON语法高亮
+        function syntaxHighlight(json) {
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'json-key';
+                    } else {
+                        cls = 'json-string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'json-boolean';
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+
+        // 复制路径
+        function copyPath(path) {
+            navigator.clipboard.writeText(`${API_BASE}${path}`).then(() => {
+                alert('路径已复制到剪贴板');
+            }).catch(() => {
+                alert('复制失败，请手动复制');
+            });
+        }
+
+        // 页面加载时初始化
+        window.addEventListener('DOMContentLoaded', () => {
+            renderAPI(apis);
+        });
+    </script>
+</body>
+</html>

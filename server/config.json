@@ -1,0 +1,70 @@
+{
+  "server": {
+    "name": "实训教学系统后端服务",
+    "version": "1.0.0",
+    "httpPort": 8088,
+    "wsPort": 8081,
+    "host": "0.0.0.0"
+  },
+  "database": {
+    "type": "memory",
+    "dataDir": "./data",
+    "backupInterval": 3600000
+  },
+  "auth": {
+    "sessionTimeout": 3600000,
+    "secretKey": "training_system_secret_key_2024",
+    "defaultAccounts": {
+      "admin": {
+        "password": "admin123",
+        "role": "admin",
+        "name": "管理员"
+      },
+      "teacher1": {
+        "password": "teacher123",
+        "role": "teacher",
+        "name": "张老师"
+      }
+    }
+  },
+  "vision": {
+    "enabled": true,
+    "dangerousObjects": [
+      "knife",
+      "scissors",
+      "baseball bat",
+      "fork",
+      "hammer",
+      "screwdriver"
+    ],
+    "tools": [
+      "knife",
+      "scissors",
+      "fork",
+      "spoon",
+      "cup",
+      "bottle",
+      "cell phone",
+      "laptop",
+      "book",
+      "backpack"
+    ],
+    "safetyScoreDeduction": 20,
+    "maxResults": 500
+  },
+  "evaluation": {
+    "maxHistory": 1000,
+    "scoring": {
+      "safeOperation": 40,
+      "correctTools": 30,
+      "properPosture": 20,
+      "timeEfficiency": 10
+    }
+  },
+  "logging": {
+    "level": "info",
+    "file": "./server.log",
+    "maxSize": "10MB",
+    "maxFiles": 5
+  }
+}

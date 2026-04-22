@@ -1,0 +1,91 @@
+[package]
+name = "training-teaching-system"
+version = "2.0.0"
+description = "实训教学实践系统 - Tauri 版"
+authors = ["Training Team"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+bcrypt = "0.15"
+dirs = "5"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+anyhow = "1"
+camino = "1"
+sha2 = "0.10"
+
+# 系统信息
+sysinfo = "0.30"
+
+# Base64 编码（用于 ONVIF 认证）
+base64 = "0.21"
+
+# 查找可执行文件
+which = "4"
+
+# 音频处理
+cpal = "0.15"
+# 字幕解析
+regex = "1.10"
+
+# Whisper 语音识别 (暂时禁用，需要 libclang)
+# whisper-rs = { version = "0.11", default-features = false }
+
+# 音频重采样
+rubato = "0.14"
+
+# 随机数生成（用于 ONVIF MessageID）
+fastrand = "2"
+
+# 图像处理（用于火焰/烟雾检测）
+image = "0.25"
+
+# 异步 Trait
+async-trait = "0.1"
+
+# 日志
+log = "0.4"
+
+# 全局静态变量
+lazy_static = "1.4"
+
+# Unix 信号处理（仅 Unix 平台）
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.27", features = ["signal"] }
+libc = "0.2"
+
+# Windows API（用于进程控制）
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["processthreadsapi", "handleapi", "winnt"] }
+
+[patch.crates-io]
+# ole32-sys = { path = "patches/ole32-sys" }  # 不再需要
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+
+# 允许使用 wasm32 目标
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

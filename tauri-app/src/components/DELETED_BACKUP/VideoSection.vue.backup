@@ -1,0 +1,127 @@
+<template>
+  <div class="video-section">
+    <div class="video-header">
+      <label>布局:</label>
+      <el-select v-model="currentLayout" placeholder="选择布局" class="layout-select">
+        <el-option label="1 分屏" :value="1" />
+        <el-option label="2 分屏" :value="2" />
+        <el-option label="3 分屏" :value="3" />
+        <el-option label="4 分屏" :value="4" />
+        <el-option label="6 分屏" :value="6" />
+        <el-option label="9 分屏" :value="9" />
+        <el-option label="16 分屏" :value="16" />
+        <el-option label="25 分屏" :value="25" />
+        <el-option label="36 分屏" :value="36" />
+      </el-select>
+    </div>
+    
+    <div class="video-grid" :style="gridStyle">
+      <div 
+        v-for="index in currentLayout" 
+        :key="index"
+        class="video-area"
+        @dblclick="handleDoubleClick(index)"
+      >
+        <div class="video-content">
+          <span class="camera-name">摄像头 {{ index }}</span>
+        </div>
+        <div class="video-status">
+          <div class="status-dot"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue';
+
+const currentLayout = ref(1);
+
+const gridStyle = computed(() => {
+  const cols = Math.ceil(Math.sqrt(currentLayout.value));
+  return {
+    gridTemplateColumns: `repeat(${cols}, 1fr)`
+  };
+});
+
+const handleDoubleClick = (index) => {
+  console.log('Double click on video:', index);
+  // 实现全屏逻辑
+};
+</script>
+
+<style lang="scss" scoped>
+.video-section {
+  width: 1500px;
+  background: #0F2035;
+  display: flex;
+  flex-direction: column;
+}
+
+.video-header {
+  height: 50px;
+  background: #0F2035;
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  gap: 10px;
+
+  label {
+    color: #FFFFFF;
+    font-size: 14px;
+  }
+
+  .layout-select {
+    width: 150px;
+  }
+}
+
+.video-grid {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  padding: 2px;
+  background: #000000;
+  overflow: auto;
+}
+
+.video-area {
+  position: relative;
+  background: #000000;
+  border: 1px solid #4A90E2;
+  overflow: hidden;
+  cursor: pointer;
+
+  &:hover {
+    border-color: #00BFFF;
+  }
+}
+
+.video-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camera-name {
+  color: #888888;
+  font-size: 14px;
+}
+
+.video-status {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00FF00;
+  box-shadow: 0 0 5px #00FF00;
+}
+</style>

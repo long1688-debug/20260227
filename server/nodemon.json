@@ -1,0 +1,16 @@
+{
+  "watch": [
+    ".",
+    "config.json"
+  ],
+  "ext": "js,json",
+  "ignore": [
+    "node_modules",
+    "dist",
+    "data"
+  ],
+  "delay": 500,
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

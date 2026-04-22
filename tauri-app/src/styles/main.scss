@@ -1,0 +1,47 @@
+// 全局样式变量
+$bg-primary: #0D1B2A;
+$bg-secondary: #0A1525;
+$bg-tertiary: #0F2035;
+$bg-card: #1A2A3A;
+$bg-video: #000000;
+
+$text-primary: #FFFFFF;
+$text-secondary: #AAAAAA;
+$text-muted: #888888;
+
+$accent-blue: #4A90E2;
+$accent-cyan: #00BFFF;
+$accent-green: #00FF00;
+$accent-orange: #FF4500;
+$accent-purple-start: #6B5CE7;
+$accent-purple-end: #8B6CE8;
+
+$border-color: #4A90E2;
+
+// 导入跨平台适配样式
+@import './platform-adaptive.css';
+
+// 全局样式
+body {
+  background: $bg-primary;
+  color: $text-primary;
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: $bg-secondary;
+}
+
+::-webkit-scrollbar-thumb {
+  background: $accent-blue;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: $accent-cyan;
+}

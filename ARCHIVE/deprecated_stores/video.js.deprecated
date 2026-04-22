@@ -1,0 +1,316 @@
+import { defineStore } from 'pinia';
+import { ref, reactive } from 'vue';
+
+/**
+ * ⚠️ 已废弃 - DEPRECATED - 禁止使用！
+ * 
+ * 🚨 重要警告：此文件已被完全废弃，不应在任何新代码中使用！
+ * 
+ * 此 Store 已被 useVideoSync composable 替代。
+ * 请使用 `import { useVideoSync } from '@/composables/useVideoSync'` 代替。
+ * 
+ * 迁移原因：
+ * 1. 统一状态管理：避免多套系统并存导致的状态不一致
+ * 2. 更好的类型安全：Composable 提供更好的 TypeScript 支持
+ * 3. 更灵活的组合：Composable 可以在任何地方使用，不受 Pinia 限制
+ * 4. 简化架构：减少维护成本，提高代码可维护性
+ * 
+ * 迁移指南：
+ * - videoStore.currentLayout → useVideoSync().currentLayout
+ * - videoStore.setLayout() → useVideoSync().setLayout()
+ * - videoStore.setCanvasSource() → useVideoSync().setCanvasSource()
+ * - videoStore.removeSource() → useVideoSync().removeSource()
+ * - videoStore.setCanvasRecordingState() → useVideoSync().setCanvasRecordingState()
+ * - 等等...
+ * 
+ * @deprecated 请使用 useVideoSync composable 替代
+ * @see ARCHIVE/README.md 了解更多归档信息
+ */
+
+// 🚨 运行时警告：如果此文件被导入，立即抛出错误
+console.error(`
+╔═══════════════════════════════════════════════════════════╗
+║  🚨 严重警告：检测到已废弃的 useVideoStore 被导入！       ║
+║                                                           ║
+║  此文件位于: ARCHIVE/deprecated_stores/video.js          ║
+║  已被完全废弃，不应在任何代码中使用！                      ║
+║                                                           ║
+║  ✅ 正确做法:                                             ║
+║  import { useVideoSync } from '@/composables/useVideoSync'║
+║                                                           ║
+║  ❌ 错误做法:                                             ║
+║  import { useVideoStore } from '@/stores/video'           ║
+║                                                           ║
+║  请立即修改代码，否则可能导致严重的状态不一致问题！        ║
+╚═══════════════════════════════════════════════════════════╝
+`);
+
+export const useVideoStore = defineStore('video', () => {
+  // ==================== 状态 ====================
+  
+  // 信号源列表
+  const allSources = ref([]);
+  
+  // 视频网格源映射 (数组索引对应画布索引)
+  const videoSources = ref([]);
+  
+  // 画布源映射 { canvasIndex: sourceId }
+  const canvasSourceMap = ref({});
+  
+  // 当前选中的信号源
+  const currentSelectedSource = ref(null);
+  const currentSelectedSourceIndex = ref(-1);
+  
+  // 布局设置
+  const currentLayout = ref(1);
+  const pipVisible = ref(false);
+  const pipPosition = ref('');
+  const isMaximized = ref(false);
+  const maximizedIndex = ref(0);
+
+  // 分屏布局映射 - 存储每个分屏的信号源配置
+  // { layoutId: { canvasIndex: sourceId } }
+  const layoutCanvasMaps = ref({});
+
+  // 录制状态 (使用 Map)
+  const canvasRecordingStates = ref(new Map());
+
+  // ==================== 计算属性 ====================
+  
+  /**
+   * 获取指定画布的源
+   */
+  const getSourceByCanvasIndex = (canvasIndex) => {
+    const sourceId = canvasSourceMap.value[canvasIndex];
+    if (!sourceId) return null;
+    return allSources.value.find(s => s.id === sourceId);
+  };
+
+  /**
+   * 获取指定画布的录制状态
+   */
+  const getCanvasRecordingState = (canvasIndex) => {
+    return canvasRecordingStates.value.get(canvasIndex) || { recording: false, paused: false };
+  };
+
+  /**
+   * 检查画布是否有信号源
+   */
+  const hasSourceAtCanvas = (canvasIndex) => {
+    return !!canvasSourceMap.value[canvasIndex];
+  };
+
+  // ==================== 操作 ====================
+
+  /**
+   * 添加信号源
+   */
+  const addSource = (source) => {
+    allSources.value.push(source);
+  };
+
+  /**
+   * 删除信号源
+   */
+  const removeSource = (sourceId) => {
+    // 从画布映射中移除
+    Object.keys(canvasSourceMap.value).forEach(key => {
+      if (canvasSourceMap.value[key] === sourceId) {
+        delete canvasSourceMap.value[key];
+      }
+    });
+    
+    // 从列表中移除
+    allSources.value = allSources.value.filter(s => s.id !== sourceId);
+  };
+
+  /**
+   * 设置画布的信号源
+   */
+  const setCanvasSource = (canvasIndex, source) => {
+    if (!source) {
+      // 清空画布
+      delete canvasSourceMap.value[canvasIndex];
+      videoSources.value[canvasIndex - 1] = null;
+      return;
+    }
+
+    // 确保源在列表中
+    if (!allSources.value.find(s => s.id === source.id)) {
+      allSources.value.push(source);
+    }
+
+    // 更新映射
+    canvasSourceMap.value[canvasIndex] = source.id;
+    videoSources.value[canvasIndex - 1] = source;
+    currentSelectedSource.value = source;
+    currentSelectedSourceIndex.value = canvasIndex - 1;
+  };
+
+  /**
+   * 更新信号源信息
+   */
+  const updateSource = (sourceId, updates) => {
+    const source = allSources.value.find(s => s.id === sourceId);
+    if (source) {
+      Object.assign(source, updates);
+    }
+  };
+
+  /**
+   * 设置画布录制状态
+   */
+  const setCanvasRecordingState = (canvasIndex, state) => {
+    canvasRecordingStates.value.set(canvasIndex, state);
+  };
+
+  /**
+   * 清除指定画布的录制状态
+   */
+  const clearCanvasRecordingState = (canvasIndex) => {
+    canvasRecordingStates.value.delete(canvasIndex);
+  };
+
+  /**
+   * 获取所有录制状态
+   */
+  const getAllRecordingStates = () => {
+    return new Map(canvasRecordingStates.value);
+  };
+
+  /**
+   * 切换画中画
+   */
+  const togglePiP = (position = 'pip-bottom-right') => {
+    pipVisible.value = !pipVisible.value;
+    if (pipVisible.value) {
+      pipPosition.value = position;
+      currentLayout.value = 2;
+    } else {
+      pipPosition.value = '';
+    }
+  };
+
+  /**
+   * 设置布局
+   */
+  const setLayout = (layout, position = '') => {
+    // 保存当前布局的信号源配置
+    saveCurrentLayoutConfig();
+
+    currentLayout.value = layout;
+    if (position) {
+      pipPosition.value = position;
+      pipVisible.value = true;
+    }
+
+    // 加载新布局的信号源配置
+    loadLayoutConfig(layout);
+  };
+
+  /**
+   * 保存当前布局的信号源配置
+   */
+  const saveCurrentLayoutConfig = () => {
+    const layoutId = currentLayout.value;
+    layoutCanvasMaps.value[layoutId] = { ...canvasSourceMap.value };
+  };
+
+  /**
+   * 加载指定布局的信号源配置
+   */
+  const loadLayoutConfig = (layoutId) => {
+    if (layoutCanvasMaps.value[layoutId]) {
+      canvasSourceMap.value = { ...layoutCanvasMaps.value[layoutId] };
+
+      // 更新 videoSources 数组
+      videoSources.value = Object.keys(canvasSourceMap.value).map(canvasIndex => {
+        const sourceId = canvasSourceMap.value[canvasIndex];
+        return allSources.value.find(s => s.id === sourceId) || null;
+      });
+    } else {
+      // 如果没有保存的配置，清空画布
+      canvasSourceMap.value = {};
+      videoSources.value = [];
+    }
+  };
+
+  /**
+   * 放大指定画布
+   */
+  const maximizeCanvas = (canvasIndex) => {
+    isMaximized.value = true;
+    maximizedIndex.value = canvasIndex;
+  };
+
+  /**
+   * 还原布局
+   */
+  const restoreLayout = () => {
+    isMaximized.value = false;
+    maximizedIndex.value = 0;
+  };
+
+  /**
+   * 清空所有画布
+   */
+  const clearAllCanvases = () => {
+    canvasSourceMap.value = {};
+    videoSources.value = [];
+  };
+
+  /**
+   * 重置 store
+   */
+  const reset = () => {
+    allSources.value = [];
+    videoSources.value = [];
+    canvasSourceMap.value = {};
+    canvasRecordingStates.value.clear();
+    currentSelectedSource.value = null;
+    currentSelectedSourceIndex.value = -1;
+    currentLayout.value = 1;
+    pipVisible.value = false;
+    pipPosition.value = '';
+    isMaximized.value = false;
+    maximizedIndex.value = 0;
+  };
+
+  return {
+    // 状态
+    allSources,
+    videoSources,
+    canvasSourceMap,
+    currentSelectedSource,
+    currentSelectedSourceIndex,
+    currentLayout,
+    pipVisible,
+    pipPosition,
+    isMaximized,
+    maximizedIndex,
+    canvasRecordingStates,
+    layoutCanvasMaps,
+
+    // 计算属性
+    getSourceByCanvasIndex,
+    getCanvasRecordingState,
+    hasSourceAtCanvas,
+
+    // 操作
+    addSource,
+    removeSource,
+    setCanvasSource,
+    updateSource,
+    setCanvasRecordingState,
+    clearCanvasRecordingState,
+    getAllRecordingStates,
+    togglePiP,
+    setLayout,
+    maximizeCanvas,
+    restoreLayout,
+    clearAllCanvases,
+    saveCurrentLayoutConfig,
+    loadLayoutConfig,
+    reset
+  };
+});

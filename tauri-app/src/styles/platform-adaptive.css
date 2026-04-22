@@ -1,0 +1,352 @@
+/**
+ * 跨平台适配样式
+ * 
+ * 提供针对不同平台和输入方式的CSS变量和样式类，
+ * 支持触控优化、响应式布局和平台特定样式。
+ */
+
+/* ========== 平台特定 CSS 变量 ========== */
+:root {
+  /* 通用变量 */
+  --platform-primary-color: #409eff;
+  --platform-success-color: #67c23a;
+  --platform-warning-color: #e6a23c;
+  --platform-danger-color: #f56c6c;
+  
+  /* 间距（触控优化） */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  
+  /* 按钮尺寸（动态调整） */
+  --button-min-width: 32px;
+  --button-min-height: 32px;
+  --button-padding-x: 12px;
+  --button-padding-y: 8px;
+  --button-font-size: 14px;
+  
+  /* 触摸目标最小尺寸 */
+  --touch-target-min: 24px;
+  
+  /* 侧边栏宽度 */
+  --sidebar-width: 240px;
+  
+  /* 内容区边距 */
+  --content-padding: 20px;
+  
+  /* 圆角 */
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  
+  /* 阴影 */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* Windows 触控屏优化 */
+.platform-windows_touch {
+  --button-min-width: 48px;
+  --button-min-height: 48px;
+  --button-padding-x: 16px;
+  --button-padding-y: 12px;
+  --button-font-size: 16px;
+  --touch-target-min: 44px;
+  --spacing-sm: 12px;
+  --spacing-md: 20px;
+}
+
+/* Android 平板优化 */
+.platform-android_tablet,
+.platform-android_aio {
+  --button-min-width: 48px;
+  --button-min-height: 48px;
+  --button-padding-x: 16px;
+  --button-padding-y: 12px;
+  --button-font-size: 16px;
+  --touch-target-min: 44px;
+  --sidebar-width: 0; /* 平板使用底部导航 */
+  --content-padding: 16px;
+}
+
+/* 信创系统优化 */
+.platform-linux_uos,
+.platform-linux_kylin {
+  --border-radius-sm: 6px;
+  --border-radius-md: 10px;
+  --border-radius-lg: 14px;
+}
+
+/* ========== 布局模式样式 ========== */
+
+/* 桌面侧边栏模式 */
+.layout-desktop_sidebar {
+  --sidebar-width: 240px;
+  --content-padding: 20px;
+  
+  .app-container {
+    display: flex;
+    flex-direction: row;
+    height: 100vh;
+  }
+  
+  .sidebar {
+    width: var(--sidebar-width);
+    height: 100%;
+    position: fixed;
+    left: 0;
+    top: 0;
+  }
+  
+  .main-content {
+    margin-left: var(--sidebar-width);
+    padding: var(--content-padding);
+    flex: 1;
+  }
+}
+
+/* 平板底部Tab模式 */
+.layout-tablet_bottom_tab {
+  --sidebar-width: 100%;
+  --content-padding: 16px;
+  
+  .app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  
+  .sidebar {
+    order: 2;
+    width: 100%;
+    height: 60px;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    box-shadow: var(--shadow-md);
+  }
+  
+  .main-content {
+    order: 1;
+    padding: var(--content-padding);
+    padding-bottom: 76px; /* 60px + 16px */
+    flex: 1;
+    overflow-y: auto;
+  }
+}
+
+/* 大屏网格模式 */
+.layout-large_screen_grid {
+  --sidebar-width: 280px;
+  --content-padding: 24px;
+  
+  .app-container {
+    display: grid;
+    grid-template-columns: var(--sidebar-width) 1fr;
+    grid-template-rows: 1fr;
+    height: 100vh;
+  }
+  
+  .sidebar {
+    grid-column: 1;
+    width: var(--sidebar-width);
+    height: 100%;
+  }
+  
+  .main-content {
+    grid-column: 2;
+    padding: var(--content-padding);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: var(--spacing-lg);
+  }
+}
+
+/* 紧凑单页模式 */
+.layout-compact_single {
+  --content-padding: 8px;
+  
+  .app-container {
+    display: block;
+    height: 100vh;
+  }
+  
+  .sidebar {
+    display: none; /* 隐藏侧边栏，使用抽屉式菜单 */
+  }
+  
+  .main-content {
+    padding: var(--content-padding);
+    height: 100%;
+    overflow-y: auto;
+  }
+}
+
+/* ========== 触控优化样式 ========== */
+
+.touch-optimized {
+  /* 增大点击区域 */
+  button,
+  .el-button,
+  .clickable {
+    min-width: var(--button-min-width);
+    min-height: var(--button-min-height);
+    padding: var(--button-padding-y) var(--button-padding-x);
+    font-size: var(--button-font-size);
+    
+    /* 移除悬停效果（触控无hover） */
+    &:hover {
+      transition: none;
+    }
+    
+    /* 激活反馈 */
+    &:active {
+      transform: scale(0.95);
+      transition: transform 0.1s;
+    }
+  }
+  
+  /* 增大表单控件 */
+  .el-input__inner,
+  .el-select,
+  .el-checkbox,
+  .el-radio {
+    min-height: var(--touch-target-min);
+    font-size: var(--button-font-size);
+  }
+  
+  /* 优化滚动条（触控设备隐藏） */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+  
+  /* 禁用文本选择（避免误触） */
+  .no-select {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+/* ========== 平台特定组件样式 ========== */
+
+/* Windows 触控屏：增大滑动距离 */
+.platform-windows_touch {
+  .el-slider__button {
+    width: 20px;
+    height: 20px;
+  }
+  
+  .el-switch__core {
+    min-width: 50px;
+    height: 28px;
+  }
+}
+
+/* Android：Material Design 风格 */
+.platform-android_tablet,
+.platform-android_aio {
+  .el-button {
+    border-radius: var(--border-radius-md);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+  }
+  
+  .el-card {
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-md);
+  }
+}
+
+/* 信创系统：统一视觉风格 */
+.platform-linux_uos,
+.platform-linux_kylin {
+  .el-button {
+    border-radius: var(--border-radius-md);
+  }
+  
+  .el-input__inner,
+  .el-textarea__inner {
+    border-radius: var(--border-radius-sm);
+  }
+}
+
+/* ========== 响应式断点 ========== */
+
+/* 小屏幕（手机/小平板） */
+@media (max-width: 767px) {
+  :root {
+    --content-padding: 12px;
+    --spacing-lg: 16px;
+  }
+}
+
+/* 中等屏幕（平板） */
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root {
+    --content-padding: 16px;
+  }
+}
+
+/* 大屏幕（桌面） */
+@media (min-width: 1024px) and (max-width: 1919px) {
+  :root {
+    --content-padding: 20px;
+  }
+}
+
+/* 超大屏幕（4K/大屏） */
+@media (min-width: 1920px) {
+  :root {
+    --content-padding: 24px;
+    --spacing-xl: 40px;
+  }
+}
+
+/* ========== 横屏/竖屏适配 ========== */
+
+/* 竖屏模式 */
+@media (orientation: portrait) {
+  .layout-tablet_bottom_tab {
+    .main-content {
+      grid-template-columns: 1fr; /* 单列布局 */
+    }
+  }
+}
+
+/* 横屏模式 */
+@media (orientation: landscape) {
+  .layout-tablet_bottom_tab {
+    .main-content {
+      grid-template-columns: repeat(2, 1fr); /* 双列布局 */
+    }
+  }
+}
+
+/* ========== 高对比度模式（无障碍） ========== */
+
+@media (prefers-contrast: high) {
+  :root {
+    --platform-primary-color: #0056b3;
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
+  }
+  
+  .el-button {
+    border-width: 2px;
+  }
+}
+
+/* ========== 减少动画模式（无障碍） ========== */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

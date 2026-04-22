@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教师管理 - 实训教学系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #00B4DB 0%, #0083B0 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #00B4DB 0%, #0083B0 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #00B4DB 0%, #0083B0 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 20px rgba(0, 180, 219, 0.3);
+            transition: transform 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+
+        .stat-card .value {
+            font-size: 36px;
+            font-weight: bold;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            padding: 15px 30px;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            color: #0083B0;
+            border-bottom-color: #0083B0;
+        }
+
+        .tab:hover {
+            color: #00B4DB;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .class-list,
+        .task-list,
+        .student-list {
+            display: grid;
+            gap: 20px;
+        }
+
+        .class-card,
+        .task-card,
+        .student-card {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+
+        .class-card:hover,
+        .task-card:hover,
+        .student-card:hover {
+            border-color: #00B4DB;
+            box-shadow: 0 5px 15px rgba(0, 180, 219, 0.2);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .badge {
+            background: #00B4DB;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #666;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00B4DB 0%, #0083B0 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 180, 219, 0.4);
+        }
+
+        .btn-success {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-warning {
+            background: #ed8936;
+            color: white;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        th,
+        td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        th {
+            background: #00B4DB;
+            color: white;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        /* 音频监控样式 */
+        .audio-container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .audio-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .audio-control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .audio-control-group label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .audio-control-group input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(90deg, #00B4DB, #0083B0);
+            outline: none;
+        }
+
+        .audio-status {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .audio-status-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+
+        .audio-status-indicator.active {
+            background: #4CAF50;
+            box-shadow: 0 0 10px #4CAF50;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .audio-visualizer-container {
+            background: #000;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        #audioVisualizerCanvas {
+            width: 100%;
+            height: 150px;
+            border-radius: 5px;
+        }
+
+        .audio-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .audio-stat {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .audio-stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00B4DB;
+        }
+
+        .audio-stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>👨‍🏫 教师管理平台</h1>
+            <p>管理班级、分配任务、批改作业、成绩管理</p>
+        </div>
+
+        <div class="content">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>管理班级数</h3>
+                    <div class="value" id="classCount">--</div>
+                </div>
+                <div class="stat-card">
+                    <h3>学生总数</h3>
+                    <div class="value" id="studentCount">--</div>
+                </div>
+                <div class="stat-card">
+                    <h3>待批改作业</h3>
+                    <div class="value" id="pendingGrading">--</div>
+                </div>
+                <div class="stat-card">
+                    <h3>本月任务</h3>
+                    <div class="value" id="monthlyTasks">--</div>
+                </div>
+            </div>
+
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('classes')">🏫 班级管理</button>
+                <button class="tab" onclick="switchTab('tasks')">📝 任务管理</button>
+                <button class="tab" onclick="switchTab('students')">👥 学生管理</button>
+                <button class="tab" onclick="switchTab('grading')">✍️ 作业批改</button>
+                <button class="tab" onclick="switchTab('audio')">🎤 音频监控</button>
+            </div>
+
+            <div id="classes" class="tab-content active">
+                <h2 style="margin-bottom: 20px;">班级列表</h2>
+                <div id="classList" class="class-list">
+                    <div class="loading">正在加载班级列表...</div>
+                </div>
+            </div>
+
+            <div id="tasks" class="tab-content">
+                <h2 style="margin-bottom: 20px;">任务列表</h2>
+                <div id="taskList" class="task-list">
+                    <div class="loading">正在加载任务列表...</div>
+                </div>
+            </div>
+
+            <div id="students" class="tab-content">
+                <h2 style="margin-bottom: 20px;">学生列表</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>学号</th>
+                            <th>姓名</th>
+                            <th>班级</th>
+                            <th>完成进度</th>
+                            <th>平均成绩</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="studentTable">
+                        <tr>
+                            <td colspan="6" class="loading">正在加载学生列表...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="grading" class="tab-content">
+                <h2 style="margin-bottom: 20px;">待批改作业</h2>
+                <div id="gradingList" class="task-list">
+                    <div class="loading">正在加载待批改作业...</div>
+                </div>
+            </div>
+
+            <!-- 音频监控标签页 -->
+            <div id="audio" class="tab-content">
+                <h2 style="margin-bottom: 20px;">🎤 音频监控系统</h2>
+                <div class="audio-container">
+                    <!-- 状态显示 -->
+                    <div class="audio-status">
+                        <div class="audio-status-indicator" id="audioIndicator"></div>
+                        <div>
+                            <div style="font-weight: 600; color: #333;">麦克风状态</div>
+                            <div id="audioStatusText" style="color: #999;">未启用</div>
+                        </div>
+                        <div style="margin-left: auto;">
+                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                <input type="checkbox" id="audioToggle" onchange="toggleAudioMonitoring(event)"
+                                    style="width: 20px; height: 20px; cursor: pointer;">
+                                <span style="font-weight: 600;">启用音频监控</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 控制面板 -->
+                    <div class="audio-controls">
+                        <div class="audio-control-group">
+                            <label>🔇 音频降噪</label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="audioNoiseReduction" checked onchange="updateAudioSettings()"
+                                    style="cursor: pointer;">
+                                <span>启用降噪（去除环境噪音）</span>
+                            </label>
+                        </div>
+
+                        <div class="audio-control-group">
+                            <label>🔈 防止啸叫</label>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="audioEchoCancellation" checked
+                                    onchange="updateAudioSettings()" style="cursor: pointer;">
+                                <span>启用回声消除</span>
+                            </label>
+                        </div>
+
+                        <div class="audio-control-group">
+                            <label>🎚️ 麦克风增益</label>
+                            <input type="range" id="audioGain" min="0" max="200" value="100" step="10"
+                                oninput="changeAudioGain(this.value)">
+                            <span id="audioGainValue" style="color: #00B4DB; font-weight: 600;">100%</span>
+                        </div>
+                    </div>
+
+                    <!-- 音频可视化 -->
+                    <div class="audio-visualizer-container" id="audioVisualizer" style="display: none;">
+                        <canvas id="audioVisualizerCanvas" width="800" height="150"></canvas>
+                    </div>
+
+                    <!-- 音频统计 -->
+                    <div class="audio-stats">
+                        <div class="audio-stat">
+                            <div class="audio-stat-value" id="audioLevel">0%</div>
+                            <div class="audio-stat-label">当前音量</div>
+                        </div>
+                        <div class="audio-stat">
+                            <div class="audio-stat-value" id="audioFreq">--</div>
+                            <div class="audio-stat-label">主频率</div>
+                        </div>
+                        <div class="audio-stat">
+                            <div class="audio-stat-value" id="audioQuality">--</div>
+                            <div class="audio-stat-label">音质评分</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080';
+
+        // 切换标签页
+        function switchTab(tabName) {
+            // 更新标签按钮状态
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // 更新内容显示
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(tabName).classList.add('active');
+
+            // 加载对应数据
+            switch (tabName) {
+                case 'classes':
+                    loadClasses();
+                    break;
+                case 'tasks':
+                    loadTasks();
+                    break;
+                case 'students':
+                    loadStudents();
+                    break;
+                case 'grading':
+                    loadGrading();
+                    break;
+            }
+        }
+
+        // 加载统计数据
+        async function loadStats() {
+            try {
+                document.getElementById('classCount').textContent = '6';
+                document.getElementById('studentCount').textContent = '245';
+                document.getElementById('pendingGrading').textContent = '18';
+                document.getElementById('monthlyTasks').textContent = '32';
+            } catch (error) {
+                console.error('加载统计数据失败:', error);
+            }
+        }
+
+        // 加载班级列表
+        async function loadClasses() {
+            try {
+                const classList = document.getElementById('classList');
+                const classes = [
+                    { name: '计算机科学2101', students: 45, teacher: '张老师', tasks: 12 },
+                    { name: '软件工程2102', students: 38, teacher: '李老师', tasks: 15 },
+                    { name: '人工智能2103', students: 42, teacher: '王老师', tasks: 10 }
+                ];
+
+                classList.innerHTML = classes.map(cls => `
+                    <div class="class-card">
+                        <div class="card-header">
+                            <div class="card-title">${cls.name}</div>
+                            <div class="badge">进行中</div>
+                        </div>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span>👥</span>
+                                <span>${cls.students} 名学生</span>
+                            </div>
+                            <div class="info-item">
+                                <span>👨‍🏫</span>
+                                <span>教师: ${cls.teacher}</span>
+                            </div>
+                            <div class="info-item">
+                                <span>📝</span>
+                                <span>${cls.tasks} 个任务</span>
+                            </div>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary">查看详情</button>
+                            <button class="btn btn-success">发布任务</button>
+                            <button class="btn btn-warning">管理学生</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('加载班级列表失败:', error);
+                document.getElementById('classList').innerHTML =
+                    '<div class="error">加载班级列表失败，请稍后重试</div>';
+            }
+        }
+
+        // 加载任务列表
+        async function loadTasks() {
+            try {
+                const taskList = document.getElementById('taskList');
+                const tasks = [
+                    { title: 'Python基础练习', class: '计算机科学2101', deadline: '2026-05-01', submissions: 38 },
+                    { title: '数据结构作业3', class: '软件工程2102', deadline: '2026-05-10', submissions: 25 },
+                    { title: '机器学习实验报告', class: '人工智能2103', deadline: '2026-05-15', submissions: 15 }
+                ];
+
+                taskList.innerHTML = tasks.map(task => `
+                    <div class="task-card">
+                        <div class="card-header">
+                            <div class="card-title">${task.title}</div>
+                            <div class="badge">${task.class}</div>
+                        </div>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span>⏰</span>
+                                <span>截止: ${task.deadline}</span>
+                            </div>
+                            <div class="info-item">
+                                <span>📤</span>
+                                <span>已提交: ${task.submissions} 份</span>
+                            </div>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary">查看详情</button>
+                            <button class="btn btn-success">批改作业</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('加载任务列表失败:', error);
+                document.getElementById('taskList').innerHTML =
+                    '<div class="error">加载任务列表失败，请稍后重试</div>';
+            }
+        }
+
+        // 加载学生列表
+        async function loadStudents() {
+            try {
+                const studentTable = document.getElementById('studentTable');
+                const students = [
+                    { id: '2021001', name: '张三', class: '计算机科学2101', progress: 85, score: 92 },
+                    { id: '2021002', name: '李四', class: '软件工程2102', progress: 78, score: 88 },
+                    { id: '2021003', name: '王五', class: '人工智能2103', progress: 92, score: 95 }
+                ];
+
+                studentTable.innerHTML = students.map(student => `
+                    <tr>
+                        <td>${student.id}</td>
+                        <td>${student.name}</td>
+                        <td>${student.class}</td>
+                        <td>${student.progress}%</td>
+                        <td>${student.score}</td>
+                        <td>
+                            <button class="btn btn-primary" style="padding: 8px 15px; font-size: 14px;">查看</button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('加载学生列表失败:', error);
+                studentTable.innerHTML =
+                    '<tr><td colspan="6" class="error">加载学生列表失败</td></tr>';
+            }
+        }
+
+        // 加载待批改作业
+        async function loadGrading() {
+            try {
+                const gradingList = document.getElementById('gradingList');
+                const grading = [
+                    { student: '张三', task: 'Python基础练习', class: '计算机科学2101', submitted: '2026-04-28' },
+                    { student: '李四', task: '数据结构作业3', class: '软件工程2102', submitted: '2026-04-29' },
+                    { student: '王五', task: '机器学习实验报告', class: '人工智能2103', submitted: '2026-04-30' }
+                ];
+
+                gradingList.innerHTML = grading.map(item => `
+                    <div class="task-card">
+                        <div class="card-header">
+                            <div class="card-title">${item.student} - ${item.task}</div>
+                            <div class="badge">${item.class}</div>
+                        </div>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span>📅</span>
+                                <span>提交时间: ${item.submitted}</span>
+                            </div>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary">查看作业</button>
+                            <button class="btn btn-success">开始批改</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('加载待批改作业失败:', error);
+                document.getElementById('gradingList').innerHTML =
+                    '<div class="error">加载待批改作业失败，请稍后重试</div>';
+            }
+        }
+
+        // 页面加载时初始化
+        window.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadClasses();
+        });
+
+        // ==================== 音频监控功能 ====================
+
+        // 音频监控相关变量
+        let micStream = null;
+        let audioContext = null;
+        let micSource = null;
+        let gainNode = null;
+        let noiseFilter = null;
+        let analyser = null;
+        let isListening = false;
+        let animationId = null;
+
+        // 初始化音频监控
+        async function initAudioMonitoring() {
+            try {
+                updateAudioStatus('正在初始化...', '#ff9800');
+
+                // 请求麦克风权限
+                micStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: document.getElementById('audioEchoCancellation').checked,
+                        noiseSuppression: document.getElementById('audioNoiseReduction').checked,
+                        autoGainControl: true
+                    }
+                });
+
+                console.log('麦克风权限已获取');
+
+                // 创建音频上下文
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+                // 创建音频源
+                micSource = audioContext.createMediaStreamSource(micStream);
+
+                // 创建增益节点
+                gainNode = audioContext.createGain();
+                const gainValue = parseInt(document.getElementById('audioGain').value) / 100;
+                gainNode.gain.value = gainValue;
+
+                // 创建降噪滤波器
+                createNoiseFilter();
+
+                // 创建分析器
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 512;
+
+                // 连接音频节点
+                micSource.connect(noiseFilter);
+                noiseFilter.connect(gainNode);
+                gainNode.connect(analyser);
+                // 注意：不连接到 destination，避免啸叫
+
+                // 开始可视化
+                startAudioVisualization();
+
+                isListening = true;
+                updateAudioStatus('监控中', '#4CAF50');
+                document.getElementById('audioVisualizer').style.display = 'block';
+
+                console.log('音频监控已启动');
+
+            } catch (error) {
+                console.error('音频监控启动失败:', error);
+                updateAudioStatus('启动失败', '#f44336');
+                document.getElementById('audioToggle').checked = false;
+            }
+        }
+
+        // 创建降噪滤波器
+        function createNoiseFilter() {
+            if (!audioContext) return;
+
+            // 高通滤波器 - 去除低频噪音
+            const highpass = audioContext.createBiquadFilter();
+            highpass.type = 'highpass';
+            highpass.frequency.value = 80;
+
+            // 低通滤波器 - 去除高频噪音
+            const lowpass = audioContext.createBiquadFilter();
+            lowpass.type = 'lowpass';
+            lowpass.frequency.value = 8000;
+
+            // 陷波滤波器 - 去除 50Hz 电源噪音
+            const notch = audioContext.createBiquadFilter();
+            notch.type = 'notch';
+            notch.frequency.value = 50;
+            notch.Q.value = 10;
+
+            // 串联滤波器
+            highpass.connect(lowpass);
+            lowpass.connect(notch);
+
+            noiseFilter = highpass;
+            console.log('降噪滤波器已创建');
+        }
+
+        // 开始音频可视化
+        function startAudioVisualization() {
+            if (!analyser) return;
+
+            const canvas = document.getElementById('audioVisualizerCanvas');
+            const ctx = canvas.getContext('2d');
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            function draw() {
+                animationId = requestAnimationFrame(draw);
+
+                analyser.getByteFrequencyData(dataArray);
+
+                // 清空画布
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const barWidth = (canvas.width / bufferLength) * 2.5;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    const barHeight = (dataArray[i] / 255) * canvas.height;
+
+                    // 创建渐变色
+                    const gradient = ctx.createLinearGradient(0, canvas.height, 0, canvas.height - barHeight);
+                    gradient.addColorStop(0, '#00B4DB');
+                    gradient.addColorStop(0.5, '#0083B0');
+                    gradient.addColorStop(1, '#FF6B6B');
+
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                    x += barWidth + 1;
+                }
+
+                // 更新音量统计
+                const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+                document.getElementById('audioLevel').textContent = Math.round(average) + '%';
+            }
+
+            draw();
+        }
+
+        // 停止音频监控
+        function stopAudioMonitoring() {
+            if (micStream) {
+                micStream.getTracks().forEach(track => track.stop());
+                micStream = null;
+            }
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+
+            micSource = null;
+            gainNode = null;
+            noiseFilter = null;
+            analyser = null;
+            isListening = false;
+
+            updateAudioStatus('未启用', '#999');
+            document.getElementById('audioVisualizer').style.display = 'none';
+            document.getElementById('audioLevel').textContent = '0%';
+
+            console.log('音频监控已停止');
+        }
+
+        // 更新音频状态显示
+        function updateAudioStatus(text, color = '#999') {
+            const statusEl = document.getElementById('audioStatusText');
+            const indicatorEl = document.getElementById('audioIndicator');
+
+            if (statusEl) {
+                statusEl.textContent = text;
+                statusEl.style.color = color;
+            }
+
+            if (indicatorEl) {
+                if (text === '监控中') {
+                    indicatorEl.classList.add('active');
+                } else {
+                    indicatorEl.classList.remove('active');
+                }
+            }
+        }
+
+        // 切换音频监控
+        async function toggleAudioMonitoring(e) {
+            if (e.target.checked) {
+                await initAudioMonitoring();
+            } else {
+                stopAudioMonitoring();
+            }
+        }
+
+        // 更新音频设置
+        function updateAudioSettings() {
+            if (micStream && micStream.getAudioTracks().length > 0) {
+                const track = micStream.getAudioTracks()[0];
+                const settings = {
+                    echoCancellation: document.getElementById('audioEchoCancellation').checked,
+                    noiseSuppression: document.getElementById('audioNoiseReduction').checked
+                };
+
+                if (track.applyConstraints) {
+                    track.applyConstraints({ advanced: [settings] });
+                }
+
+                console.log('音频设置已更新', settings);
+            }
+        }
+
+        // 改变音频增益
+        function changeAudioGain(value) {
+            document.getElementById('audioGainValue').textContent = value + '%';
+            if (gainNode) {
+                gainNode.gain.value = value / 100;
+            }
+        }
+    </script>
+</body>
+
+</html>
