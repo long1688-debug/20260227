@@ -30,12 +30,14 @@ export const useSourceStore = defineStore('source', {
 
     // 获取所有已添加到预览的信号源
     previewSources: (state) => {
-      return state.sources.filter(s => state.sourcePreviewStatus[s.id] === true);
+      // 🎯 修复：直接使用信号源对象的 addedToPreview 字段，确保与 SourceListManager 等组件一致
+      return state.sources.filter(s => s.addedToPreview === true);
     },
 
     // 获取所有未添加到预览的信号源
     availableSources: (state) => {
-      return state.sources.filter(s => state.sourcePreviewStatus[s.id] !== true);
+      // 🎯 修复：直接使用信号源对象的 addedToPreview 字段，确保一致性
+      return state.sources.filter(s => s.addedToPreview !== true);
     },
 
     // 获取特定类型的信号源
