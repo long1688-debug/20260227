@@ -1,3 +1,20 @@
+/**
+ * 实训管理面板组件
+ * 
+ * @description 提供实训项目的管理功能，包括：
+ * - 实训项目列表（参与学生数、进度）
+ * - 创建新实训项目
+ * - 启动和查看实训
+ * - 进度跟踪等功能
+ * 
+ * @usage
+ * 1. 在 SidePanel 中使用（作为快速管理入口）
+ * 2. 在 VisionAnalysisWindow 的实训模式中复用（需要提取为子组件）
+ * 
+ * @note
+ * - 此组件与 VisionAnalysisWindow 中的实训管理功能重复
+ * - 建议后续统一使用此组件或将其逻辑整合到 AI 分析窗口
+ */
 <template>
   <div class="training-panel">
     <div class="panel-header">

@@ -157,6 +157,25 @@
 </template>
 
 <script setup>
+/**
+ * 学生管理面板组件
+ * 
+ * @description 提供完整的学生管理功能，包括：
+ * - 学生列表展示（在线状态、网络质量、远程桌面状态）
+ * - 远程桌面查看和控制
+ * - 摄像头实时监控
+ * - 学生详情查看
+ * - 踢出学生等功能
+ * 
+ * @usage
+ * 1. 在 SidePanel 中使用（作为快速管理入口）
+ * 2. 在 VisionAnalysisWindow 的学生模式中复用（需要提取为子组件）
+ * 
+ * @note
+ * - 此组件包含完整的远程桌面和摄像头功能
+ * - VisionAnalysisWindow 中已有简化的学生管理实现
+ * - 建议后续将通用逻辑提取为可复用子组件
+ */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, FullScreen, SwitchButton, Monitor, VideoCamera } from '@element-plus/icons-vue'
@@ -165,13 +184,17 @@ import NetworkQualityIndicator from '../common/NetworkQualityIndicator.vue'
 
 const studentStore = useStudentStore()
 
-// 状态管理
+/**
+ * 计算属性：从 Store 获取学生列表及统计信息
+ */
 const students = computed(() => studentStore.students)
 const onlineCount = computed(() => studentStore.onlineCount)
 const totalCount = computed(() => studentStore.totalCount)
 const remoteDesktopCount = computed(() => studentStore.studentsWithRemoteDesktop.length)
 
-// 弹窗状态
+/**
+ * 响应式状态：控制弹窗显示、连接状态及当前选中的学生
+ */
 const showRemoteDialog = ref(false)
 const showCameraDialog = ref(false)
 const selectedStudent = ref(null)
@@ -180,24 +203,42 @@ const remoteConnected = ref(false)
 const cameraConnecting = ref(false)
 const cameraConnected = ref(false)
 
-// Video refs
+/**
+ * DOM 引用：用于绑定视频播放元素
+ */
 const remoteVideoRef = ref(null)
 const cameraVideoRef = ref(null)
 
-// 远程桌面流
+/**
+ * 媒体流对象：存储当前的远程桌面或摄像头 MediaStream
+ */
 let remoteStream = null
 let cameraStream = null
 
+/**
+ * 获取状态标签的类型（用于 Element Plus Tag 组件颜色）
+ * @param {string} status - 学生状态 ('online' | 'offline' | 'busy')
+ * @returns {string} Tag 类型
+ */
 const getStatusType = (status) => {
   const map = { online: 'success', offline: 'info', busy: 'warning' }
   return map[status] || 'info'
 }
 
+/**
+ * 获取状态标签的显示文本
+ * @param {string} status - 学生状态
+ * @returns {string} 状态中文描述
+ */
 const getStatusLabel = (status) => {
   const map = { online: '在线', offline: '离线', busy: '忙碌' }
   return map[status] || '未知'
 }
 
+/**
+ * 处理添加学生操作
+ * 弹出输入框获取学生姓名并添加到 Store
+ */
 const handleAddStudent = () => {
   ElMessageBox.prompt('请输入学生姓名', '添加学生', {
     confirmButtonText: '确定',
@@ -208,11 +249,19 @@ const handleAddStudent = () => {
   }).catch(() => {})
 }
 
+/**
+ * 处理刷新操作
+ * 重新从 Store 获取学生列表
+ */
 const handleRefresh = () => {
   studentStore.fetchStudents()
   ElMessage.success('刷新成功')
 }
 
+/**
+ * 查看学生详细信息
+ * @param {Object} student - 学生对象
+ */
 const handleViewDetails = (student) => {
   const details = `
     <div style="padding: 10px;">
@@ -231,6 +280,10 @@ const handleViewDetails = (student) => {
   })
 }
 
+/**
+ * 踢出学生
+ * @param {Object} student - 待踢出的学生对象
+ */
 const handleKick = (student) => {
   ElMessageBox.confirm(`确定要踢出学生 "${student.name}" 吗？`, '确认', {
     confirmButtonText: '确定',
@@ -242,13 +295,20 @@ const handleKick = (student) => {
   }).catch(() => {})
 }
 
-// 远程桌面相关方法
+/**
+ * 打开远程桌面弹窗并开始连接
+ * @param {Object} student - 目标学生对象
+ */
 const handleRemoteDesktop = (student) => {
   selectedStudent.value = student
   showRemoteDialog.value = true
   connectRemote()
 }
 
+/**
+ * 建立远程桌面连接（模拟）
+ * 创建 Canvas 模拟视频流并绑定到 video 元素
+ */
 const connectRemote = async () => {
   if (!selectedStudent.value) return
 
@@ -293,6 +353,10 @@ const connectRemote = async () => {
   }
 }
 
+/**
+ * 断开远程桌面连接
+ * 停止媒体流轨道并重置状态
+ */
 const disconnectRemote = () => {
   if (remoteStream) {
     remoteStream.getTracks().forEach(track => track.stop())
@@ -302,12 +366,19 @@ const disconnectRemote = () => {
   ElMessage.info('已断开远程桌面连接')
 }
 
+/**
+ * 关闭远程桌面弹窗
+ * 自动断开连接并清理选中状态
+ */
 const closeRemoteDialog = () => {
   disconnectRemote()
   showRemoteDialog.value = false
   selectedStudent.value = null
 }
 
+/**
+ * 切换远程桌面全屏模式
+ */
 const toggleRemoteFullscreen = () => {
   if (!remoteVideoRef.value) return
 
@@ -321,13 +392,20 @@ const toggleRemoteFullscreen = () => {
   }
 }
 
-// 摄像头相关方法
+/**
+ * 打开摄像头弹窗并开始连接
+ * @param {Object} student - 目标学生对象
+ */
 const handleCamera = (student) => {
   selectedStudent.value = student
   showCameraDialog.value = true
   connectCamera()
 }
 
+/**
+ * 建立摄像头连接（模拟）
+ * 创建 Canvas 模拟视频流并绑定到 video 元素
+ */
 const connectCamera = async () => {
   if (!selectedStudent.value) return
 
@@ -374,6 +452,10 @@ const connectCamera = async () => {
   }
 }
 
+/**
+ * 断开摄像头连接
+ * 停止媒体流轨道并重置状态
+ */
 const disconnectCamera = () => {
   if (cameraStream) {
     cameraStream.getTracks().forEach(track => track.stop())
@@ -383,6 +465,10 @@ const disconnectCamera = () => {
   ElMessage.info('已断开摄像头连接')
 }
 
+/**
+ * 关闭摄像头弹窗
+ * 自动断开连接并清理选中状态
+ */
 const closeCameraDialog = () => {
   disconnectCamera()
   showCameraDialog.value = false

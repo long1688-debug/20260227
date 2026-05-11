@@ -103,7 +103,7 @@
     <div class="tab-divider"></div>
 
     <!-- 标签内容区 -->
-    <div class="panel-content-wrapper">
+    <div class="sidepanel-content-wrapper">
       <SubtitlePanel v-if="activeTab === 'subtitle'" />
       <WebPanel v-if="activeTab === 'web'" />
       <LayoutPanel v-if="activeTab === 'layout'" @layout-change="$emit('layout-change', $event)" />
@@ -301,6 +301,16 @@ watch(activeTab, async () => {
   if (panelContent) {
     panelContent.scrollTop = 0
   }
+
+  // 修复：确保预览区域位置保持不变
+  const previewArea = document.querySelector('.preview-area')
+  if (previewArea) {
+    // 防止预览区域位置变化
+    const currentScrollTop = previewArea.scrollTop
+    previewArea.style.position = 'relative'
+    previewArea.style.top = '0'
+    previewArea.scrollTop = currentScrollTop
+  }
 });
 
 // 暴露方法供父组件更新状态
@@ -361,6 +371,7 @@ onUnmounted(() => {
   width: 380px;
   min-width: 360px;
   max-width: 450px;
+  height: 100%; // 🎯 确保侧边栏完全填充父容器高度
   background: #1B263B;
   display: flex;
   flex-direction: column;
@@ -498,34 +509,79 @@ onUnmounted(() => {
     flex-shrink: 0;
   }
 
-  .panel-content-wrapper {
+  .sidepanel-content-wrapper {
     flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
     min-height: 0;
-    padding: 8px;
+    overflow: hidden;
+    padding: 15px; // 统一 padding，避免每个面板自适应不一致
 
-    .sources-panel {
-      height: 100%;
+    // 🎯 修复方案：使用父容器 flex 伸缩，避免固定高度导致溢出或未填满
+    > * {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+
+      // 确保面板内容正确占满父容器
+      &.layout-panel,
+      &.audio-panel,
+      &.media-files-panel,
+      &.documents-panel,
+      &.aid-tools-panel,
+      &.web-panel,
+      &.subtitle-panel,
+      &.sources-panel,
+      &.screen-share-panel {
+        flex: 1;
+        min-height: 0;
+        padding: 0;
+        margin: 0;
+      }
+
+      // 标题部分固定高度
+      .panel-header,
+      .function-tabs,
+      .tab-content > .panel-header {
+        flex-shrink: 0;
+      }
+
+      // 内部内容超出时滚动
+      .panel-content,
+      .tab-content,
+      .preview-container,
+      .video-wrapper {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
+
+      // 子面板的内部滚动区域
+      & .panel-content {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
     }
-  }
 
-  .tab-content {
-    flex: 1;
-    padding: 16px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    min-height: 0;
-
-    .panel-placeholder {
-      color: #778DA9;
-      text-align: center;
-      margin-top: 20px;
-      font-size: 14px;
+    // 🎯 修复：确保滚动容器样式一致
+    &::-webkit-scrollbar {
+      width: 6px;
     }
 
-    .sources-panel {
-      height: 100%;
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
     }
   }
 }

@@ -397,7 +397,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 120px;
+  min-height: 0;         // 🎯 关键修复：允许收缩到任意高度
   background: var(--bg-secondary, #1B263B);
   border-top: 1px solid var(--border-color, #415A77);
   border-radius: 8px;
@@ -405,8 +405,9 @@ onUnmounted(() => {
 
 .preview-container {
   flex: 1;
+  min-height: 0;         // 🎯 关键修复：允许flex子元素正常收缩
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
   padding: 10px 12px;
 }
 
@@ -414,16 +415,16 @@ onUnmounted(() => {
   display: flex;
   gap: 12px;
   height: 100%;
-  align-items: center;
+  align-items: stretch;
 
   .preview-item {
     width: 180px;
-    height: calc(100% - 10px);
-    flex-shrink: 0;
+    height: 100%;
+    flex: 0 0 180px;
     background: var(--bg-primary, #0D1B2A);
     border: 2px solid var(--border-color, #415A77);
     border-radius: 8px;
-    overflow: hidden;
+    overflow: auto;
     cursor: move;
     transition: all 0.2s ease;
 

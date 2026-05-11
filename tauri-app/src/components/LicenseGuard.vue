@@ -102,6 +102,19 @@
           </el-button>
           <p class="trial-hint">试用期间可体验全部功能，到期后需激活许可证才能继续使用</p>
         </div>
+        
+        <!-- 退出应用按钮 -->
+        <div class="exit-section">
+          <el-button 
+            type="info" 
+            size="large" 
+            plain
+            @click="exitApplication"
+            style="width: 100%;"
+          >
+            退出应用
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -470,86 +483,128 @@ defineExpose({
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+  box-sizing: border-box;
+  overflow: hidden; /* 防止外层滚动 */
 }
 
 .license-activation,
 .license-activated {
   width: 600px;
   max-width: 90vw;
+  max-height: 100vh; /* 使用完整视口高度 */
   background: white;
   border-radius: 12px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
+  overflow: hidden; /* 隐藏滚动条 */
+  display: flex;
+  flex-direction: column;
 }
 
 .activation-header {
   background: #409eff;
   color: white;
-  padding: 30px; /* 增加内边距 */
+  padding: 16px 30px; /* 进一步减小头部padding */
   text-align: center;
+  flex-shrink: 0;
 }
 
 .activation-header h2 {
-  margin: 0 0 10px 0;
-  font-size: 28px;
+  margin: 0 0 6px 0;
+  font-size: 22px; /* 缩小标题 */
   font-weight: 600;
-  line-height: 1.2; /* 调整行高 */
+  line-height: 1.2;
 }
 
 .activation-header p {
   margin: 0;
   opacity: 0.9;
-  font-size: 16px;
+  font-size: 13px; /* 缩小副标题 */
 }
 
 .activation-content {
-  padding: 30px;
+  padding: 16px 30px 20px 30px; /* 减小padding */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px; /* 进一步减小间距 */
+  overflow: hidden; /* 隐藏内部滚动 */
 }
 
 .machine-code-section,
 .registration-code-section {
-  margin-bottom: 30px;
+  margin-bottom: 0;
 }
 
 .machine-code-section h3,
 .registration-code-section h3 {
-  margin: 0 0 15px 0;
+  margin: 0 0 6px 0;
   color: #303133;
-  font-size: 18px;
+  font-size: 15px; /* 缩小标题 */
   font-weight: 500;
 }
 
 .machine-code-display {
-  margin-bottom: 10px;
+  margin-bottom: 4px;
 }
 
 .machine-code-hint {
   color: #909399;
-  font-size: 14px;
+  font-size: 11px; /* 进一步缩小字体 */
   margin: 0;
+  line-height: 1.3;
 }
 
 .trial-info {
-  margin-bottom: 20px;
+  margin-bottom: 0;
+}
+
+/* 优化试用版提示框 */
+.trial-info :deep(.el-alert) {
+  padding: 8px 12px; /* 减小内边距 */
+}
+
+.trial-info :deep(.el-alert__title) {
+  font-size: 13px; /* 缩小标题 */
+}
+
+.trial-info :deep(.el-alert__description) {
+  font-size: 12px; /* 缩小描述 */
+  margin-top: 2px;
 }
 
 .server-status {
-  margin-top: 20px;
+  margin-top: 0;
+}
+
+/* 优化服务器状态表 */
+.server-status :deep(.el-descriptions) {
+  font-size: 12px; /* 缩小表格字体 */
 }
 
 .trial-button-section {
-  margin-top: 20px;
+  margin-top: 0;
   text-align: center;
 }
 
 .trial-hint {
-  margin-top: 10px;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: 10px; /* 进一步缩小提示文字 */
   color: #909399;
+  line-height: 1.3;
+}
+
+.exit-section {
+  margin-top: 0;
+  text-align: center;
 }
 
 .activation-success {
   padding: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
 }
 
 .license-activated {
@@ -561,25 +616,58 @@ defineExpose({
 /* 响应式设计 */
 @media (max-width: 768px) {
   .license-guard {
-    padding: 20px;
+    padding: 10px;
+    align-items: flex-start;
+    padding-top: 20px;
   }
 
   .license-activation,
   .license-activated {
     width: 100%;
     max-width: none;
+    max-height: 100vh;
+    border-radius: 8px;
   }
 
   .activation-header {
-    padding: 20px;
+    padding: 12px 20px;
   }
 
   .activation-header h2 {
-    font-size: 24px;
+    font-size: 18px;
+  }
+
+  .activation-header p {
+    font-size: 11px;
   }
 
   .activation-content {
-    padding: 20px;
+    padding: 12px 20px 16px 20px;
+    gap: 8px;
+  }
+
+  .machine-code-section h3,
+  .registration-code-section h3 {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .license-guard {
+    padding: 5px;
+  }
+
+  .activation-header {
+    padding: 10px 15px;
+  }
+
+  .activation-header h2 {
+    font-size: 16px;
+  }
+
+  .activation-content {
+    padding: 10px 15px 14px 15px;
+    gap: 6px;
   }
 }
 </style>

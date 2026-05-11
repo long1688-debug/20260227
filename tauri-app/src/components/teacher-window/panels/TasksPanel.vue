@@ -1,3 +1,20 @@
+/**
+ * 任务管理面板组件
+ * 
+ * @description 提供考试/实训任务的管理功能，包括：
+ * - 任务列表展示（类型、状态、截止时间）
+ * - 创建和编辑任务
+ * - 发布和管理任务
+ * - 任务删除等功能
+ * 
+ * @usage
+ * 1. 在 SidePanel 中使用（作为快速管理入口）
+ * 2. 在 VisionAnalysisWindow 的任务模式中复用（需要提取为子组件）
+ * 
+ * @note
+ * - 此组件与 VisionAnalysisWindow 中的任务管理功能重复
+ * - 建议后续统一使用此组件或将其逻辑整合到 AI 分析窗口
+ */
 <template>
   <div class="tasks-panel">
     <div class="panel-header">
@@ -263,4 +280,3 @@ onMounted(() => {
     background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
   }
 }
-</style>

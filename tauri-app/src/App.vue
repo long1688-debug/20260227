@@ -40,6 +40,7 @@ onMounted(async () => {
 async function initTauriFeatures() {
   try {
     const appModule = await import('@tauri-apps/api/app');
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
     
     // 获取应用信息
     try {
@@ -48,6 +49,63 @@ async function initTauriFeatures() {
       window.__APP_INFO__ = { name, version };
       console.log(`[App] 应用: ${name} v${version}`);
     } catch {}
+    
+    // 🎯 关键修复：动态调整窗口尺寸以排除任务栏
+    try {
+      const { primaryMonitor } = await import('@tauri-apps/api/window');
+      
+      const appWindow = getCurrentWindow();
+      
+      // 获取主显示器信息
+      const monitor = await primaryMonitor();
+      
+      if (monitor) {
+        // 获取工作区域（排除任务栏）和屏幕尺寸
+        const workArea = monitor.workAreaSize || monitor.size;
+        const screenSize = monitor.size;
+        
+        console.log(`[App] 屏幕尺寸: ${screenSize.width}x${screenSize.height}`);
+        console.log(`[App] 工作区域: ${workArea.width}x${workArea.height}`);
+        
+        // 计算任务栏高度
+        const taskbarHeight = screenSize.height - workArea.height;
+        console.log(`[App] 任务栏高度: ${taskbarHeight}px`);
+        
+        // 设置 CSS 变量供组件使用
+        document.documentElement.style.setProperty('--taskbar-height', `${taskbarHeight}px`);
+        document.documentElement.style.setProperty('--safe-viewport-height', `${workArea.height}px`);
+        
+        console.log(`[App] 已设置CSS变量: --taskbar-height=${taskbarHeight}px, --safe-viewport-height=${workArea.height}px`);
+        
+        // 🎯 关键：强制调整窗口大小以匹配工作区域
+        try {
+          const currentSize = await appWindow.outerSize();
+          const currentPosition = await appWindow.outerPosition();
+          
+          console.log(`[App] 当前窗口: ${currentSize.width}x${currentSize.height} @ (${currentPosition.x}, ${currentPosition.y})`);
+          
+          // 设置窗口位置和工作区域大小
+          await appWindow.setSize({
+            width: workArea.width,
+            height: workArea.height
+          });
+          
+          await appWindow.setPosition({
+            x: workArea.position ? workArea.position.x : 0,
+            y: workArea.position ? workArea.position.y : 0
+          });
+          
+          console.log(`[App] 已调整窗口到工作区域: ${workArea.width}x${workArea.height}`);
+        } catch (resizeError) {
+          console.warn('[App] 调整窗口尺寸失败:', resizeError);
+        }
+      } else {
+        console.warn('[App] 无法获取显示器信息');
+      }
+      
+    } catch (error) {
+      console.warn('[App] 窗口尺寸调整失败:', error);
+    }
     
     // 监听应用就绪事件
     try {

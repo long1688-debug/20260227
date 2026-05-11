@@ -18,6 +18,8 @@
         "height": 1080,
         "minWidth": 1280,
         "minHeight": 720,
+        "maxWidth": 3840,
+        "maxHeight": 2160,
         "resizable": true,
         "fullscreen": false,
         "decorations": false,

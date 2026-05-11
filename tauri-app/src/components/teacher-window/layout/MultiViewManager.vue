@@ -1,8 +1,5 @@
 <template>
   <div class="multi-view-manager">
-    <!-- 布局切换器 -->
-    <LayoutSwitcher @layout-change="handleLayoutChange" />
-
     <!-- 信号源选择按钮 -->
     <el-button type="primary" @click="showSourceSelector = true">
       <el-icon><Plus /></el-icon>
@@ -22,7 +19,6 @@ import { ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { useVideoSync } from '@/composables/useVideoSync'
 import { useSourceStore } from '@/stores/sourceStore'
-import LayoutSwitcher from './LayoutSwitcher.vue'
 import SourceSelectorDialog from './SourceSelectorDialog.vue'
 
 const emit = defineEmits(['source-added'])
@@ -31,14 +27,6 @@ const { setLayout, currentLayout, canvasSourceMap, addSource, setCanvasSource, g
 const sourceStore = useSourceStore()
 
 const showSourceSelector = ref(false)
-
-/**
- * 处理布局切换
- */
-const handleLayoutChange = (layout) => {
-  console.log('[MultiViewManager] 布局切换:', layout)
-  // 布局切换时，useVideoSync.setLayout 会自动保存和加载配置
-}
 
 /**
  * 处理信号源选择

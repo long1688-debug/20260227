@@ -2,15 +2,44 @@
   <div class="global-notifications">
     <!-- 举手通知列表 -->
     <TransitionGroup name="notification-list" tag="div">
-      <HandRaiseNotification
+      <div
         v-for="notification in handRaiseNotifications"
         :key="notification.id"
-        :show="true"
-        :student-name="notification.studentName"
-        @accept="$emit('accept-hand-raise', notification)"
-        @reject="$emit('reject-hand-raise', notification)"
-        @close="handleClose(notification.id)"
-      />
+        class="hand-raise-notification"
+      >
+        <div class="notification-content">
+          <div class="student-avatar">
+            {{ notification.studentName.charAt(0) }}
+          </div>
+          <div class="notification-info">
+            <div class="student-name">{{ notification.studentName }}</div>
+            <div class="notification-text">申请发言</div>
+          </div>
+        </div>
+        <div class="notification-actions">
+          <button 
+            class="action-btn accept-btn"
+            @click="$emit('accept-hand-raise', notification)"
+            title="接受"
+          >
+            ✓
+          </button>
+          <button 
+            class="action-btn reject-btn"
+            @click="$emit('reject-hand-raise', notification)"
+            title="拒绝"
+          >
+            ✕
+          </button>
+          <button 
+            class="action-btn close-btn"
+            @click="handleClose(notification.id)"
+            title="关闭"
+          >
+            ×
+          </button>
+        </div>
+      </div>
     </TransitionGroup>
     
     <!-- 系统通知（预留扩展） -->
@@ -19,8 +48,6 @@
 </template>
 
 <script setup lang="ts">
-import HandRaiseNotification from './HandRaiseNotification.vue'
-
 interface HandRaiseNotificationItem {
   id: string | number
   studentName: string
@@ -52,7 +79,7 @@ const handleClose = (id: string | number) => {
 }
 </script>
 
-<style scoped lang="scss">
+<style lang="scss" scoped>
 .global-notifications {
   position: fixed;
   top: 80px;
@@ -62,11 +89,115 @@ const handleClose = (id: string | number) => {
   flex-direction: column;
   gap: 12px;
   max-width: 400px;
-  pointer-events: none;
+}
 
-  // 让子组件恢复指针事件
-  > * {
-    pointer-events: auto;
+.hand-raise-notification {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+  animation: slideInRight 0.3s ease-out;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-width: 320px;
+  
+  .notification-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    
+    .student-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: white;
+    }
+    
+    .notification-info {
+      flex: 1;
+      
+      .student-name {
+        font-size: 16px;
+        font-weight: 600;
+        color: white;
+        margin-bottom: 4px;
+      }
+      
+      .notification-text {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.8);
+      }
+    }
+  }
+  
+  .notification-actions {
+    display: flex;
+    gap: 8px;
+    
+    .action-btn {
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 18px;
+      font-weight: bold;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      
+      &.accept-btn {
+        background: rgba(255, 255, 255, 0.9);
+        color: #52c41a;
+        
+        &:hover {
+          background: white;
+          transform: scale(1.1);
+        }
+      }
+      
+      &.reject-btn {
+        background: rgba(255, 255, 255, 0.3);
+        color: white;
+        
+        &:hover {
+          background: rgba(255, 255, 255, 0.5);
+          transform: scale(1.1);
+        }
+      }
+      
+      &.close-btn {
+        background: transparent;
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 20px;
+        
+        &:hover {
+          color: white;
+          background: rgba(255, 255, 255, 0.1);
+        }
+      }
+    }
+  }
+}
+
+// 动画效果
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
@@ -77,15 +208,11 @@ const handleClose = (id: string | number) => {
 
 .notification-list-enter-from {
   opacity: 0;
-  transform: translateX(100%);
+  transform: translateX(100px);
 }
 
 .notification-list-leave-to {
   opacity: 0;
-  transform: translateX(100%);
-}
-
-.notification-list-move {
-  transition: transform 0.3s ease;
+  transform: translateX(100px);
 }
 </style>

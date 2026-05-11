@@ -87,6 +87,12 @@ fn main() {
                 let manager = app_handle.state::<PtzDeviceManager>();
                 manager.register_vendor_defaults().await;
             });
+            
+            // 🎯 关键修复：窗口启动时自动最大化到工作区域
+            // 这确保窗口完全适应屏幕工作区域，排除任务栏
+            let main_window = app.get_webview_window("main").unwrap();
+            let _ = main_window.maximize();
+            
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

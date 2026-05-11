@@ -57,9 +57,10 @@ const close = () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 15px;
   -webkit-app-region: no-drag;
-  overflow: hidden;
+  overflow: visible;
+  min-width: 0;
 }
 
 .window-controls {

@@ -8,7 +8,7 @@
     />
 
     <!-- 主教师界面 -->
-    <div v-else>
+    <div v-else class="app-shell">
       <!-- 标题栏 -->
       <TitleBar>
         <template #toolbar>
@@ -50,7 +50,7 @@
                   @element-click="onRenderElementClick"
                   @layout-change="onLayoutChange"
                 />
-                
+
                 <!-- 浮动工具栏 -->
                 <div class="render-floating-toolbar">
                   <button class="tool-btn" @click="toggleDrawingMode" :class="{ active: isDrawingMode }">
@@ -83,7 +83,7 @@
                   </div>
                 </div>
               </div>
-              
+
               <!-- 🆕 标准视频网格（传统模式） -->
               <VideoSection
                 v-if="!useRenderEngine"
@@ -219,22 +219,13 @@
       />
 
       <!-- 🆕 使用独立的字幕导入对话框组件 -->
+      <!-- 🆕 使用独立的字幕导入对话框组件 -->
       <SubtitleImportDialog
         v-model="showSubtitleImportDialog"
         @import-subtitles="handleImportSubtitles"
       />
 
-      <!-- 全局通知 -->
-      <HandRaiseNotification
-        v-if="handRaiseNotification.show"
-        :show="handRaiseNotification.show"
-        :student-name="handRaiseNotification.studentName"
-        @accept="handleHandRaiseAccept"
-        @reject="handleHandRaiseReject"
-        @close="handRaiseNotification.show = false"
-      />
-
-      <!-- 🆕 使用独立的全局通知容器组件 -->
+      <!-- 🆕 使用独立的全局通知容器组件（已替代 HandRaiseNotification） -->
       <GlobalNotifications
         :hand-raise-notifications="handRaiseNotifications"
         @accept-hand-raise="handleHandRaiseAccept"
@@ -280,6 +271,7 @@ import RecordingManagerDialog from './teacher-window/dialogs/RecordingManagerDia
 import SettingsDialog from './teacher-window/dialogs/SettingsDialog.vue'
 import SubtitleManagerDialog from './teacher-window/dialogs/SubtitleManagerDialog.vue'
 import AddSourceDialog from './teacher-window/dialogs/AddSourceDialog.vue'
+// 🎯 预留功能组件（多机位、VR录制、色键抠像、视频转字幕）
 import MulticamDialog from './teacher-window/dialogs/MulticamDialog.vue'
 import VrRecordingDialog from './teacher-window/dialogs/VrRecordingDialog.vue'
 import ChromakeyDialog from './teacher-window/dialogs/ChromakeyDialog.vue'
@@ -292,8 +284,6 @@ import NetworkDetailDialog from './teacher-window/dialogs/NetworkDetailDialog.vu
 import RenameSourceDialog from './teacher-window/dialogs/RenameSourceDialog.vue'
 import MediaCodecDialog from './teacher-window/dialogs/MediaCodecDialog.vue'
 import VideoMeetingWindow from './VideoMeetingWindow.vue'
-import SourceListManager from './SourceListManager.vue'
-import HandRaiseNotification from './teacher-window/common/HandRaiseNotification.vue'
 // 🆕 渲染引擎组件
 import RenderEngineWrapper from './render/RenderEngineWrapper.vue'
 import CameraPreview from './render/CameraPreview.vue'
@@ -568,12 +558,12 @@ const allSources = computed(() => {
 // 将画布源映射转换为渲染引擎所需的格式
 const mappedRenderSources = computed(() => {
   if (!useRenderEngine.value) return []
-  
+
   const sources = []
-  
+
   // 根据canvasSourceMap映射，将当前布局的源转换为渲染引擎格式
   const validIndices = getVisibleCanvasIndices(currentLayout.value)
-  
+
   validIndices.forEach(index => {
     const sourceId = canvasSourceMap.value[index]
     if (sourceId) {
@@ -592,7 +582,7 @@ const mappedRenderSources = computed(() => {
       }
     }
   })
-  
+
   return sources
 })
 
@@ -635,7 +625,7 @@ const mapSourceType = (sourceType) => {
     'docx': 'web',
     'pdf': 'web'
   }
-  
+
   return typeMap[sourceType] || 'video'
 }
 
@@ -654,7 +644,7 @@ const convertLayoutType = (layoutNum) => {
     13: 'grid-3x3',
     18: 'single',
   }
-  
+
   return layoutMap[layoutNum] || 'single'
 }
 
@@ -768,11 +758,11 @@ watch(currentLayout, (newLayout, oldLayout) => {
 // 本地状态定义 (非 Composable 管理的)
 // ============================================
 
-// 举手通知
-const handRaiseNotification = ref({
-  show: false,
-  studentName: ''
-})
+// 🎯 注意：handRaiseNotification 已废弃，使用 handRaiseNotifications 数组替代
+// const handRaiseNotification = ref({
+//   show: false,
+//   studentName: ''
+// })
 
 // 初始化示例数据
 const initializeSampleData = () => {
@@ -3109,13 +3099,13 @@ const handleSwitchPanel = (e) => {
 // 处理举手接受
 const handleHandRaiseAccept = () => {
   console.log('接受举手')
-  handRaiseNotification.value.show = false
+  // 🎯 handRaiseNotification 已废弃，此函数保留用于兼容
 }
 
 // 处理举手拒绝
 const handleHandRaiseReject = () => {
   console.log('拒绝举手')
-  handRaiseNotification.value.show = false
+  // 🎯 handRaiseNotification 已废弃，此函数保留用于兼容
 }
 
 // 处理关闭通知
@@ -3532,35 +3522,18 @@ const processTouchStart = (event, source) => {
 }
 
 // ============================================
-// VideoGrid 事件处理函数
+// 本地状态定义 (非 Composable 管理的)
 // ============================================
 
-
-// 设置视频预览组件引用（存储到 useSourceDrag 的 videoPreviews 数组）
-const handleSetVideoPreviewRef = (data) => {
-  const { el, index } = data
-  console.log('[TeacherWindow] 视频预览组件引用已设置', index)
-
-  if (el && index !== undefined) {
-    // 🎯 关键修复：将 VideoPreview 组件引用存储到 dragVideoPreviews 数组
-    // 索引为 index - 1，因为 canvas 索引从 1 开始
-    const previewIndex = index - 1
-    if (previewIndex >= 0) {
-      // 确保数组长度足够
-      while (dragVideoPreviews.value.length <= previewIndex) {
-        dragVideoPreviews.value.push(null)
-      }
-      dragVideoPreviews.value[previewIndex] = el
-      console.log(`[TeacherWindow] 已存储 VideoPreview 引用到 dragVideoPreviews[${previewIndex}]`)
-    }
-  }
-}
+// 🎯 注意：handRaiseNotification 已废弃，使用 handRaiseNotifications 数组替代
+// const handRaiseNotification = ref({
+//   show: false,
+//   studentName: ''
+// })
 
 // ============================================
 // 新增功能的事件处理函数
 // ============================================
-
-// 打开录制回放
 const handleOpenPlayback = (videoUrl) => {
   playbackVideoUrl.value = videoUrl
   showPlaybackDialog.value = true
@@ -4187,12 +4160,21 @@ defineExpose({
 @import '../styles/teacher-window.scss';
 
 .teacher-window {
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  min-height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: #0A101A;
   color: #FFFFFF;
+  overflow: hidden;
+}
+
+.app-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -4201,6 +4183,19 @@ defineExpose({
   flex: 1;
   display: flex;
   flex-direction: row;
+  align-items: stretch;
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+}
+
+// 左侧内容区（视频 + 预览栏）
+// 左侧内容区（视频 + 预览栏）
+.left-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   overflow: hidden;
   min-height: 0;
 }
@@ -4210,6 +4205,7 @@ defineExpose({
   flex: 1;
   display: flex;
   flex-direction: column;
+  height: 100%;
   overflow: hidden;
   min-height: 0;
 }
@@ -4218,11 +4214,10 @@ defineExpose({
   flex: 1;
   display: flex;
   flex-direction: column;
+  height: 100%;
   overflow: hidden;
   min-height: 0;  /* 允许 flex 子元素收缩 */
 }
-
-// 🆕 视频区域布局
 .video-area {
   flex: 1;
   position: relative;
@@ -4236,6 +4231,8 @@ defineExpose({
 
 // 🆕 全局预览栏（固定在内容区底部）
 .global-preview-bar {
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
   min-height: 140px;
   max-height: 200px;
@@ -4244,6 +4241,10 @@ defineExpose({
   border-radius: 8px;
   margin: 0 8px 8px 8px;
   box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+
+  // 🎯 确保预览栏底部有足够的安全距离，避免被任务栏遮挡
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 // 🆕 渲染引擎覆盖层样式

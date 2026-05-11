@@ -103,11 +103,14 @@ onMounted(() => {
 }
 
 .left-panel {
-  width: 400px;
+  width: 500px;
+  min-width: 500px;
   background: #f5f5f5;
   padding: 16px;
   border-right: 1px solid #ddd;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .right-panel {

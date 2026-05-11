@@ -1,7 +1,8 @@
 <template>
   <div class="preview-area">
-    <div class="preview-container">
-      <div v-if="selectedSource" class="preview-content">
+    <!-- 视频预览容器 -->
+    <div v-if="selectedSource" class="preview-video-container">
+      <div class="video-wrapper">
         <!-- 视频播放器 -->
         <video
           v-if="!isDocumentType"
@@ -19,50 +20,55 @@
         />
 
         <!-- 文档预览 -->
-        <div v-else class="document-preview">
-          <img :src="selectedSource.url || selectedSource.poster" alt="Document Preview" class="document-image" />
-        </div>
-
-        <!-- 播放控制 -->
-        <div class="preview-controls">
-          <el-button
-            :icon="selectedSource.isPlaying ? 'VideoPause' : 'VideoPlay'"
-            circle
-            size="small"
-            @click="togglePlayPause"
-          />
-
-          <div class="progress-container">
-            <el-slider
-              v-model="progressValue"
-              :max="selectedSource.duration === Infinity ? 100 : selectedSource.duration"
-              :step="0.1"
-              @change="onSeek"
-              @input="onProgressInput"
-              style="flex: 1"
-            />
-          </div>
-
-          <span class="time-display">
-            {{ formatTime(selectedSource.currentTime) }} /
-            {{ selectedSource.duration === Infinity ? 'Live' : formatTime(selectedSource.duration) }}
-          </span>
-        </div>
-
-        <!-- 🎯 视频同步管理器（预览区域作为主控） -->
-        <VideoSyncManager
-          ref="videoSyncManagerRef"
-          :source-id="selectedSource?.id"
-          :video-ref="videoRef"
-          :index="0"
-          :is-document-type="isDocumentType"
-          :is-preview-area="true"
-          @sync-status-change="handleSyncStatusChange"
+        <img
+          v-else
+          :src="selectedSource.url || selectedSource.poster"
+          alt="Document Preview"
+          class="preview-video document-image"
         />
-
       </div>
 
-      <div v-else class="placeholder">
+      <!-- 播放控制 -->
+      <div class="preview-controls">
+        <el-button
+          :icon="selectedSource.isPlaying ? 'VideoPause' : 'VideoPlay'"
+          circle
+          size="small"
+          @click="togglePlayPause"
+        />
+
+        <div class="progress-container">
+          <el-slider
+            v-model="progressValue"
+            :max="selectedSource.duration === Infinity ? 100 : selectedSource.duration"
+            :step="0.1"
+            @change="onSeek"
+            @input="onProgressInput"
+            style="flex: 1"
+          />
+        </div>
+
+        <span class="time-display">
+          {{ formatTime(selectedSource.currentTime) }} /
+          {{ selectedSource.duration === Infinity ? 'Live' : formatTime(selectedSource.duration) }}
+        </span>
+      </div>
+
+      <!-- 🎯 视频同步管理器（预览区域作为主控） -->
+      <VideoSyncManager
+        ref="videoSyncManagerRef"
+        :source-id="selectedSource?.id"
+        :video-ref="videoRef"
+        :index="0"
+        :is-document-type="isDocumentType"
+        :is-preview-area="true"
+        @sync-status-change="handleSyncStatusChange"
+      />
+    </div>
+
+    <!-- 空状态占位符 -->
+    <div v-else class="placeholder-container">
+      <div class="placeholder">
         <el-icon :size="48"><VideoPlay /></el-icon>
         <p>请选择或添加媒体源</p>
       </div>
@@ -290,50 +296,83 @@ onUnmounted(() => {
 
 <style scoped>
 .preview-area {
-  height: 100%;
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0; /* 🎯 允许在父容器中收缩 */
+  gap: 12px;
+  padding: 16px;
+  background-color: #1a1a1a;
+  border-radius: 8px;
+  box-sizing: border-box;
 }
 
 .preview-container {
   flex: 1;
+  flex-grow: 1; /* 🎯 明确允许增长 */
+  flex-shrink: 1; /* 🎯 允许收缩 */
+  min-height: 0; /* 🎯 关键：允许Flex子元素正常收缩 */
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 16px;
-  background-color: #1a1a1a;
-  border-radius: 8px;
-  overflow: auto;
+  overflow: hidden;
 }
 
-.preview-content {
-  width: 100%;
-  max-width: 100%;
+.preview-video-container {
+  flex: 1;
+  flex-grow: 1; /* 🎯 占据剩余空间 */
+  flex-shrink: 1; /* 🎯 允许收缩 */
+  min-height: 0; /* 🎯 防止溢出 */
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
   display: flex;
   flex-direction: column;
+}
+
+.video-wrapper {
+  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  min-height: 0; /* 🎯 关键修复点 */
+  position: relative;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
 .preview-video {
   width: 100%;
-  max-height: calc(100vh - 300px);
-  aspect-ratio: 16/9;
+  height: 100%;
   object-fit: contain;
+  cursor: grab;
   border-radius: 4px;
-  background-color: #000;
+  
+  /* 触摸优化：禁用默认触摸行为 */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.document-preview {
-  width: 100%;
-  max-height: calc(100vh - 300px);
+.preview-video:active {
+  cursor: grabbing;
 }
 
 .document-image {
-  width: 100%;
-  height: auto;
-  object-fit: contain;
-  border-radius: 4px;
+  /* 继承 .preview-video 的样式 */
+}
+
+.placeholder-container {
+  flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  min-height: 0; /* 🎯 允许空状态容器收缩 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .placeholder {
@@ -355,10 +394,14 @@ onUnmounted(() => {
   padding: 8px;
   background: rgba(0, 0, 0, 0.3);
   border-radius: 4px;
+  flex-shrink: 0; /* 🎯 防止控制栏被压缩（保持不变） */
 }
 
 .progress-container {
   flex: 1;
+  flex-grow: 1;
+  flex-shrink: 1;
+  min-width: 100px; /* 🎯 最小宽度保证可用性 */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -374,5 +417,6 @@ onUnmounted(() => {
   color: #ddd;
   min-width: 80px;
   text-align: right;
+  flex-shrink: 0; /* 🎯 防止时间显示被压缩 */
 }
 </style>
