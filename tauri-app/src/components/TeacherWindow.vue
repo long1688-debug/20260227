@@ -4234,8 +4234,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  min-height: 140px;
-  max-height: 200px;
+  min-height: 100px;
+  max-height: 140px;
   background: #0D1B2A;
   border: 1px solid #2D3A4F;
   border-radius: 8px;
