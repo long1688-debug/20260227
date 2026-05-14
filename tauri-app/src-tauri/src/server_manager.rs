@@ -144,16 +144,3 @@ pub async fn check_backend_status(app_handle: AppHandle) -> Result<serde_json::V
     }
 }
 
-/// 应用启动时自动拉起后端服务器
-pub fn setup_auto_start(app_handle: &AppHandle) {
-    let handle = app_handle.clone();
-    tauri::async_runtime::block_on(async move {
-        // 等待一小段时间确保应用初始化完成
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-        match start_backend_server(handle).await {
-            Ok(pid) => println!("[ServerManager] 自动启动后端服务器成功, PID={}", pid),
-            Err(e) => eprintln!("[ServerManager] 自动启动失败: {} (可手动启动)", e),
-        }
-    });
-}

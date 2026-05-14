@@ -49,31 +49,34 @@ export class RenderCanvas {
       elementRemove: []
     };
 
-    console.log('[RenderCanvas] 创建主渲染画布');
   }
 
   /**
    * 初始化画布
    * @param {HTMLCanvasElement} canvas - 画布元素
+   * @param {number} logicalWidth - 逻辑宽度（未乘以dpr）
+   * @param {number} logicalHeight - 逻辑高度（未乘以dpr）
    */
-  init(canvas) {
+  init(canvas, logicalWidth, logicalHeight) {
     this._canvas = canvas;
     this._context = canvas.getContext('2d');
-    this._width = canvas.width;
-    this._height = canvas.height;
 
-    // 设置画布样式
-    this._canvas.style.cssText = `
-      width: ${this._width}px;
-      height: ${this._height}px;
-      background: #0D1B2A;
-      cursor: default;
-    `;
+    // 逻辑尺寸（用于布局计算和绘制）
+    this._width = logicalWidth || canvas.width;
+    this._height = logicalHeight || canvas.height;
+
+    // 实际像素尺寸（已乘以dpr）
+    this._pixelWidth = canvas.width;
+    this._pixelHeight = canvas.height;
+
+    // 设置画布样式 - 使用逻辑尺寸
+    this._canvas.style.width = this._width + 'px';
+    this._canvas.style.height = this._height + 'px';
+    this._canvas.style.background = '#0D1B2A';
+    this._canvas.style.cursor = 'default';
 
     // 绑定事件
     this._bindEvents();
-
-    console.log('[RenderCanvas] 画布初始化完成');
   }
 
   /**
@@ -261,17 +264,15 @@ export class RenderCanvas {
   saveLayoutConfig(layoutId, config) {
     if (layoutId) {
       this._layoutConfigs.set(layoutId, { ...config });
-      console.log(`[RenderCanvas] 已保存布局 ${layoutId} 的配置`);
     }
   }
 
   /**
-   * 🎯 加载布局配置
+   * 加载布局配置
    */
   loadLayoutConfig(layoutId) {
     if (layoutId && this._layoutConfigs.has(layoutId)) {
       const config = this._layoutConfigs.get(layoutId);
-      console.log(`[RenderCanvas] 已加载布局 ${layoutId} 的配置`);
       return { ...config };
     }
     return null;
@@ -376,18 +377,31 @@ export class RenderCanvas {
 
   /**
    * 绘制画布
+   * @param {CanvasRenderingContext2D} context - 可选的渲染上下文，如果未传入则使用默认上下文
    */
-  draw() {
-    // 清空画布
-    this._context.fillStyle = '#0D1B2A';
-    this._context.fillRect(0, 0, this._width, this._height);
+  draw(context) {
+    const ctx = context || this._context;
 
-    // 绘制所有元素
-    this._elements.forEach(element => {
-      if (element.draw) {
-        element.draw(this._context);
-      }
-    });
+    ctx.fillStyle = '#0D1B2A';
+    ctx.fillRect(0, 0, this._width, this._height);
+
+    const currentLayout = this.getLayout(this._currentLayout);
+
+    if (currentLayout && currentLayout.draw) {
+      currentLayout.draw(ctx);
+    }
+
+    if (this._elements.length > 0) {
+      this._elements.forEach(element => {
+        if (element.draw) {
+          element.draw(ctx);
+        }
+      });
+    }
+
+    if (currentLayout && currentLayout.drawOverlay) {
+      currentLayout.drawOverlay(ctx);
+    }
   }
 
   /**
@@ -433,4 +447,18 @@ export class RenderCanvas {
   get elements() { return [...this._elements]; }
   get drawMode() { return this._drawMode; }
   get layouts() { return this._layouts; }
+
+  /**
+   * 设置画布宽度
+   */
+  set width(value) {
+    this._width = value;
+  }
+
+  /**
+   * 设置画布高度
+   */
+  set height(value) {
+    this._height = value;
+  }
 }

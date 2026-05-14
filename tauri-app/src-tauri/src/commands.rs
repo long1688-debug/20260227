@@ -76,14 +76,14 @@ pub fn save_settings(app_handle: AppHandle, settings: AppSettings) -> Result<boo
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?;
-    
+
     // 如果目录不存在，创建它
     if !app_data_dir.exists() {
         std::fs::create_dir_all(&app_data_dir)
             .map_err(|e| format!("Failed to create app data directory: {}", e))?;
         println!("[设置] 已创建应用数据目录: {:?}", app_data_dir);
     }
-    
+
     let settings_path = app_data_dir.join("settings.json");
     println!("[设置] 保存设置到: {:?}", settings_path);
 
@@ -199,3 +199,4 @@ pub fn create_dir(path: PathBuf) -> Result<(), String> {
     std::fs::create_dir_all(&path)
         .map_err(|e| format!("Failed to create directory: {}", e))
 }
+

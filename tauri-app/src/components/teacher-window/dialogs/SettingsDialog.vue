@@ -320,48 +320,6 @@
                 </el-form>
               </div>
 
-              <!-- 录制模式配置 -->
-              <div class="codec-card">
-                <div class="card-header">
-                  <h4>🎯 录制模式配置</h4>
-                </div>
-                
-                <el-form label-width="120px" size="default">
-                  <el-form-item label="默认录制模式">
-                    <el-radio-group v-model="codecSettings.defaultRecordMode">
-                      <el-radio value="multi">多路独立</el-radio>
-                      <el-radio value="pip">画中画</el-radio>
-                      <el-radio value="grid">网格布局</el-radio>
-                    </el-radio-group>
-                  </el-form-item>
-                  
-                  <el-form-item label="网格布局尺寸" v-if="codecSettings.defaultRecordMode === 'grid'">
-                    <el-select v-model="codecSettings.gridLayoutSize" style="width: 100%">
-                      <el-option label="2×2 (4路)" value="2x2" />
-                      <el-option label="3×3 (9路)" value="3x3" />
-                      <el-option label="4×4 (16路)" value="4x4" />
-                    </el-select>
-                  </el-form-item>
-                  
-                  <el-form-item label="PiP 窗口位置">
-                    <el-select v-model="codecSettings.pipPosition" style="width: 100%">
-                      <el-option label="右上角" value="top-right" />
-                      <el-option label="左上角" value="top-left" />
-                      <el-option label="右下角" value="bottom-right" />
-                      <el-option label="左下角" value="bottom-left" />
-                    </el-select>
-                  </el-form-item>
-                  
-                  <el-form-item label="PiP 窗口大小">
-                    <el-select v-model="codecSettings.pipSize" style="width: 100%">
-                      <el-option label="小 (480×270)" value="small" />
-                      <el-option label="中 (640×360)" value="medium" />
-                      <el-option label="大 (960×540)" value="large" />
-                    </el-select>
-                  </el-form-item>
-                </el-form>
-              </div>
-
               <!-- 性能监控配置 -->
               <div class="codec-card">
                 <div class="card-header">
@@ -619,12 +577,6 @@ const codecSettings = ref({
   defaultCrf: 23,
   defaultBitrate: 6000,
   
-  // 录制模式
-  defaultRecordMode: 'multi',
-  gridLayoutSize: '2x2',
-  pipPosition: 'top-right',
-  pipSize: 'medium',
-  
   // 性能监控
   monitorInterval: 2000,
   fpsWarningThreshold: 20,
@@ -732,10 +684,6 @@ function handleResetSettings() {
     defaultPreset: 'fast',
     defaultCrf: 23,
     defaultBitrate: 6000,
-    defaultRecordMode: 'multi',
-    gridLayoutSize: '2x2',
-    pipPosition: 'top-right',
-    pipSize: 'medium',
     monitorInterval: 2000,
     fpsWarningThreshold: 20,
     cpuWarningThreshold: 80,

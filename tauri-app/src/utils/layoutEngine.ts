@@ -1,14 +1,16 @@
 // 视频布局引擎 - 负责布局注册与计算
+// 支持多布局独立状态，切换布局时保留每个布局的信号源
 
 import { LayoutDefinition, CellConfig, LAYOUT_INDICES } from '../types/layout';
 
 /**
- * 生成网格布局
+ * 生成网格布局（通用）
  * @param rows 行数
  * @param cols 列数
+ * @param prefix 单元格ID前缀
  * @returns 单元格配置数组
  */
-export function generateGrid(rows: number, cols: number): CellConfig[] {
+export function generateGrid(rows: number, cols: number, prefix: string = 'c'): CellConfig[] {
   const cells: CellConfig[] = [];
   const w = 100 / cols;
   const h = 100 / rows;
@@ -17,7 +19,7 @@ export function generateGrid(rows: number, cols: number): CellConfig[] {
     const r = Math.floor(i / cols);
     const c = i % cols;
     cells.push({
-      id: `c-${r}-${c}`,
+      id: `${prefix}-${r}-${c}`,
       x: c * w,
       y: r * h,
       width: w,
@@ -246,4 +248,43 @@ export function getLayoutDefinition(index: number): LayoutDefinition | undefined
  */
 export function snapToGrid(value: number, gridSize: number = 5): number {
   return Math.round(value / gridSize) * gridSize;
+}
+
+/**
+ * 获取布局的单元格数量
+ * @param index 布局索引
+ * @returns 单元格数量
+ */
+export function getLayoutCellCount(index: number): number {
+  const def = LAYOUT_REGISTRY[index];
+  return def ? def.cells.length : 0;
+}
+
+/**
+ * 判断是否为网格布局
+ * @param index 布局索引
+ * @returns 是否为网格布局
+ */
+export function isGridLayout(index: number): boolean {
+  const def = LAYOUT_REGISTRY[index];
+  return def ? def.type === 'grid' : false;
+}
+
+/**
+ * 判断是否为特殊布局
+ * @param index 布局索引
+ * @returns 是否为特殊布局
+ */
+export function isSpecialLayout(index: number): boolean {
+  const def = LAYOUT_REGISTRY[index];
+  return def ? def.type === 'special' : false;
+}
+
+/**
+ * 判断是否为自由布局
+ * @param index 布局索引
+ * @returns 是否为自由布局
+ */
+export function isFreeLayout(index: number): boolean {
+  return index === LAYOUT_INDICES.LAYOUT_FREE;
 }

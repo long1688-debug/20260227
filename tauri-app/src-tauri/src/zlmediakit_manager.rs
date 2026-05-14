@@ -150,21 +150,3 @@ fn is_port_available(port: u16) -> bool {
     use std::net::TcpListener;
     TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
-
-/// 自动启动 ZLMediaKit
-pub fn setup_auto_start_zlmediakit(app_handle: &AppHandle) {
-    use tokio::runtime::Runtime;
-
-    println!("[ZLMediaKit] 尝试自动启动服务...");
-
-    // 创建临时运行时来启动服务
-    let rt = Runtime::new().unwrap();
-
-    match rt.block_on(start_zlmediakit(app_handle.clone())) {
-        Ok(msg) => println!("[ZLMediaKit] {}", msg),
-        Err(e) => {
-            eprintln!("[ZLMediaKit] 自动启动失败: {}", e);
-            eprintln!("[ZLMediaKit] 请手动启动服务后使用本系统");
-        }
-    }
-}

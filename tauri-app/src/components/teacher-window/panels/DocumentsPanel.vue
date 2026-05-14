@@ -140,6 +140,16 @@
         </el-select>
         <el-button size="small" @click="clearWhiteboard">清空</el-button>
         <el-button size="small" @click="undoWhiteboard">撤销</el-button>
+
+        <!-- 🆕 白板直播按钮 - 直接开始/停止 -->
+        <el-button
+          size="small"
+          :type="isBroadcasting ? 'danger' : 'success'"
+          style="margin-left: auto;"
+          @click="handleToggleBroadcast"
+        >
+          {{ isBroadcasting ? '⏹️ 停止直播' : '📡 直播白板' }}
+        </el-button>
       </div>
       <div class="whiteboard-container">
         <canvas ref="whiteboardCanvas" class="whiteboard-canvas" @mousedown="startDraw" @mousemove="drawing"
@@ -150,7 +160,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Document,
@@ -168,6 +178,7 @@ import { createBlobUrl } from '@/utils/videoSource'
 // 🎯 导入新的文档类型检测工具
 import { validateFile, getTypeDisplayName, getTypeIcon } from '@/utils/documentTypeDetector'
 import WebpageViewer from '../../previews/WebpageViewer.vue'
+import { eventBus, EventTypes } from '@/utils/eventBus'
 
 const props = defineProps({
   // ... existing props ...
@@ -190,7 +201,8 @@ const isDrawing = ref(false)
 const lastX = ref(0)
 const lastY = ref(0)
 const drawingHistory = ref([])
-const colors = ['#000000', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF']
+const colors = ref(['#000000', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFFFFF'])
+const isBroadcasting = ref(false) // 白板直播状态
 
 // 打开浏览器
 const openBrowser = () => {
@@ -214,21 +226,27 @@ const openUrl = () => {
 
 // 初始化白板
 const initWhiteboard = () => {
-  nextTick(() => {
-    if (whiteboardCanvas.value) {
-      const canvas = whiteboardCanvas.value
-      canvas.width = canvas.parentElement.clientWidth
-      canvas.height = 500
-      const ctx = canvas.getContext('2d')
-      ctx.fillStyle = 'white'
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.strokeStyle = currentColor.value
-      ctx.lineWidth = brushSize.value
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-    }
-  })
-}
+  const canvas = whiteboardCanvas.value;
+  if (!canvas) return;
+
+  // 设置 canvas 尺寸
+  const container = canvas.parentElement;
+  if (container) {
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+  }
+
+  // 填充白色背景
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // 设置画笔样式
+  ctx.strokeStyle = currentColor.value;
+  ctx.lineWidth = brushSize.value;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+};
 
 // 白板绘制开始
 const startDraw = (e) => {
@@ -287,6 +305,15 @@ const undoWhiteboard = () => {
     }
     img.src = lastState
   }
+}
+
+// 切换白板直播
+const handleToggleBroadcast = () => {
+  isBroadcasting.value = !isBroadcasting.value
+  ElMessage.success(isBroadcasting.value ? '白板直播已开始' : '白板直播已停止')
+  
+  // 如果需要将白板推流到学生端，可以在这里添加 eventBus 发送逻辑
+  // eventBus.emit(EventTypes.WHITEBOARD_BROADCAST, { isBroadcasting: isBroadcasting.value })
 }
 
 // 过滤文档课件类型的信号源

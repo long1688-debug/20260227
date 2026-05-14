@@ -4,17 +4,8 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tauri::{AppHandle, Emitter};
-use serde::{Deserialize, Serialize};
 use crate::audio_capture::AudioCaptureState;
 use crate::whisper_wrapper::WhisperState;
-
-// 语音识别结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RecognitionResult {
-    pub text: String,
-    pub is_final: bool,
-    pub confidence: f32,
-}
 
 // 语音识别状态
 #[derive(Clone)]

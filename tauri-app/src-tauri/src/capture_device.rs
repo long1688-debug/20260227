@@ -132,7 +132,7 @@ impl CaptureDeviceManager {
     }
 
     /// 高拍仪拍照
-    pub fn scanner_capture(&self, config: &ScannerConfig) -> Result<String, String> {
+    pub fn scanner_capture(&self, _config: &ScannerConfig) -> Result<String, String> {
         // TODO: 调用高拍仪 SDK 进行拍照
         // 返回图片文件路径
         

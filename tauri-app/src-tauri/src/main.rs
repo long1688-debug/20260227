@@ -5,7 +5,6 @@ mod commands;
 mod license;
 mod models;
 mod server_manager;
-mod app_lifecycle;
 mod stream_proxy;
 mod onvif_ptz;
 mod zlmediakit_manager;
@@ -25,6 +24,8 @@ mod utils;
 mod document_converter;
 mod video_layout;
 mod fire_detection;
+mod camera_discovery;
+mod rtsp_stream;
 
 use tauri::Manager;
 use commands::*;
@@ -81,18 +82,18 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             // 初始化 PTZ 设备管理器
-            let manager = app.state::<PtzDeviceManager>();
+            let _manager = app.state::<PtzDeviceManager>();
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let manager = app_handle.state::<PtzDeviceManager>();
                 manager.register_vendor_defaults().await;
             });
-            
+
             // 🎯 关键修复：窗口启动时自动最大化到工作区域
             // 这确保窗口完全适应屏幕工作区域，排除任务栏
             let main_window = app.get_webview_window("main").unwrap();
             let _ = main_window.maximize();
-            
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -236,7 +237,7 @@ fn main() {
 
             // 视频文件命名管理
             generate_video_filename_cmd,
-            
+
             // 视频策略管理
             get_video_dir,
             finalize_video,
@@ -266,6 +267,25 @@ fn main() {
             // 火焰/烟雾检测
             detect_fire_smoke,
             quick_color_check,
+
+            // 网络摄像机发现
+            onvif_discover_devices,
+            scan_network_cameras,
+            scan_local_subnet,
+            scan_local_subnet_with_progress,
+            scan_all_network_interfaces,
+            discover_all_cameras,
+            get_local_ip,
+            get_network_interfaces_info,
+            
+            // 🎯 GB/T 28181 和厂商协议发现
+            discover_gb28181_devices,
+            discover_vendor_cameras,
+
+            // 🎯 RTSP 流管理
+            start_rtsp_stream,
+            stop_rtsp_stream,
+            get_active_rtsp_sessions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

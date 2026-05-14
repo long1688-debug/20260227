@@ -49,6 +49,12 @@ regex = "1.10"
 rubato = "0.14"
 
 # 随机数生成（用于 ONVIF MessageID）
+rand = "0.8"
+
+# 🎯 临时文件支持（用于 RTSP 转码）
+tempfile = "3"
+
+# 快速随机数生成（用于 ONVIF）
 fastrand = "2"
 
 # 图像处理（用于火焰/烟雾检测）
@@ -62,6 +68,17 @@ log = "0.4"
 
 # 全局静态变量
 lazy_static = "1.4"
+
+# 网络摄像机发现
+tokio-util = { version = "0.7", features = ["full"] }
+socket2 = "0.5"
+# tokio-util = { version = "0.7", features = ["udp"] }  # 暂时注释掉，因为版本不匹配
+# socket2 = "0.5"           # 暂时注释掉，避免潜在冲突
+
+# 网络工具库
+if-addrs = "0.9"        # 获取本机网卡信息
+ipnet = "2.9"           # IP 子网计算
+futures = "0.3"         # 异步流控制
 
 # Unix 信号处理（仅 Unix 平台）
 [target.'cfg(unix)'.dependencies]

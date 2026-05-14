@@ -16,37 +16,6 @@
     </div>
 
     <!-- 投票模态框 -->
-    <el-dialog v-model="showWhiteboard" title="在线白板" width="90%" height="85%">
-      <div class="whiteboard-toolbar">
-        <el-button-group>
-          <el-button v-for="color in colors" :key="color" class="color-btn" :style="{ backgroundColor: color }"
-            @click="currentColor = color"></el-button>
-        </el-button-group>
-        <el-select v-model="brushSize" size="small" style="width: 80px; margin-left: 10px;">
-          <el-option label="细" :value="2" />
-          <el-option label="中" :value="5" />
-          <el-option label="粗" :value="10" />
-        </el-select>
-        <el-button size="small" @click="clearWhiteboard">清空</el-button>
-        <el-button size="small" @click="undoWhiteboard">撤销</el-button>
-
-        <!-- 🆕 白板直播按钮 - 直接开始/停止 -->
-        <el-button
-          size="small"
-          :type="isBroadcasting ? 'danger' : 'success'"
-          style="margin-left: auto;"
-          @click="handleToggleBroadcast"
-        >
-          {{ isBroadcasting ? '⏹️ 停止直播' : '📡 直播白板' }}
-        </el-button>
-      </div>
-      <div class="whiteboard-container">
-        <canvas ref="whiteboardCanvas" class="whiteboard-canvas" @mousedown="startDraw" @mousemove="drawing"
-          @mouseup="stopDraw" @mouseleave="stopDraw"></canvas>
-      </div>
-    </el-dialog>
-
-    <!-- 投票模态框 -->
     <el-dialog v-model="showPoll" title="创建投票" width="650px">
       <div class="poll-container">
         <el-input v-model="pollTitle" placeholder="请输入投票标题" style="margin-bottom: 15px;" />
@@ -148,10 +117,11 @@ const studentStore = useStudentStore();
 // 获取在线学生列表
 const onlineStudents = computed(() => studentStore.students.filter(s => s.online));
 
-const webFeatures = [
-  { id: 'poll', icon: '📊', title: '投票', description: '实时投票和问卷调查' },
-  { id: 'quiz', icon: '❓', title: '测验', description: '在线测验和自动评分' }
-]
+// 随堂测试子功能列表（只保留投票和测验，白板功能已移至文档课件）
+const webFeatures = ref([
+  { id: 'poll', title: '课堂投票', description: '创建投票，实时统计结果', icon: '📊' },
+  { id: 'quiz', title: '在线测验', description: '随堂测验，自动评分', icon: '📝' }
+]);
 
 // 投票功能
 const showPoll = ref(false);
@@ -245,8 +215,9 @@ const endPoll = () => {
   ElMessage.success('投票已结束');
 };
 
-// 监听学生投票事件
-onMounted(() => {
+// 监听学生投票事件和初始化
+onMounted(async () => {
+  // 监听投票事件
   eventBus.on(EventTypes.POLL_VOTE, (data) => {
     if (isPollActive.value && pollResults.value.length > 0) {
       const optionIndex = pollResults.value.findIndex(r => r.text === data.option);
@@ -256,6 +227,18 @@ onMounted(() => {
       }
     }
   });
+
+  // 监听测验事件
+  eventBus.on(EventTypes.QUIZ_ANSWER, (data) => {
+    if (isQuizActive.value && data.quizId) {
+      let score = 0;
+      quizQuestions.value.forEach((q, i) => {
+        if (data.answers[i] === q.answer) score++;
+      });
+      studentScores.value[data.studentId] = score;
+    }
+  });
+
 });
 
 // 测验功能
@@ -361,19 +344,6 @@ const endQuiz = () => {
   ElMessage.success('测验已结束');
 };
 
-// 监听学生答题事件
-onMounted(() => {
-  eventBus.on(EventTypes.QUIZ_ANSWER, (data) => {
-    if (isQuizActive.value && data.quizId) {
-      let score = 0;
-      quizQuestions.value.forEach((q, i) => {
-        if (data.answers[i] === q.answer) score++;
-      });
-      studentScores.value[data.studentId] = score;
-    }
-  });
-});
-
 // 处理功能点击
 const handleFeatureClick = (feature) => {
   emit('open-feature', feature);
@@ -472,37 +442,6 @@ const handleFeatureClick = (feature) => {
   display: flex;
   gap: 10px;
   padding: 20px;
-}
-
-/* 白板样式 */
-.whiteboard-container {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #0A1525;
-}
-
-.whiteboard-toolbar {
-  padding: 10px;
-  background: #0F2035;
-  border-bottom: 1px solid #2A3F5F;
-  display: flex;
-  align-items: center;
-}
-
-.color-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 2px solid #4A90E2;
-  margin: 0 2px;
-}
-
-.whiteboard-canvas {
-  flex: 1;
-  cursor: crosshair;
-  background: white;
 }
 
 /* 日历样式 */
@@ -658,68 +597,6 @@ const handleFeatureClick = (feature) => {
   justify-content: flex-end;
 }
 
-/* 聊天样式 */
-.chat-container {
-  display: flex;
-  flex-direction: column;
-  height: 400px;
-  background: #0A1525;
-}
-
-.chat-messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
-  background: #0A1525;
-}
-
-.chat-message {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 15px;
-
-  &.self {
-    flex-direction: row-reverse;
-
-    .message-content {
-      background: #4A90E2;
-      color: white;
-      border-radius: 12px 12px 0 12px;
-    }
-  }
-}
-
-.message-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: #2A3F5F;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: #AAAAAA;
-  flex-shrink: 0;
-}
-
-.message-content {
-  max-width: 70%;
-  padding: 10px 14px;
-  background: #0F2035;
-  border-radius: 12px 12px 12px 0;
-  font-size: 13px;
-  color: #FFFFFF;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.chat-input {
-  display: flex;
-  gap: 10px;
-  padding: 10px;
-  border-top: 1px solid #2A3F5F;
-  background: #0F2035;
-}
-
 // 🆕 RTMP 配置对话框样式
 .rtmp-config-form {
   background: #0A1525;
@@ -750,16 +627,5 @@ const handleFeatureClick = (feature) => {
     font-size: 12px;
     color: #4A90E2;
   }
-}
-
-// 🆕 白板工具栏布局调整
-.whiteboard-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  background: #0F2035;
-  border-radius: 8px 8px 0 0;
-  flex-wrap: wrap;
 }
 </style>

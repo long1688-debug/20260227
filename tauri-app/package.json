@@ -31,6 +31,7 @@
     "docx-preview": "^0.3.7",
     "element-plus": "^2.4.4",
     "flv.js": "^1.6.2",
+    "hls.js": "^1.6.16",
     "mammoth": "^1.12.0",
     "mind-elixir": "^5.11.0",
     "onnxruntime-web": "^1.17.3",

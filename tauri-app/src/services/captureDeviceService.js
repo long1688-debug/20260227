@@ -150,3 +150,143 @@ export function getDeviceDisplayName(device) {
   
   return `${typeIcon} ${device.name}${interfaceInfo}${resolutionInfo}`
 }
+
+/**
+ * 🎯 网络摄像机配置管理服务
+ * 提供在线摄像机的自动发现、注册和配置管理功能
+ */
+
+/**
+ * 更新摄像机配置参数
+ * @param {Object} config - 配置对象
+ * @param {string} config.deviceId - 设备ID
+ * @param {string} [config.name] - 新名称
+ * @param {string} [config.username] - 新用户名
+ * @param {string} [config.password] - 新密码
+ * @param {string} [config.ip] - 新IP地址
+ * @param {number} [config.port] - 新端口
+ * @returns {Promise<string>} 操作结果消息
+ */
+export async function updateCameraConfig(config) {
+  try {
+    const result = await invoke('update_camera_config', {
+      deviceId: config.deviceId,
+      name: config.name || null,
+      username: config.username || null,
+      password: config.password || null,
+      ip: config.ip || null,
+      port: config.port || null
+    })
+    console.log('[摄像机配置] 更新成功:', result)
+    return result
+  } catch (error) {
+    console.error('[摄像机配置] 更新失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 删除已注册的摄像机
+ * @param {string} deviceId - 设备ID
+ * @returns {Promise<string>} 操作结果消息
+ */
+export async function removeCameraDevice(deviceId) {
+  try {
+    const result = await invoke('remove_camera_device', { deviceId })
+    console.log('[摄像机管理] 删除成功:', result)
+    return result
+  } catch (error) {
+    console.error('[摄像机管理] 删除失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 获取摄像机详细信息
+ * @param {string} deviceId - 设备ID
+ * @returns {Promise<Object>} 设备详情
+ */
+export async function getCameraDetails(deviceId) {
+  try {
+    const details = await invoke('get_camera_details', { deviceId })
+    console.log('[摄像机详情] 获取成功:', details)
+    return details
+  } catch (error) {
+    console.error('[摄像机详情] 获取失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 列出所有已注册的PTZ设备
+ * @returns {Promise<Array<string>>} 设备ID列表
+ */
+export async function listPtzDevices() {
+  try {
+    const devices = await invoke('ptz_list_devices')
+    console.log('[PTZ设备] 列表:', devices)
+    return devices
+  } catch (error) {
+    console.error('[PTZ设备] 获取列表失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 注册发现的ONVIF设备
+ * @param {Object} device - 发现的设备信息
+ * @param {string} device.ip - IP地址
+ * @param {string} device.username - 用户名
+ * @param {string} device.password - 密码
+ * @param {string} [device.name] - 设备名称（可选）
+ * @returns {Promise<string>} 注册后的设备ID
+ */
+export async function registerOnvifDevice(device) {
+  try {
+    const deviceId = await invoke('ptz_register_device', {
+      ip: device.ip,
+      username: device.username,
+      password: device.password,
+      name: device.name || null
+    })
+    console.log('[ONVIF设备] 注册成功:', deviceId)
+    return deviceId
+  } catch (error) {
+    console.error('[ONVIF设备] 注册失败:', error)
+    throw error
+  }
+}
+
+// 🎯 GB/T 28181 国标协议发现
+/**
+ * 发现GB/T 28181国标协议摄像机
+ * @param {number} timeoutSecs - 超时时间(秒)
+ * @returns {Promise<Array>} 发现的设备列表
+ */
+export async function discoverGb28181Devices(timeoutSecs = 5) {
+  try {
+    const devices = await invoke('discover_gb28181_devices', { timeoutSecs })
+    console.log('[GB28181发现] 共发现', devices.length, '个设备')
+    return devices
+  } catch (error) {
+    console.error('[GB28181发现] 失败:', error)
+    throw error
+  }
+}
+
+// 🎯 厂商私有协议发现
+/**
+ * 发现厂商私有协议摄像机(海康SADP + 大华P2P)
+ * @param {number} timeoutSecs - 超时时间(秒)
+ * @returns {Promise<Array>} 发现的设备列表
+ */
+export async function discoverVendorCameras(timeoutSecs = 5) {
+  try {
+    const devices = await invoke('discover_vendor_cameras', { timeoutSecs })
+    console.log('[厂商协议发现] 共发现', devices.length, '个设备')
+    return devices
+  } catch (error) {
+    console.error('[厂商协议发现] 失败:', error)
+    throw error
+  }
+}

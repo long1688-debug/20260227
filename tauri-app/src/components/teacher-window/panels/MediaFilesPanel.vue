@@ -6,7 +6,7 @@
         <el-icon><Plus /></el-icon> 添加媒体文件
       </el-button>
     </div>
-    
+
     <div class="panel-content">
       <div v-if="mediaSources.length === 0" class="empty-state">
         <el-empty description="暂无媒体文件" :image-size="0">
@@ -15,11 +15,11 @@
           </template>
         </el-empty>
       </div>
-      
+
       <div v-else class="source-list">
-        <div 
-          v-for="source in mediaSources" 
-          :key="source.id" 
+        <div
+          v-for="source in mediaSources"
+          :key="source.id"
           class="source-item"
         >
           <div class="source-info">
@@ -49,7 +49,7 @@ const { addVideoSource, removeVideoSource } = useVideoSync()
 
 // 过滤媒体文件类型的信号源
 const mediaSources = computed(() => {
-  return sourceStore.sources.filter(s => 
+  return sourceStore.sources.filter(s =>
     s.type === 'video' || s.type === 'localVideo' || s.type === 'networkStream'
   )
 })
@@ -129,7 +129,7 @@ const handleRemove = (source) => {
   align-items: center;
   padding: 12px 16px;
   border-bottom: 1px solid #2A3F5F;
-  
+
   .panel-title {
     font-size: 16px;
     font-weight: 600;
@@ -165,23 +165,23 @@ const handleRemove = (source) => {
   background: #0F2035;
   border: 1px solid #2A3F5F;
   border-radius: 4px;
-  
+
   .source-info {
     flex: 1;
-    
+
     .source-name {
       font-size: 14px;
       font-weight: 500;
       color: #FFFFFF;
       margin-bottom: 4px;
     }
-    
+
     .source-type {
       font-size: 13px;
       color: #888888;
     }
   }
-  
+
   .source-actions {
     display: flex;
     gap: 8px;

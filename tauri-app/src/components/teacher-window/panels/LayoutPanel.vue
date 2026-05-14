@@ -60,7 +60,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useVideoSync } from '@/composables/useVideoSync'
 import {
   LAYOUT_INDICES,
@@ -112,6 +112,8 @@ const specialLayouts = computed(() => {
     })
 })
 
+// 分页相关状态已移除 - 所有布局一次性显示
+
 // 定义 emit
 const emit = defineEmits(['layout-change'])
 
@@ -150,6 +152,8 @@ const handleSelectLayout = (layoutId) => {
 
 .layout-section {
   margin-bottom: 0; // 使用flex gap控制间距
+  width: 100%; // ✅ 确保占满容器宽度
+  min-width: 0; // ✅ 允许收缩
 
   &:last-child {
     margin-bottom: 0;
@@ -166,15 +170,11 @@ const handleSelectLayout = (layoutId) => {
 
 .layout-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr); // ✅ 改为每行5个，更紧凑（从4列增加到5列）
-  gap: 5px; // ✅ 进一步减小间距（从6px降到5px）
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  min-width: 0;
 }
 
-.special-layouts {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr); // ✅ 改为每行5个
-  gap: 5px; // ✅ 进一步减小间距
-}
 
 .layout-item {
   background: #0F2035;
@@ -183,6 +183,7 @@ const handleSelectLayout = (layoutId) => {
   padding: 5px; // ✅ 进一步减小内边距（从6px降到5px）
   cursor: pointer;
   transition: all 0.2s;
+  min-width: 0; // ✅ 允许项目收缩
 
   &:hover {
     border-color: #4CC9F0;
@@ -226,6 +227,44 @@ const handleSelectLayout = (layoutId) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%; // ✅ 确保文本不会溢出
+}
+
+.pagination-container {
+  margin-top: 8px;
+  display: flex;
+  justify-content: center;
+
+  :deep(.el-pagination) {
+    --el-pagination-button-color: #E0E1DD;
+    --el-pagination-hover-color: #4CC9F0;
+    --el-pagination-bg-color: transparent;
+
+    .btn-prev,
+    .btn-next,
+    .el-pager li {
+      background-color: #0F2035;
+      border: 1px solid #1A2A3A;
+      color: #E0E1DD;
+
+      &:hover {
+        color: #4CC9F0;
+        border-color: #4CC9F0;
+      }
+
+      &.is-active {
+        background-color: #4CC9F0;
+        color: #0D1B2A;
+        border-color: #4CC9F0;
+      }
+    }
+
+    .btn-prev:disabled,
+    .btn-next:disabled {
+      color: #4A5568;
+      border-color: #2D3748;
+    }
+  }
 }
 
 // 特殊布局预览样式

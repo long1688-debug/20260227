@@ -11,6 +11,9 @@
             'dragging': isDragging && draggingSourceId === source.id,
             'selected': selectedSourceId === source.id
           }"
+          draggable="true"
+          @dragstart="onDragStart($event, source)"
+          @dragend="onDragEnd"
           @mousedown="onMouseDown($event, source)"
           @touchstart="onTouchStart($event, source)"
           @click="selectSource(source)"
@@ -190,24 +193,37 @@ const selectSource = (source) => {
   selectedSourceId.value = source.id
 }
 
-// 拖拽开始
+// 🎯 HTML5 拖拽开始
 const onDragStart = (event, source) => {
+  console.log('[SourcePreviewBar] HTML5 拖拽开始:', source.name, source.type, source.id)
+
   isDragging.value = true
   draggingSourceId.value = source.id
 
-  // 设置拖拽数据
+  // 设置拖拽数据 - 关键：必须设置 JSON 格式的数据
   event.dataTransfer.effectAllowed = 'copy'
   event.dataTransfer.setData('sourceId', source.id)
   event.dataTransfer.setData('sourceType', source.type)
   event.dataTransfer.setData('sourceName', source.name)
   event.dataTransfer.setData('application/json', JSON.stringify(source))
 
+  // 设置拖拽图像（可选）
+  if (event.currentTarget) {
+    const dragImage = event.currentTarget.cloneNode(true)
+    dragImage.style.opacity = '0.8'
+    dragImage.style.width = '180px'
+    document.body.appendChild(dragImage)
+    event.dataTransfer.setDragImage(dragImage, 90, 60)
+    setTimeout(() => document.body.removeChild(dragImage), 0)
+  }
+
   // 🎯 发出事件给父组件
   emit('drag-start', source)
 }
 
-// 拖拽结束
+// 🎯 HTML5 拖拽结束
 const onDragEnd = () => {
+  console.log('[SourcePreviewBar] HTML5 拖拽结束')
   isDragging.value = false
   draggingSourceId.value = null
 
@@ -215,10 +231,12 @@ const onDragEnd = () => {
   emit('drag-end')
 }
 
-// 🎯 鼠标按下（用于自定义拖拽）
+// 🎯 鼠标按下（用于自定义拖拽 - 兼容 Tauri）
 const onMouseDown = (event, source) => {
   // 只处理左键
   if (event.button !== 0) return
+
+  console.log('[SourcePreviewBar] 鼠标按下:', source.name)
 
   // 🎯 发出事件给父组件，让 useSourceDrag 处理
   emit('mouse-down', event, source)
@@ -228,6 +246,8 @@ const onMouseDown = (event, source) => {
 const onTouchStart = (event, source) => {
   // 阻止默认行为（防止页面滚动）
   event.preventDefault();
+
+  console.log('[SourcePreviewBar] 触摸开始:', source.name)
 
   // 🎯 发出触摸事件给父组件
   emit('touch-start', event, source)
@@ -396,6 +416,7 @@ onUnmounted(() => {
 .source-preview-bar {
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100%;
   min-height: 0;         // 🎯 关键修复：允许收缩到任意高度
   background: var(--bg-secondary, #1B263B);

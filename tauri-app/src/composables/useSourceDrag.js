@@ -170,6 +170,10 @@ export function useSourceDrag(options = {}) {
     }
   };
 
+  // 🎯 为触摸拖拽添加的别名函数
+  const pauseAllVideosForDrag = pauseVideoRendering;
+  const resumeAllVideosAfterDrag = resumeVideoRendering;
+
   /**
    * 获取或创建视频文件的 blob URL
    * 如果同一文件已经被拖拽过，复用已有的 blob URL
@@ -367,11 +371,35 @@ export function useSourceDrag(options = {}) {
       mouseDragState.ghostElement = null;
     }
 
-    // 结束拖拽状态
-    mouseDragState.isDragging = false;
-
     // 性能优化：恢复视频渲染
     resumeVideoRendering();
+
+    console.log('[鼠标拖拽] 放置，目标索引:', dragOverIndex.value);
+    console.log('[鼠标拖拽] mouseDragState.source:', mouseDragState.source);
+
+    // 🎯 关键修复：处理鼠标拖拽放置（与触摸拖拽保持一致）
+    const draggedSource = resolveDraggedSource(null, mouseDragState.source);
+    if (draggedSource && dragOverIndex.value !== null) {
+      console.log(`[鼠标拖拽] 放置到索引 ${dragOverIndex.value}，源:`, draggedSource.name);
+
+      // 只有从预览区域拖拽时才创建克隆
+      let sourceToDrop = draggedSource;
+      if (mouseDragState.isFromPreview) {
+        sourceToDrop = cloneSourceForCanvas(draggedSource);
+        console.log('[鼠标拖拽] 从预览区域拖拽，创建克隆:', sourceToDrop.id);
+      }
+
+      handleDropToCanvas(sourceToDrop, dragOverIndex.value);
+    } else if (!draggedSource) {
+      console.warn('[鼠标拖拽] 未找到有效的信号源数据');
+    } else if (dragOverIndex.value === null) {
+      console.warn('[鼠标拖拽] 未放置到有效区域');
+    }
+
+    // 结束拖拽状态
+    mouseDragState.isDragging = false;
+    mouseDragState.source = null;
+    dragOverIndex.value = null;
   };
 
   /**
@@ -684,6 +712,10 @@ export function useSourceDrag(options = {}) {
     console.log(`[拖拽] 画布已重新渲染`);
   };
 
+  // 🎯 为触摸拖拽和 HTML5 拖拽添加的放置到画布函数（别名）
+  // 必须在 handleDrop 定义之后
+  const handleDropToCanvas = handleDrop;
+
   /**
    * 设置视频源（辅助函数）
    */
@@ -888,45 +920,69 @@ export function useSourceDrag(options = {}) {
    * 从当前布局中查找对应的 Box
    */
   const getRenderBoxByIndex = (index) => {
-    // 尝试从全局获取 renderCanvas
-    if (typeof window !== 'undefined' && window.__renderCanvas) {
-      const currentLayoutObj = window.__renderCanvas.getLayout(getCurrentLayoutValue());
-      if (currentLayoutObj) {
-        const elements = currentLayoutObj.elements;
-        return elements[index] || null;
-      }
-    }
-    return null;
+    if (!currentLayout || !layoutStates) return null;
+    
+    const layoutValue = typeof currentLayout === 'object' && 'value' in currentLayout 
+      ? currentLayout.value 
+      : currentLayout;
+    
+    const layoutState = layoutStates[layoutValue];
+    if (!layoutState || !layoutState.boxes) return null;
+    
+    return layoutState.boxes[index] || null;
   };
 
-  const clearVideoPreviewContent = (previewIndex) => {
-    // 清除渲染引擎预览组件的内容
-    console.log(`[拖拽] 清除渲染引擎预览组件内容，索引: ${previewIndex}`)
-    if (videoPreviews.value[previewIndex]) {
-      // 重置视频预览状态
-      videoPreviews.value[previewIndex] = null
-    } else {
-      console.warn(`[拖拽] 未找到渲染引擎预览组件，索引: ${previewIndex}`)
-    }
-  }
-
-  // 返回公共API
+  // ============================================
+  // 返回所有需要的响应式状态和方法
+  // ============================================
   return {
+    // 响应式状态
     dragOverIndex,
     draggedSourceType,
     isDraggingSource,
     currentSelectedSource,
     canvasSourceMap,
     videoPreviews,
-    handleDrop,
+    
+    // 鼠标拖拽方法
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,
+    
+    // HTML5 拖拽方法
+    onSourceDragStart,
+    onSourceDrag,
+    onSourceDragEnd,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+    
+    // 画中画拖拽方法
+    onDragOverPip,
+    onDragLeavePip,
+    onDropPip,
+    
+    // 触摸拖拽方法
+    onTouchStart,
+    
+    // 放置处理方法
+    handleDrop,
+    handleDropToCanvas,
+    
+    // 辅助方法
     setCurrentSelectedSource: (source) => {
       currentSelectedSource.value = source;
     },
     setVideoPreviews: (previews) => {
       videoPreviews.value = previews;
-    }
+    },
+    setupVideoSource,
+    removeFromCanvas,
+    cleanupDragState,
+    getRenderBoxByIndex,
+    
+    // 性能优化方法
+    pauseVideoRendering,
+    resumeVideoRendering
   };
 }

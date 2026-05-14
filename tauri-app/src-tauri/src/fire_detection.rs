@@ -1,8 +1,7 @@
 // 火焰/烟雾检测模块
 use base64::{engine::general_purpose::STANDARD, Engine};
-use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb, RgbImage};
+use image::{RgbImage};
 use serde::{Deserialize, Serialize};
-use std::io::Cursor;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DetectionResult {

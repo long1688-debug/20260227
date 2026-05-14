@@ -183,8 +183,12 @@ export class RenderBox extends RenderElement {
    * 加载视频文件
    */
   async _loadVideo() {
-    if (!this._source.url) return;
+    if (!this._source.url) {
+      console.log('[RenderBox._loadVideo] 没有 URL，跳过');
+      return;
+    }
 
+    console.log('[RenderBox._loadVideo] 开始加载视频:', this._source.url);
     this._videoElement = document.createElement('video');
     this._videoElement.src = this._source.url;
     this._videoElement.crossOrigin = 'anonymous';
@@ -193,7 +197,21 @@ export class RenderBox extends RenderElement {
     this._videoElement.volume = this._volume;
     this._videoElement.autoplay = true;
 
-    await this._videoElement.play().catch(() => { });
+    this._videoElement.onloadedmetadata = () => {
+      console.log('[RenderBox._loadVideo] 元数据加载完成, 尺寸:', this._videoElement.videoWidth, 'x', this._videoElement.videoHeight);
+    };
+
+    this._videoElement.onplay = () => {
+      console.log('[RenderBox._loadVideo] 视频开始播放');
+    };
+
+    this._videoElement.onerror = (e) => {
+      console.error('[RenderBox._loadVideo] 视频加载错误:', e);
+    };
+
+    await this._videoElement.play().catch((e) => {
+      console.warn('[RenderBox._loadVideo] 自动播放失败:', e);
+    });
     this._isPlaying = true;
   }
 

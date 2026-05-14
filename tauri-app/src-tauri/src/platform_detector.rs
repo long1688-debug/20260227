@@ -266,24 +266,17 @@ fn has_hardware_encoder() -> bool {
     // 简化实现：检查常见硬件编码器
     #[cfg(target_os = "windows")]
     {
-        // Windows: 检查 NVIDIA/Intel/AMD 编码器
         return check_windows_gpu_encoders();
     }
 
     #[cfg(target_os = "linux")]
     {
-        // Linux: 检查 VAAPI/NVENC
         return check_linux_gpu_encoders();
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         false
-    }
-
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
-    {
-        unreachable!("Platform-specific branch should have returned")
     }
 }
 

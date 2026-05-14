@@ -31,6 +31,24 @@
   position: relative;
 }
 
+// 视频区域（占据除了预览栏外的全部空间）
+.video-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+// 信号源预览栏（固定高度）
+.global-preview-bar {
+  flex-shrink: 0;
+  height: 140px;
+  min-height: 140px;
+  overflow: hidden;
+  background: #1B263B;
+}
+
 .title-bar {
   height: 40px;
   min-height: 40px;
@@ -129,11 +147,24 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 16px;
-  gap: 12px;
+  padding: 0;
+  /* 🎯 修复：移除padding，让视频区域铺满 */
+  gap: 0;
+  /* 🎯 修复：移除gap */
   min-width: 0;
   overflow: hidden;
   min-height: 0;
+
+  // 🎯 新增：主内容区域样式，确保正确布局
+  .video-main-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
 
   // 视频展示区域
   .video-display-area {
@@ -166,6 +197,8 @@
     position: relative;
     flex: 1;
     min-height: 0;
+    width: 100%;      // 🎯 修复：确保宽度填满父容器
+    height: 100%;     // 🎯 修复：确保高度填满父容器
     overflow: visible !important; // 🎯 改为 visible，允许字幕显示在容器内
   }
 
@@ -332,6 +365,12 @@
       }
     }
 
+    // 9分屏（索引7）：3x3 网格布局
+    &.layout-7 {
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+    }
+
     // 16 分屏（索引10）：视频完整显示
     &.layout-10 .video-item {
       width: 100%;
@@ -350,6 +389,12 @@
         height: auto !important;
         object-fit: contain !important;
       }
+    }
+
+    // 16分屏（索引10）：4x4 网格布局
+    &.layout-10 {
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(4, 1fr);
     }
 
     // 25 分屏（索引11）：视频完整显示
@@ -372,6 +417,12 @@
       }
     }
 
+    // 25分屏（索引11）：5x5 网格布局
+    &.layout-11 {
+      grid-template-columns: repeat(5, 1fr);
+      grid-template-rows: repeat(5, 1fr);
+    }
+
     // 36 分屏（索引12）：视频完整显示
     &.layout-12 .video-item {
       width: 100%;
@@ -392,6 +443,12 @@
       }
     }
 
+    // 36分屏（索引12）：6x6 网格布局
+    &.layout-12 {
+      grid-template-columns: repeat(6, 1fr);
+      grid-template-rows: repeat(6, 1fr);
+    }
+
     // 49 分屏（索引13）：视频完整显示
     &.layout-13 .video-item {
       width: 100%;
@@ -410,6 +467,12 @@
         height: auto !important;
         object-fit: contain !important;
       }
+    }
+
+    // 49分屏（索引13）：7x7 网格布局
+    &.layout-13 {
+      grid-template-columns: repeat(7, 1fr);
+      grid-template-rows: repeat(7, 1fr);
     }
 
     // 通用.video-item 样式

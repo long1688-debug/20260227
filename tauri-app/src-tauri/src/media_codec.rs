@@ -33,17 +33,6 @@ impl HardwareAcceleration {
             HardwareAcceleration::VideoToolbox => "h264_videotoolbox",
         }
     }
-
-    pub fn to_hevc_encoder(&self) -> &'static str {
-        match self {
-            HardwareAcceleration::None => "libx265",
-            HardwareAcceleration::NVENC => "hevc_nvenc",
-            HardwareAcceleration::QSV => "hevc_qsv",
-            HardwareAcceleration::AMF => "hevc_amf",
-            HardwareAcceleration::VAAPI => "hevc_vaapi",
-            HardwareAcceleration::VideoToolbox => "hevc_videotoolbox",
-        }
-    }
 }
 
 /// 视频流配置
@@ -388,7 +377,7 @@ impl MultiCodecManager {
         let mut cmd = Command::new("ffmpeg");
 
         // 添加所有视频输入
-        for (idx, video_config) in video_streams.iter().enumerate() {
+        for (_idx, video_config) in video_streams.iter().enumerate() {
             match video_config.source_type.as_str() {
                 "camera" => {
                     cmd.arg("-f").arg("dshow")

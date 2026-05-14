@@ -1,4 +1,5 @@
 // 单个视频画面单元格组件
+// 支持从预览区域拖拽信号源到单元格
 
 import React, { useCallback, useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
@@ -12,19 +13,22 @@ const TEST_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 interface VideoCellProps {
   cell: CellConfig;
   onDoubleClick?: (cell: CellConfig) => void;
+  onDrop?: (event: React.DragEvent, cellId: string) => void;
 }
 
 export const VideoCell: React.FC<VideoCellProps> = ({
   cell,
-  onDoubleClick
+  onDoubleClick,
+  onDrop
 }) => {
-  const { removeCell, bindSource, unbindSource } = useLayoutStore();
+  const { removeCell, bindSource, unbindSource, isFreeMode } = useLayoutStore();
   const [isHovered, setIsHovered] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   // isPlaying 用于将来扩展播放控制功能
   void isPlaying;
 
-  // DnD 可拖拽配置
+  // DnD 可拖拽配置（仅自由布局模式下可拖拽）
   const {
     attributes,
     listeners,
@@ -36,7 +40,8 @@ export const VideoCell: React.FC<VideoCellProps> = ({
     data: {
       type: 'video-cell',
       cellId: cell.id
-    }
+    },
+    disabled: !isFreeMode
   });
 
   // 计算样式
@@ -62,6 +67,48 @@ export const VideoCell: React.FC<VideoCellProps> = ({
       : '0 2px 8px rgba(0, 0, 0, 0.3)'
   };
 
+  // 处理拖放进入
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+    setIsDragOver(true);
+  }, []);
+
+  // 处理拖放离开
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  // 处理放置
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    // 获取拖拽的数据
+    const jsonData = e.dataTransfer.getData('application/json');
+    if (jsonData) {
+      try {
+        const source = JSON.parse(jsonData);
+        console.log('[VideoCell] 放置信号源:', source.name, '到单元格:', cell.id);
+
+        // 绑定信号源到单元格
+        bindSource(cell.id, source.id, source.streamUrl || TEST_STREAM_URL);
+        setIsPlaying(true);
+      } catch (err) {
+        console.error('[VideoCell] 解析拖拽数据失败:', err);
+      }
+    }
+
+    // 调用父组件的 onDrop
+    onDrop?.(e, cell.id);
+  }, [cell.id, bindSource, onDrop]);
+
   // 模拟绑定视频流
   const handleBindStream = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -76,7 +123,7 @@ export const VideoCell: React.FC<VideoCellProps> = ({
     setIsPlaying(false);
   }, [cell.id, unbindSource]);
 
-  // 删除单元格
+  // 删除单元格（仅自由布局）
   const handleRemove = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     removeCell(cell.id);
@@ -101,9 +148,13 @@ export const VideoCell: React.FC<VideoCellProps> = ({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onDoubleClick={handleDoubleClick}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       className={clsx(
         'video-cell group',
-        isDragging && 'video-cell-dragging'
+        isDragging && 'video-cell-dragging',
+        isDragOver && 'video-cell-drag-over'
       )}
     >
       {/* 视频内容 */}
@@ -141,6 +192,15 @@ export const VideoCell: React.FC<VideoCellProps> = ({
         </div>
       )}
 
+      {/* 拖放覆盖层 */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-blue-500/30 flex items-center justify-center pointer-events-none">
+          <div className="px-4 py-2 bg-blue-600 rounded-lg text-white text-sm font-medium">
+            {cell.sourceId ? '替换信号源' : '放置信号源'}
+          </div>
+        </div>
+      )}
+
       {/* 源信息叠加层 */}
       {cell.sourceId && (
         <div className="absolute top-2 right-12 px-2 py-0.5 bg-black/60 rounded text-xs text-white/80">
@@ -167,23 +227,27 @@ export const VideoCell: React.FC<VideoCellProps> = ({
             解绑
           </button>
         )}
-        {/* 删除按钮 */}
-        <button
-          type="button"
-          onClick={handleRemove}
-          className="px-3 py-1.5 bg-red-600/90 hover:bg-red-500 rounded text-xs transition-colors"
-        >
-          删除
-        </button>
+        {/* 删除按钮（仅自由布局） */}
+        {isFreeMode && (
+          <button
+            type="button"
+            onClick={handleRemove}
+            className="px-3 py-1.5 bg-red-600/90 hover:bg-red-500 rounded text-xs transition-colors"
+          >
+            删除
+          </button>
+        )}
       </div>
 
-      {/* 右下角拖拽指示器 */}
-      <div
-        className={clsx(
-          'absolute bottom-1 right-1 w-3 h-3 cursor-se-resize opacity-0 group-hover:opacity-50 transition-opacity',
-          'border-r-2 border-b-2 border-gray-400'
-        )}
-      />
+      {/* 右下角拖拽指示器（仅自由布局） */}
+      {isFreeMode && (
+        <div
+          className={clsx(
+            'absolute bottom-1 right-1 w-3 h-3 cursor-se-resize opacity-0 group-hover:opacity-50 transition-opacity',
+            'border-r-2 border-b-2 border-gray-400'
+          )}
+        />
+      )}
     </div>
   );
 };

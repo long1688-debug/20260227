@@ -484,7 +484,7 @@ impl RecordingManager {
     /// 开始预览录制（捕获视频元素流）
     pub fn start_preview_recording(
         &self,
-        app_handle: &AppHandle,
+        _app_handle: &AppHandle,
         session_id: String,
         video_stream_url: String, // RTSP/RTMP流地址
         config: RecordingConfig,
@@ -550,7 +550,7 @@ impl RecordingManager {
     /// 开始画中画录制（主画面+小窗口）
     pub fn start_pip_recording(
         &self,
-        app_handle: &AppHandle,
+        _app_handle: &AppHandle,
         session_id: String,
         main_x: i32,
         main_y: i32,
@@ -670,7 +670,7 @@ impl RecordingManager {
     /// 开始RTMP推流
     pub fn start_rtmp_streaming(
         &self,
-        app_handle: &AppHandle,
+        _app_handle: &AppHandle,
         session_id: String,
         source_x: i32,
         source_y: i32,
@@ -768,7 +768,7 @@ impl RecordingManager {
     /// 开始VR/360°视频录制
     pub fn start_vr_recording(
         &self,
-        app_handle: &AppHandle,
+        _app_handle: &AppHandle,
         session_id: String,
         camera_device: String,
         config: RecordingConfig,
@@ -1350,6 +1350,20 @@ pub fn get_active_recordings(app_handle: AppHandle) -> Vec<RecordingSession> {
     let state = app_handle.state::<RecordingManager>();
     state.get_active_sessions()
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

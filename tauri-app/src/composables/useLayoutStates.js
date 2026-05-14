@@ -36,6 +36,25 @@ export function useLayoutStates(options) {
     18               // 自由布局
   ];
 
+  // 布局索引到格子数量的映射
+  const layoutCellMap = {
+    1: 1,   // 1分屏
+    2: 2,   // 2分屏
+    3: 3,   // 3分屏
+    4: 4,   // 4分屏
+    5: 6,   // 6分屏
+    7: 9,   // 9分屏
+    10: 16, // 16分屏
+    11: 25, // 25分屏
+    12: 36, // 36分屏
+    13: 49, // 49分屏
+    14: 2,  // 特殊布局1（1大1小）
+    15: 2,  // 特殊布局2（1大1小）
+    16: 2,  // 特殊布局3（1大1小）
+    17: 2,  // 特殊布局4（1大1小）
+    18: 1   // 自由布局
+  };
+
   // 为每个布局类型创建独立的槽位对象（使用对象而非数组，支持 1-based 索引）
   // 例如：layoutStates[1].slots 是 1 分屏的槽位对象 {1: "source_A"}
   //      layoutStates[4].slots 是 4 分屏的槽位对象 {1: "source_A", 2: "source_B", ...}
@@ -45,7 +64,8 @@ export function useLayoutStates(options) {
         layout,
         {
           slots: {}, // 🎯 使用对象而非数组，键名为 1-based 画布索引
-          maximizedIndex: null // 每个布局独立的最大化状态
+          maximizedIndex: null, // 每个布局独立的最大化状态
+          freeSources: [] // 自由布局使用（可动态添加多个源）
         }
       ])
     )
@@ -62,16 +82,12 @@ export function useLayoutStates(options) {
     const oldLayout = currentLayout.value;
     console.log(`[LayoutStates] 切换布局: ${oldLayout} -> ${newLayout}`);
     
-    // 保存当前布局状态
-    saveCurrentLayoutState();
-    
     // 切换到新布局
     currentLayout.value = newLayout;
     
     // 如果新布局没有内容，尝试从预览区域克隆信号源
-    if (Object.keys(layoutStates[newLayout].slots).length === 0) {
-      console.log(`[LayoutStates] 新布局 ${newLayout} 为空，尝试从预览区域克隆信号源`);
-      // 这里可以实现从预览区域或其他地方获取初始信号源的逻辑
+    if (Object.keys(layoutStates[newLayout].slots).length === 0 && newLayout !== 18) {
+      console.log(`[LayoutStates] 新布局 ${newLayout} 为空，请从预览区域拖拽信号源`);
     }
   };
 
@@ -203,6 +219,7 @@ export function useLayoutStates(options) {
       if (states[layout]) {
         layoutStates[layout].slots = { ...states[layout].slots } || {};
         layoutStates[layout].maximizedIndex = states[layout].maximizedIndex || null;
+        layoutStates[layout].freeSources = states[layout].freeSources || [];
       }
     }
   };
@@ -225,6 +242,8 @@ export function useLayoutStates(options) {
     batchAssignSources,
     getAllLayoutStates,
     restoreLayoutStates,
-    saveCurrentLayoutState
+    saveCurrentLayoutState,
+    layoutCellMap,
+    layoutTypes
   };
 }

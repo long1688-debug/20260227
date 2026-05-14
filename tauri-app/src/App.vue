@@ -7,7 +7,7 @@
         <p>正在启动后端服务...</p>
       </div>
     </div>
-    
+
     <!-- 主路由视图 -->
     <router-view />
   </div>
@@ -25,7 +25,7 @@ onMounted(async () => {
   if (window.__TAURI__) {
     console.log('Running in Tauri environment');
     window.__RUNTIME_ENV__ = 'tauri';
-    
+
     // 初始化 Tauri 增强功能
     await initTauriFeatures();
   } else {
@@ -41,7 +41,7 @@ async function initTauriFeatures() {
   try {
     const appModule = await import('@tauri-apps/api/app');
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    
+
     // 获取应用信息
     try {
       const name = await appModule.getName();
@@ -49,52 +49,70 @@ async function initTauriFeatures() {
       window.__APP_INFO__ = { name, version };
       console.log(`[App] 应用: ${name} v${version}`);
     } catch {}
-    
+
     // 🎯 关键修复：动态调整窗口尺寸以排除任务栏
     try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
       const { primaryMonitor } = await import('@tauri-apps/api/window');
-      
+
       const appWindow = getCurrentWindow();
-      
+
       // 获取主显示器信息
       const monitor = await primaryMonitor();
-      
+
       if (monitor) {
         // 获取工作区域（排除任务栏）和屏幕尺寸
-        const workArea = monitor.workAreaSize || monitor.size;
+        const workArea = monitor.workArea || monitor.size;
         const screenSize = monitor.size;
-        
+
         console.log(`[App] 屏幕尺寸: ${screenSize.width}x${screenSize.height}`);
         console.log(`[App] 工作区域: ${workArea.width}x${workArea.height}`);
-        
+
         // 计算任务栏高度
         const taskbarHeight = screenSize.height - workArea.height;
         console.log(`[App] 任务栏高度: ${taskbarHeight}px`);
-        
+
         // 设置 CSS 变量供组件使用
         document.documentElement.style.setProperty('--taskbar-height', `${taskbarHeight}px`);
         document.documentElement.style.setProperty('--safe-viewport-height', `${workArea.height}px`);
-        
+
         console.log(`[App] 已设置CSS变量: --taskbar-height=${taskbarHeight}px, --safe-viewport-height=${workArea.height}px`);
-        
+
         // 🎯 关键：强制调整窗口大小以匹配工作区域
         try {
           const currentSize = await appWindow.outerSize();
           const currentPosition = await appWindow.outerPosition();
-          
+
           console.log(`[App] 当前窗口: ${currentSize.width}x${currentSize.height} @ (${currentPosition.x}, ${currentPosition.y})`);
-          
-          // 设置窗口位置和工作区域大小
-          await appWindow.setSize({
-            width: workArea.width,
-            height: workArea.height
-          });
-          
-          await appWindow.setPosition({
-            x: workArea.position ? workArea.position.x : 0,
-            y: workArea.position ? workArea.position.y : 0
-          });
-          
+
+          // 🎯 修复：Tauri v2 setSize API 需要正确的 LogicalSize 对象格式
+          // 方法1：使用 LogicalSize 构造函数（如果可用）
+          let sizeObj;
+          if (typeof window.__TAURI__.window.LogicalSize === 'function') {
+            sizeObj = new window.__TAURI__.window.LogicalSize(workArea.width, workArea.height);
+          } else {
+            // 方法2：直接传递对象（Tauri v2 新 API）
+            sizeObj = { width: workArea.width, height: workArea.height };
+          }
+
+          await appWindow.setSize(sizeObj);
+
+          // 设置窗口位置
+          let positionObj;
+          if (typeof window.__TAURI__.window.LogicalPosition === 'function') {
+            positionObj = new window.__TAURI__.window.LogicalPosition(
+              workArea.position ? workArea.position.x : 0,
+              workArea.position ? workArea.position.y : 0
+            );
+          } else {
+            positionObj = {
+              x: workArea.position ? workArea.position.x : 0,
+              y: workArea.position ? workArea.position.y : 0
+            };
+          }
+
+          await appWindow.setPosition(positionObj);
+
           console.log(`[App] 已调整窗口到工作区域: ${workArea.width}x${workArea.height}`);
         } catch (resizeError) {
           console.warn('[App] 调整窗口尺寸失败:', resizeError);
@@ -102,11 +120,11 @@ async function initTauriFeatures() {
       } else {
         console.warn('[App] 无法获取显示器信息');
       }
-      
+
     } catch (error) {
       console.warn('[App] 窗口尺寸调整失败:', error);
     }
-    
+
     // 监听应用就绪事件
     try {
       const { listen } = await import('@tauri-apps/api/event');
@@ -114,17 +132,17 @@ async function initTauriFeatures() {
         console.log('[App] 后端已就绪');
         backendLoading.value = false;
       });
-      
+
       // 同时监听后端就绪事件
       listen('backend:ready', () => {
         backendLoading.value = false;
       });
     } catch {}
-    
+
     // 禁止拖放文件到窗口（防止意外导航）
     document.addEventListener('dragover', (e) => e.preventDefault());
     document.addEventListener('drop', (e) => e.preventDefault());
-    
+
   } catch (error) {
     console.warn('[App] Tauri 特性初始化失败:', error);
   }
@@ -206,18 +224,18 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  
+
   .loading-content {
     text-align: center;
     color: #fff;
-    
+
     p {
       margin-top: 16px;
       font-size: 14px;
       color: #909399;
     }
   }
-  
+
   .spinner {
     width: 40px;
     height: 40px;

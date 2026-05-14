@@ -1,32 +1,49 @@
 // 视频网格容器组件 - 使用 DnD Kit 管理拖拽
+// 支持从预览区域拖拽信号源到网格、双击全屏、布局切换状态保留
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   DndContext,
   DragEndEvent,
+  DragOverEvent,
   useDroppable,
   PointerSensor,
   useSensor,
   useSensors,
-  DragOverEvent
+  DragStartEvent,
+  DragCancelEvent
 } from '@dnd-kit/core';
 import { VideoCell } from './VideoCell';
 import { useLayoutStore } from '../store/layoutStore';
 import { CellConfig } from '../types/layout';
 import { clsx } from 'clsx';
 
+// 测试视频流 URL
+const TEST_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+
 interface GridContainerProps {
   cells: CellConfig[];
   onCellDoubleClick?: (cell: CellConfig) => void;
+  onDrop?: (event: DragOverEvent, cellId: string) => void;
 }
 
 const GridContainer: React.FC<GridContainerProps> = ({
   cells,
-  onCellDoubleClick
+  onCellDoubleClick,
+  onDrop
 }) => {
   const { setNodeRef, isOver } = useDroppable({
     id: 'grid-container'
   });
+
+  // 处理拖放到网格空白区域
+  const handleDragOver = (event: React.DragEvent) => {
+    event.preventDefault();
+    // 如果有数据传递，允许放置
+    if (event.dataTransfer?.types.includes('application/json')) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  };
 
   return (
     <div
@@ -35,12 +52,24 @@ const GridContainer: React.FC<GridContainerProps> = ({
         'relative w-full h-full bg-gray-950 overflow-hidden rounded-lg shadow-inner',
         isOver && 'ring-2 ring-blue-500 ring-inset'
       )}
+      onDragOver={handleDragOver}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (onDrop && cells.length > 0) {
+          // 拖放到空白区域时，选择第一个空单元格
+          const emptyCell = cells.find(c => !c.sourceId);
+          if (emptyCell) {
+            onDrop({} as DragOverEvent, emptyCell.id);
+          }
+        }
+      }}
     >
       {cells.map(cell => (
         <VideoCell
           key={cell.id}
           cell={cell}
           onDoubleClick={onCellDoubleClick}
+          onDrop={onDrop}
         />
       ))}
 
@@ -51,6 +80,15 @@ const GridContainer: React.FC<GridContainerProps> = ({
 
       {/* 网格背景（仅在自由布局显示） */}
       <GridBackground />
+
+      {/* 拖放提示 */}
+      {isOver && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50 pointer-events-none">
+          <div className="px-6 py-3 bg-blue-600 rounded-lg text-white text-lg font-medium">
+            释放以放置信号源
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -115,12 +153,15 @@ export const VideoGrid: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerRect, setContainerRect] = useState({ width: 0, height: 0 });
   const [maximizedCell, setMaximizedCell] = useState<CellConfig | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const {
     cells,
     updateCellPosition,
+    bindSource,
     isFreeMode,
-    currentIndex
+    currentIndex,
+    saveSnapshot
   } = useLayoutStore();
 
   // 传感器配置
@@ -147,27 +188,71 @@ export const VideoGrid: React.FC = () => {
     return () => observer.disconnect();
   }, []);
 
+  // 拖拽开始处理
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    console.log('[VideoGrid] 拖拽开始:', event.active.id);
+    setIsDraggingOver(true);
+  }, []);
+
   // 拖拽结束处理
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, delta } = event;
     const cellId = active.id as string;
 
-    if (!isFreeMode || containerRect.width === 0) return;
+    setIsDraggingOver(false);
 
-    const cell = cells.find(c => c.id === cellId);
-    if (!cell) return;
+    // 检查是否从外部拖入（不是单元格内部拖拽）
+    const isCell = cells.find(c => c.id === cellId);
+    if (isCell) {
+      // 单元格内部拖拽
+      if (!isFreeMode || containerRect.width === 0) return;
 
-    // 计算新位置
-    const newX = Math.max(0, Math.min(95, cell.x + (delta.x / containerRect.width) * 100));
-    const newY = Math.max(0, Math.min(95, cell.y + (delta.y / containerRect.height) * 100));
+      // 计算新位置
+      const newX = Math.max(0, Math.min(95, isCell.x + (delta.x / containerRect.width) * 100));
+      const newY = Math.max(0, Math.min(95, isCell.y + (delta.y / containerRect.height) * 100));
 
-    updateCellPosition(cellId, newX, newY, containerRect.width, containerRect.height);
+      updateCellPosition(cellId, newX, newY, containerRect.width, containerRect.height);
+    }
   }, [cells, containerRect, isFreeMode, updateCellPosition]);
 
-  // 拖拽中处理（预留扩展）
-  const handleDragMove = useCallback((_event: DragOverEvent) => {
-    // 可以在这里实现拖拽预览效果
+  // 拖拽取消处理
+  const handleDragCancel = useCallback((event: DragCancelEvent) => {
+    console.log('[VideoGrid] 拖拽取消');
+    setIsDraggingOver(false);
   }, []);
+
+  // 拖拽经过处理
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    // 处理外部拖入
+    const { activatorEvent } = event;
+    if (activatorEvent.dataTransfer) {
+      activatorEvent.preventDefault();
+      activatorEvent.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
+
+  // 处理放置事件
+  const handleDrop = useCallback((event: DragOverEvent, cellId: string) => {
+    const { activatorEvent } = event;
+    if (!activatorEvent.dataTransfer) return;
+
+    // 获取拖拽的数据
+    const jsonData = activatorEvent.dataTransfer.getData('application/json');
+    if (jsonData) {
+      try {
+        const source = JSON.parse(jsonData);
+        console.log('[VideoGrid] 放置信号源:', source.name, '到单元格:', cellId);
+
+        // 绑定信号源到单元格
+        bindSource(cellId, source.id, source.streamUrl || TEST_STREAM_URL);
+
+        // 保存布局快照
+        saveSnapshot();
+      } catch (e) {
+        console.error('[VideoGrid] 解析拖拽数据失败:', e);
+      }
+    }
+  }, [bindSource, saveSnapshot]);
 
   // 双击最大化
   const handleCellDoubleClick = useCallback((cell: CellConfig) => {
@@ -193,10 +278,11 @@ export const VideoGrid: React.FC = () => {
   // 最大化时的遮罩
   const MaximizedOverlay: React.FC<{ cell: CellConfig }> = ({ cell }) => (
     <div
-      className="fixed inset-0 z-[9999] bg-black flex items-center justify-center"
+      className="fixed inset-0 z-[9999] bg-black flex items-center justify-center cursor-pointer"
       onDoubleClick={() => setMaximizedCell(null)}
+      onClick={() => setMaximizedCell(null)}
     >
-      <div className="relative w-full h-full">
+      <div className="relative w-full h-full" onClick={(e) => e.stopPropagation()}>
         {cell.streamUrl ? (
           <video
             className="w-full h-full object-contain"
@@ -214,15 +300,21 @@ export const VideoGrid: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* 画面信息 */}
+        <div className="absolute bottom-4 left-4 px-3 py-1.5 bg-black/60 rounded text-white text-sm">
+          {cell.name || `画面 ${cell.id}`}
+          {cell.sourceId && <span className="ml-2 text-gray-400">| {cell.sourceId}</span>}
+        </div>
       </div>
-      {/* 退出按钮 */}
-      <button
-        type="button"
-        onClick={() => setMaximizedCell(null)}
-        className="absolute top-4 right-4 px-4 py-2 bg-black/60 hover:bg-black/80 rounded text-white text-sm transition-colors"
-      >
-        按 ESC 或双击退出
-      </button>
+
+      {/* 退出提示 */}
+      <div className="absolute top-4 right-4 px-4 py-2 bg-black/60 hover:bg-black/80 rounded text-white text-sm transition-colors pointer-events-auto">
+        <span className="flex items-center gap-2">
+          <span>🖱️</span>
+          <span>双击或按 ESC 退出全屏</span>
+        </span>
+      </div>
     </div>
   );
 
@@ -230,12 +322,15 @@ export const VideoGrid: React.FC = () => {
     <div ref={containerRef} className="w-full h-full">
       <DndContext
         sensors={sensors}
+        onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        onDragMove={handleDragMove}
+        onDragCancel={handleDragCancel}
+        onDragOver={handleDragOver}
       >
         <GridContainer
           cells={cells}
           onCellDoubleClick={handleCellDoubleClick}
+          onDrop={handleDrop}
         />
       </DndContext>
 
@@ -243,9 +338,10 @@ export const VideoGrid: React.FC = () => {
       {maximizedCell && <MaximizedOverlay cell={maximizedCell} />}
 
       {/* 布局信息提示 */}
-      <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 rounded text-xs text-gray-400">
+      <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 rounded text-xs text-gray-400 pointer-events-none">
         布局: {currentIndex} | 画面数: {cells.length}
         {isFreeMode && ' | 自由布局'}
+        {isDraggingOver && ' | 拖拽中...'}
       </div>
     </div>
   );

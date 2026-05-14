@@ -8,7 +8,6 @@ use std::collections::VecDeque;
 pub struct AudioProcessorConfig {
     pub noise_gate_threshold: f32,  // 噪声门阈值
     pub noise_suppression_level: f32, // 噪声抑制级别 (0.0 - 1.0)
-    pub echo_cancellation: bool,      // 是否启用回声消除
     pub normalize: bool,              // 是否启用音频归一化
 }
 
@@ -17,7 +16,6 @@ impl Default for AudioProcessorConfig {
         AudioProcessorConfig {
             noise_gate_threshold: 0.02,  // -40dB
             noise_suppression_level: 0.5,
-            echo_cancellation: true,
             normalize: true,
         }
     }
@@ -159,21 +157,6 @@ impl AudioProcessor {
         if self.level_history.len() > self.max_history_size {
             self.level_history.pop_front();
         }
-    }
-
-    /// 获取当前噪声底
-    pub fn get_noise_floor(&self) -> f32 {
-        self.noise_floor
-    }
-
-    /// 获取当前音频电平
-    pub fn get_current_level(&self) -> f32 {
-        self.level_history.back().copied().unwrap_or(0.0)
-    }
-
-    /// 更新配置
-    pub fn update_config(&mut self, config: AudioProcessorConfig) {
-        self.config = config;
     }
 }
 

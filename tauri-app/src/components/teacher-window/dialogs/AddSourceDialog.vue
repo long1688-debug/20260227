@@ -226,56 +226,133 @@
 
             <!-- 网络摄像机 -->
             <template v-else-if="form.type === 'networkCamera'">
-              <!-- 自动扫描区域 -->
-              <div class="camera-scan-section">
-                <el-form-item>
-                  <div class="scan-header">
-                    <span class="scan-label">自动扫描摄像机</span>
-                    <el-button
-                      type="primary"
-                      size="small"
-                      :loading="isScanning"
-                      @click="handleScanCameras"
-                    >
-                      <el-icon><Search /></el-icon> {{ isScanning ? '扫描中...' : '扫描设备' }}
-                    </el-button>
-                  </div>
+              <!-- 扫描模式选择器 -->
+              <div class="scan-mode-selector">
+                <el-radio-group v-model="scanMode" size="small">
+                  <el-radio-button value="auto_scan">🔍 自动扫描</el-radio-button>
+                  <el-radio-button value="all_interfaces">🌐 多网卡扫描</el-radio-button>
+                  <el-radio-button value="manual_input">✏️ 手动输入</el-radio-button>
+                </el-radio-group>
+              </div>
 
-                  <!-- 扫描结果列表 -->
-                  <div v-if="discoveredCameras.length > 0" class="discovered-cameras-list">
-                    <div
-                      v-for="camera in discoveredCameras"
-                      :key="camera.address"
-                      class="discovered-camera-item"
-                      :class="{ selected: selectedCamera?.address === camera.address }"
-                      @click="selectDiscoveredCamera(camera)"
-                    >
-                      <div class="camera-info">
-                        <el-icon class="camera-icon"><VideoCamera /></el-icon>
-                        <div class="camera-details">
-                          <span class="camera-name">{{ camera.name || '未知设备' }}</span>
-                          <span class="camera-ip">{{ camera.address }}</span>
+              <!-- 自动扫描模式 -->
+              <template v-if="scanMode === 'auto_scan'">
+                <div class="camera-scan-section">
+                  <el-form-item>
+                    <div class="scan-header">
+                      <span class="scan-label">🔍 自动扫描局域网</span>
+                      <el-button
+                        type="primary"
+                        size="small"
+                        :loading="isScanning"
+                        @click="handleScanCameras"
+                      >
+                        <el-icon><Search /></el-icon> {{ isScanning ? '扫描中...' : '开始扫描' }}
+                      </el-button>
+                    </div>
+
+                    <!-- 扫描结果列表 -->
+                    <div v-if="discoveredCameras.length > 0" class="discovered-cameras-list">
+                      <div
+                        v-for="camera in discoveredCameras"
+                        :key="camera.address"
+                        class="discovered-camera-item"
+                        :class="{ selected: selectedCamera?.address === camera.address }"
+                        @click="selectDiscoveredCamera(camera)"
+                      >
+                        <div class="camera-info">
+                          <el-icon class="camera-icon"><VideoCamera /></el-icon>
+                          <div class="camera-details">
+                            <span class="camera-name">{{ camera.name || '未知设备' }}</span>
+                            <span class="camera-ip">{{ camera.address }}</span>
+                            <span v-if="camera.port" class="camera-port">端口: {{ camera.port }}</span>
+                          </div>
+                        </div>
+                        <div class="camera-actions">
+                          <el-button size="small" @click.stop="editDiscoveredCamera(camera)">编辑</el-button>
+                          <el-button type="primary" size="small" @click.stop="confirmAddCamera(camera)">添加</el-button>
                         </div>
                       </div>
-                      <div class="camera-actions">
-                        <el-button size="small" @click.stop="editDiscoveredCamera(camera)">编辑</el-button>
-                        <el-button type="primary" size="small" @click.stop="confirmAddCamera(camera)">添加</el-button>
+                    </div>
+                    <div v-else-if="!isScanning" class="empty-scan">
+                      <el-empty description="点击上方按钮扫描摄像机" :image-size="40" />
+                      <p class="empty-hint">将扫描 ONVIF 设备和常见端口</p>
+                    </div>
+                    <div v-if="scanError" class="scan-error">
+                      <el-icon color="#ef4444"><Warning /></el-icon>
+                      <span>{{ scanError }}</span>
+                    </div>
+                  </el-form-item>
+                </div>
+              </template>
+
+              <!-- 多网卡扫描模式 -->
+              <template v-else-if="scanMode === 'all_interfaces'">
+                <div class="camera-scan-section">
+                  <el-form-item>
+                    <div class="scan-header">
+                      <span class="scan-label">🌐 多网卡扫描（推荐）</span>
+                      <el-button
+                        type="primary"
+                        size="small"
+                        :loading="isScanning"
+                        @click="handleScanCameras"
+                      >
+                        <el-icon><Search /></el-icon> {{ isScanning ? '扫描中...' : '开始扫描' }}
+                      </el-button>
+                    </div>
+
+                    <div class="scan-mode-info">
+                      <el-icon><InfoFilled /></el-icon>
+                      <span>将扫描所有网络接口，发现不同网段的摄像机设备</span>
+                    </div>
+
+                    <!-- 扫描结果列表 -->
+                    <div v-if="discoveredCameras.length > 0" class="discovered-cameras-list">
+                      <div
+                        v-for="camera in discoveredCameras"
+                        :key="camera.address"
+                        class="discovered-camera-item"
+                        :class="{ selected: selectedCamera?.address === camera.address }"
+                        @click="selectDiscoveredCamera(camera)"
+                      >
+                        <div class="camera-info">
+                          <el-icon class="camera-icon"><VideoCamera /></el-icon>
+                          <div class="camera-details">
+                            <span class="camera-name">{{ camera.name || '未知设备' }}</span>
+                            <span class="camera-ip">{{ camera.address }}</span>
+                            <span v-if="camera.port" class="camera-port">端口: {{ camera.port }}</span>
+                          </div>
+                        </div>
+                        <div class="camera-actions">
+                          <el-button size="small" @click.stop="editDiscoveredCamera(camera)">编辑</el-button>
+                          <el-button type="primary" size="small" @click.stop="confirmAddCamera(camera)">添加</el-button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div v-else-if="!isScanning" class="empty-scan">
-                    <el-empty description="点击上方按钮扫描局域网内的摄像机" :image-size="40" />
-                  </div>
-                  <div v-if="scanError" class="scan-error">
-                    <el-icon color="#ef4444"><Warning /></el-icon>
-                    <span>{{ scanError }}</span>
-                  </div>
-                </el-form-item>
-              </div>
+                    <div v-else-if="!isScanning" class="empty-scan">
+                      <el-empty description="点击上方按钮扫描所有网卡" :image-size="40" />
+                      <p class="empty-hint">支持跨网段发现摄像机</p>
+                    </div>
+                    <div v-if="scanError" class="scan-error">
+                      <el-icon color="#ef4444"><Warning /></el-icon>
+                      <span>{{ scanError }}</span>
+                    </div>
+                  </el-form-item>
+                </div>
+              </template>
+
+              <!-- 手动输入模式 -->
+              <template v-else-if="scanMode === 'manual_input'">
+                <div class="manual-input-notice">
+                  <el-icon><InfoFilled /></el-icon>
+                  <span>手动输入模式：请直接填写下方摄像机信息</span>
+                </div>
+              </template>
 
               <el-divider />
 
-              <!-- 手动输入区域 -->
+              <!-- 手动输入区域（所有模式都显示） -->
               <el-form-item label="协议类型" prop="protocol">
                 <el-select v-model="form.protocol" placeholder="请选择协议" style="width: 100%">
                   <el-option label="RTSP" value="rtsp" />
@@ -285,18 +362,83 @@
                   <el-option label="ONVIF" value="onvif" />
                 </el-select>
               </el-form-item>
+
+              <!-- ONVIF设备服务地址 -->
+              <el-form-item v-if="form.protocol === 'onvif'" label="ONVIF服务地址" prop="onvifUrl">
+                <el-input
+                  v-model="form.onvifUrl"
+                  placeholder="例如：http://192.168.1.118:2000/onvif/device_service"
+                >
+                  <template #prepend>ONVIF</template>
+                  <template #append>
+                    <el-button @click="copyOnvifExample" title="复制示例格式">
+                      <el-icon><DocumentCopy /></el-icon>
+                    </el-button>
+                  </template>
+                </el-input>
+                <div class="onvif-examples mt-2">
+                  <div class="example-label mb-1 text-sm text-gray-600">常见ONVIF格式：</div>
+                  <el-button-group size="small">
+                    <el-button @click="setOnvifExample('default')">默认格式</el-button>
+                    <el-button @click="setOnvifExample('hikvision')">海康威视</el-button>
+                    <el-button @click="setOnvifExample('dahua')">大华</el-button>
+                    <el-button @click="setOnvifExample('axis')">安讯士</el-button>
+                  </el-button-group>
+                </div>
+              </el-form-item>
+
               <el-form-item label="流媒体地址" prop="streamUrl">
                 <el-input v-model="form.streamUrl" placeholder="例如：rtsp://192.168.1.100:554/stream" />
+
+                <!-- RTSP URL 模板选择器 -->
+                <div v-if="form.protocol === 'rtsp'" class="rtsp-url-templates mt-2">
+                  <div class="template-label mb-1 text-sm text-gray-600">常用格式：</div>
+                  <el-button-group size="small">
+                    <el-button @click="selectRtspTemplate('hikvision')">海康威视</el-button>
+                    <el-button @click="selectRtspTemplate('dahua')">大华</el-button>
+                    <el-button @click="selectRtspTemplate('axis')">安讯士</el-button>
+                    <el-button @click="selectRtspTemplate('uniview')">宇视</el-button>
+                    <el-button @click="selectRtspTemplate('generic')">通用格式</el-button>
+                  </el-button-group>
+                </div>
               </el-form-item>
+
               <el-form-item label="认证" prop="needAuth">
                 <el-checkbox v-model="form.needAuth">需要认证</el-checkbox>
               </el-form-item>
+
               <el-form-item v-if="form.needAuth" label="用户名" prop="username">
                 <el-input v-model="form.username" placeholder="请输入用户名" />
               </el-form-item>
+
               <el-form-item v-if="form.needAuth" label="密码" prop="password">
-                <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password />
+                <el-input
+                  v-model="form.password"
+                  type="password"
+                  show-password
+                  placeholder="请输入密码"
+                />
               </el-form-item>
+
+              <!-- IP修改提示 -->
+              <el-alert
+                v-if="selectedCamera && form.protocol === 'rtsp'"
+                title="提示：如需修改IP地址，请直接在流媒体地址中编辑"
+                type="info"
+                show-icon
+                :closable="false"
+                class="mb-3"
+              />
+
+              <!-- 认证信息提示 -->
+              <el-alert
+                v-if="form.needAuth && !form.username"
+                title="警告：需要认证但未填写用户名和密码"
+                type="warning"
+                show-icon
+                :closable="false"
+                class="mb-3"
+              />
               <el-form-item label="信号源名称" prop="name">
                 <el-input v-model="form.name" placeholder="留空则自动生成" />
               </el-form-item>
@@ -521,16 +663,30 @@
     </div>
 
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" @click="handleSubmit">确定</el-button>
+      <el-form-item>
+        <el-button type="primary" @click="handleSubmit" :loading="submitting">确定</el-button>
+        <el-button @click="handleClose">取消</el-button>
+
+        <!-- 测试按钮 -->
+        <el-button
+          v-if="form.protocol === 'rtsp' && form.streamUrl"
+          type="success"
+          @click="testRtspStream"
+          :loading="testingStream"
+          class="ml-2"
+        >
+          测试连接
+        </el-button>
+      </el-form-item>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { Refresh, VideoPlay, VideoPause, Edit, Delete, Warning, VideoCamera, Search } from '@element-plus/icons-vue';
+import { Refresh, VideoPlay, VideoPause, Edit, Delete, Warning, VideoCamera, Search, InfoFilled, DocumentCopy } from '@element-plus/icons-vue';
 import { SOURCE_TYPE_OPTIONS, SOURCE_TYPE_GROUPS, getSourceTypeIcon, getSourceTypeLabel, getSourceTypeTag } from '@/constants/sourceTypes';
+import { ElMessage } from 'element-plus';
 
 // ==================== Props & Emits ====================
 
@@ -576,12 +732,17 @@ const visible = computed({
 
 const formRef = ref(null);
 
+// 提交状态
+const submitting = ref(false);
+
 // 摄像机扫描相关状态
 const isScanning = ref(false);
 const discoveredCameras = ref([]);
 const selectedCamera = ref(null);
 const scanError = ref('');
 const editingCamera = ref(null);
+const scanMode = ref('manual_input'); // 扫描模式：auto_scan | all_interfaces | manual_input
+const testingStream = ref(false); // RTSP流测试状态
 
 const form = ref({
   type: 'localDevice',
@@ -603,6 +764,7 @@ const form = ref({
   // 网络摄像头/串流相关
   protocol: 'rtsp',
   streamUrl: '',
+  onvifUrl: '', // ONVIF设备服务地址
   needAuth: false,
   username: '',
   password: '',
@@ -643,8 +805,50 @@ const rules = {
   name: [{ max: 100, message: '名称不能超过100个字符', trigger: 'blur' }],
   deviceId: [{ required: true, message: '请选择设备', trigger: 'change' }],
   streamUrl: [
-    { required: true, message: '请输入流媒体地址', trigger: 'blur' },
-    { pattern: /^(rtsp|rtmp|hls|http|ws|srt):\/\//, message: '请输入有效的URL地址', trigger: 'blur' }
+    {
+      required: false,
+      validator: (rule, value, callback) => {
+        // 当协议是ONVIF时，streamUrl是可选的
+        if (form.value.protocol === 'onvif') {
+          callback();
+          return;
+        }
+
+        // 网络摄像机和RTSP协议需要验证streamUrl
+        if (form.value.type === 'networkCamera' || form.value.protocol === 'rtsp') {
+          if (!value) {
+            callback(new Error('请输入流媒体地址'));
+          } else if (!/^(rtsp|rtmp|hls|http|ws|srt):\/\//.test(value)) {
+            callback(new Error('请输入有效的URL地址'));
+          } else {
+            callback();
+          }
+        } else {
+          callback();
+        }
+      },
+      trigger: 'blur'
+    }
+  ],
+  onvifUrl: [
+    {
+      required: false,
+      validator: (rule, value, callback) => {
+        // 只有当协议是ONVIF时才验证
+        if (form.value.protocol === 'onvif') {
+          if (!value) {
+            callback(new Error('请输入ONVIF设备服务地址'));
+          } else if (!/^https?:\/\//.test(value)) {
+            callback(new Error('请输入有效的ONVIF URL地址'));
+          } else {
+            callback();
+          }
+        } else {
+          callback();
+        }
+      },
+      trigger: 'blur'
+    }
   ]
 };
 
@@ -815,18 +1019,29 @@ async function handleSelectPdfFile() {
   }
 }
 
-function handleSubmit() {
-  formRef.value?.validate((valid) => {
-    if (valid) {
-      emit('submit-source-form', { ...form.value });
-    }
-  });
+async function handleSubmit() {
+  if (submitting.value) return; // 防止重复提交
+
+  try {
+    submitting.value = true;
+
+    await formRef.value?.validate();
+
+    emit('submit-source-form', { ...form.value });
+
+    // 提交成功后关闭对话框（由父组件控制）
+    // visible.value = false; // 如果需要自动关闭，取消注释这行
+  } catch (error) {
+    console.error('表单验证失败:', error);
+  } finally {
+    submitting.value = false;
+  }
 }
 
 // ==================== 摄像机扫描相关方法 ====================
 
 /**
- * 扫描局域网内的摄像机设备
+ * 扫描局域网摄像机设备（优化版）
  */
 async function handleScanCameras() {
   if (isScanning.value) return;
@@ -837,20 +1052,89 @@ async function handleScanCameras() {
 
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    const found = await invoke('onvif_discover_devices', { timeoutSecs: 3 });
-    discoveredCameras.value = found.map(device => ({
-      ...device,
-      // 默认用户名密码（部分摄像机默认配置）
-      username: 'admin',
-      password: 'admin',
-      name: device.name || `摄像机_${device.address.split('.').pop()}`
-    }));
-    if (discoveredCameras.value.length === 0) {
-      scanError.value = '未发现摄像机设备，请检查网络连接';
+
+    // 先获取本地IP用于诊断
+    let localIp = '';
+    try {
+      localIp = await invoke('get_local_ip');
+      console.log('[摄像机扫描] 本地IP:', localIp);
+    } catch (e) {
+      console.warn('[摄像机扫描] 无法获取本地IP:', e);
+    }
+
+    // 尝试多种扫描方式
+    let found = [];
+    const scanMethods = [
+      { name: 'ONVIF发现', method: 'onvif_discover_devices', timeout: 5 },
+      { name: '子网扫描', method: 'scan_local_subnet', timeout: 5 },
+      { name: '综合发现', method: 'discover_all_cameras', timeout: 5 }
+    ];
+
+    for (const method of scanMethods) {
+      console.log(`[摄像机扫描] 尝试 ${method.name}...`);
+      try {
+        const result = await invoke(method.method, { timeoutSecs: method.timeout });
+
+        // 处理不同返回格式
+        if (Array.isArray(result)) {
+          found = result;
+        } else if (result.cameras && Array.isArray(result.cameras)) {
+          found = result.cameras;
+        }
+
+        if (found.length > 0) {
+          console.log(`[摄像机扫描] ${method.name} 成功，发现 ${found.length} 个设备`);
+          break;
+        }
+      } catch (error) {
+        console.warn(`[摄像机扫描] ${method.name} 失败:`, error.message);
+      }
+    }
+
+    // 处理发现的设备
+    if (found.length > 0) {
+      discoveredCameras.value = found.map(device => ({
+        ...device,
+        // 默认用户名密码（部分摄像机默认配置）
+        username: device.username || 'admin',
+        password: device.password || 'admin',
+        name: device.name || `摄像机_${device.address?.split('.').pop() || '未知'}`
+      }));
+
+      ElMessage.success(`成功发现 ${discoveredCameras.value.length} 个摄像机设备`);
+    } else {
+      // 构建详细的错误提示
+      const suggestions = [];
+
+      if (!localIp) {
+        suggestions.push('• 无法检测到本地IP，请检查网络连接');
+      } else {
+        const ipParts = localIp.split('.');
+        if (ipParts.length === 4) {
+          suggestions.push(`• 当前网络段: ${ipParts[0]}.${ipParts[1]}.${ipParts[2]}.x`);
+        }
+      }
+
+      suggestions.push('• 确认摄像机已通电并连接到同一网络');
+      suggestions.push('• 检查摄像机是否启用了ONVIF或RTSP服务');
+      suggestions.push('• 尝试手动输入摄像机IP地址');
+      suggestions.push('• 检查Windows防火墙是否阻止了UDP多播');
+
+      scanError.value = '未发现摄像机设备\n\n建议检查：\n' + suggestions.join('\n');
+
+      ElMessage.warning({
+        message: '未发现设备，建议尝试手动添加',
+        duration: 5000
+      });
     }
   } catch (error) {
     scanError.value = '扫描失败: ' + error.message;
     console.error('[摄像机扫描] 扫描失败:', error);
+
+    ElMessage.error({
+      message: '扫描过程发生错误，请查看控制台日志',
+      duration: 5000
+    });
   } finally {
     isScanning.value = false;
   }
@@ -863,15 +1147,41 @@ function selectDiscoveredCamera(camera) {
   selectedCamera.value = camera;
   // 自动填充表单
   form.value.protocol = 'rtsp';
-  form.value.streamUrl = `rtsp://${camera.address}:554/stream`;
-  form.value.name = camera.name;
+  form.value.name = camera.name || `摄像机_${camera.address.split('.').pop()}`;
+
+  // 根据设备类型智能推荐RTSP URL
+  const port = camera.port || 554;
+  const ip = camera.address;
+  let suggestedUrl = `rtsp://${ip}:${port}/stream`;
+
+  // 根据端口和设备信息智能推荐格式
+  if (camera.manufacturer?.toLowerCase().includes('hik')) {
+    suggestedUrl = `rtsp://${ip}:${port}/h264/ch1/main/av_stream`;
+  } else if (camera.manufacturer?.toLowerCase().includes('dahua')) {
+    suggestedUrl = `rtsp://${ip}:${port}/cam/realmonitor?channel=1&subtype=0`;
+  } else if (camera.manufacturer?.toLowerCase().includes('axis')) {
+    suggestedUrl = `rtsp://${ip}:${port}/axis-media/media.amp`;
+  } else if (port === 554) {
+    suggestedUrl = `rtsp://${ip}:${port}/h264/ch1/main/av_stream`; // 默认海康格式
+  } else if (port === 8899) {
+    suggestedUrl = `rtsp://${ip}:554/cam/realmonitor?channel=1&subtype=0`; // 大华格式
+  }
+
+  form.value.streamUrl = suggestedUrl;
+
   if (camera.username) {
     form.value.needAuth = true;
     form.value.username = camera.username;
-    form.value.password = camera.password;
+    form.value.password = camera.password || 'admin';
   } else {
     form.value.needAuth = false;
   }
+
+  // 提示用户检查URL格式
+  ElMessage.warning({
+    message: '已自动填写 RTSP 地址模板，请根据实际摄像机型号修改路径后缀',
+    duration: 5000
+  });
 }
 
 /**
@@ -880,13 +1190,22 @@ function selectDiscoveredCamera(camera) {
 function editDiscoveredCamera(camera) {
   editingCamera.value = { ...camera };
 
+  // 先选择摄像机以填充表单
+  selectDiscoveredCamera(camera);
+
+  // 滚动到表单区域
+  setTimeout(() => {
+    const formContainer = document.querySelector('.source-form-container');
+    if (formContainer) {
+      formContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, 100);
+
   ElMessage({
     type: 'info',
-    message: '已将摄像机信息填入表单，您可以修改IP地址和名称后点击确定添加',
+    message: '已将摄像机信息填入表单，请修改后点击底部"确定"按钮添加',
     duration: 3000
   });
-
-  selectDiscoveredCamera(camera);
 }
 
 /**
@@ -900,6 +1219,165 @@ function confirmAddCamera(camera) {
 
   // 直接提交
   handleSubmit();
+}
+
+/**
+ * 选择RTSP URL模板
+ */
+function selectRtspTemplate(brand) {
+  // 尝试从现有 URL 中提取 IP 和端口，如果没有则使用默认值
+  const ipMatch = form.value.streamUrl.match(/rtsp:\/\/([^:/]+)/)?.[1] || form.value.streamUrl.match(/\d+\.\d+\.\d+\.\d+/)?.[0];
+  const ip = ipMatch || '192.168.1.100';
+
+  // 尝试提取端口，默认为 554
+  let port = '554';
+  const portMatch = form.value.streamUrl.match(/:(\d+)\//);
+  if (portMatch) {
+    port = portMatch[1];
+  } else if (form.value.streamUrl.includes(':')) {
+     // 简单处理一些非标准情况，通常 rtsp://ip:port/path
+     const parts = form.value.streamUrl.split(':')[2]; // split by : after rtsp://
+     if (parts) {
+         port = parts.split('/')[0];
+     }
+  }
+
+  let urlTemplate;
+
+  switch (brand) {
+    case 'hikvision':
+      urlTemplate = `rtsp://${ip}:${port}/h264/ch1/main/av_stream`;
+      break;
+    case 'dahua':
+      urlTemplate = `rtsp://${ip}:${port}/cam/realmonitor?channel=1&subtype=0`;
+      break;
+    case 'axis':
+      urlTemplate = `rtsp://${ip}:${port}/axis-media/media.amp`;
+      break;
+    case 'uniview':
+      urlTemplate = `rtsp://${ip}:${port}/media/video1`;
+      break;
+    case 'generic':
+      urlTemplate = `rtsp://${ip}:${port}/stream`;
+      break;
+    default:
+      urlTemplate = `rtsp://${ip}:${port}/stream`;
+  }
+
+  form.value.streamUrl = urlTemplate;
+  ElMessage.info(`已应用${getBrandName(brand)} RTSP格式`);
+}
+
+/**
+ * 获取品牌名称
+ */
+function getBrandName(brand) {
+  const brands = {
+    'hikvision': '海康威视',
+    'dahua': '大华',
+    'axis': '安讯士',
+    'uniview': '宇视',
+    'generic': '通用格式'
+  };
+  return brands[brand] || brand;
+}
+
+/**
+ * 复制ONVIF示例格式到剪贴板
+ */
+async function copyOnvifExample() {
+  const exampleUrl = 'http://192.168.1.118:2000/onvif/device_service';
+  try {
+    await navigator.clipboard.writeText(exampleUrl);
+    ElMessage.success('ONVIF示例格式已复制到剪贴板');
+  } catch (error) {
+    console.error('复制失败:', error);
+    ElMessage.error('复制失败，请手动输入');
+  }
+}
+
+/**
+ * 设置ONVIF示例格式
+ */
+function setOnvifExample(type) {
+  // 尝试从现有 URL 中提取 IP，如果没有则使用默认值
+  const ipMatch = form.value.onvifUrl?.match(/https?:\/\/([^:/]+)/)?.[1] || '192.168.1.100';
+
+  let urlTemplate;
+
+  switch (type) {
+    case 'default':
+      urlTemplate = `http://${ipMatch}:2000/onvif/device_service`;
+      break;
+    case 'hikvision':
+      urlTemplate = `http://${ipMatch}:80/onvif/device_service`;
+      break;
+    case 'dahua':
+      urlTemplate = `http://${ipMatch}:80/onvif/device_service`;
+      break;
+    case 'axis':
+      urlTemplate = `http://${ipMatch}/onvif/device_service`;
+      break;
+    default:
+      urlTemplate = `http://${ipMatch}:2000/onvif/device_service`;
+  }
+
+  form.value.onvifUrl = urlTemplate;
+  ElMessage.info(`已应用${getOnvifBrandName(type)} ONVIF格式`);
+}
+
+/**
+ * 获取ONVIF品牌名称
+ */
+function getOnvifBrandName(type) {
+  const brands = {
+    'default': '默认',
+    'hikvision': '海康威视',
+    'dahua': '大华',
+    'axis': '安讯士'
+  };
+  return brands[type] || type;
+}
+
+/**
+ * 测试RTSP流连接
+ */
+async function testRtspStream() {
+  if (!form.value.streamUrl) {
+    ElMessage.warning('请先输入流媒体地址');
+    return;
+  }
+
+  testingStream.value = true;
+
+  try {
+    // 验证URL格式
+    const urlPattern = /^(rtsp|rtmp|hls|http|ws|srt):\/\/[^\s]+$/;
+    if (!urlPattern.test(form.value.streamUrl)) {
+      ElMessage.error('URL格式不正确，请检查');
+      testingStream.value = false;
+      return;
+    }
+
+    // 提示用户进行实际测试
+    ElMessage.info({
+      message: '请在VLC播放器中测试此URL：\n' + form.value.streamUrl + '\n\n如能正常播放，则配置正确',
+      duration: 8000,
+      showClose: true
+    });
+
+    // 复制到剪贴板方便用户测试
+    try {
+      await navigator.clipboard.writeText(form.value.streamUrl);
+      ElMessage.success('RTSP地址已复制到剪贴板');
+    } catch (e) {
+      console.warn('复制失败:', e);
+    }
+  } catch (error) {
+    ElMessage.error('测试失败: ' + error.message);
+  } finally {
+    testingStream.value = false;
+  }
 }
 
 function resetForm() {
@@ -923,6 +1401,7 @@ function resetForm() {
     // 网络摄像头/串流相关
     protocol: 'rtsp',
     streamUrl: '',
+    onvifUrl: '', // ONVIF设备服务地址
     needAuth: false,
     username: '',
     password: '',
@@ -959,6 +1438,9 @@ function resetForm() {
     zoom: 100
   };
   formRef.value?.clearValidate();
+
+  // 重置扫描模式
+  scanMode.value = 'manual_input';
 }
 
 /**
@@ -1059,8 +1541,6 @@ function handleLocalDeviceChange(deviceId) {
   }
 }
 
-
-
 </script>
 
 <style scoped lang="scss">
@@ -1094,6 +1574,17 @@ function handleLocalDeviceChange(deviceId) {
     overflow-y: auto;
     padding: 0;
     @include custom-scrollbar;
+  }
+
+  // 确保footer始终可见
+  :deep(.el-dialog__footer) {
+    position: sticky;
+    bottom: 0;
+    background: var(--el-bg-color);
+    border-top: 1px solid var(--el-border-color-light);
+    padding: 16px 20px;
+    z-index: 10;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
   }
 }
 
@@ -1407,6 +1898,11 @@ function handleLocalDeviceChange(deviceId) {
               font-size: $font-size-sm;
               color: $text-secondary;
             }
+
+            .camera-port {
+              font-size: $font-size-sm;
+              color: $text-secondary;
+            }
           }
         }
 
@@ -1431,6 +1927,46 @@ function handleLocalDeviceChange(deviceId) {
         color: $danger-color;
         font-size: $font-size-sm;
         margin-top: 8px;
+      }
+    }
+
+    .rtsp-url-templates {
+      margin-top: 8px;
+
+      .template-label {
+        font-size: 12px;
+        color: $text-secondary;
+        margin-bottom: 4px;
+      }
+
+      :deep(.el-button-group) {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+
+        .el-button {
+          flex: 0 0 auto;
+        }
+      }
+    }
+
+    .onvif-examples {
+      margin-top: 8px;
+
+      .example-label {
+        font-size: 12px;
+        color: $text-secondary;
+        margin-bottom: 4px;
+      }
+
+      :deep(.el-button-group) {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+
+        .el-button {
+          flex: 0 0 auto;
+        }
       }
     }
   }

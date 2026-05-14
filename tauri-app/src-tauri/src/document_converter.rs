@@ -208,7 +208,7 @@ fn calculate_file_hash(path: &PathBuf) -> Result<String> {
 }
 
 /// 获取 Tauri 应用端口
-fn get_port(handle: &tauri::AppHandle) -> u16 {
+fn get_port(_handle: &tauri::AppHandle) -> u16 {
     // 默认返回 5174 端口
     // 注意：在 Tauri 2.0 中，配置访问方式已改变
     // 如需获取实际配置，应使用 handle.config() 的正确 API

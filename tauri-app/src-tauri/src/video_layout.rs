@@ -172,7 +172,7 @@ pub async fn delete_layout(
 /// 导出布局到指定路径
 #[tauri::command]
 pub async fn export_layout(
-    app_handle: AppHandle,
+    _app_handle: AppHandle,
     payload: LayoutPayload,
     export_path: String,
 ) -> Result<String, String> {
@@ -217,3 +217,5 @@ pub async fn import_layout(
 
     Ok(payload)
 }
+
+

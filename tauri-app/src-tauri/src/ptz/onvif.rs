@@ -8,8 +8,6 @@ pub enum OnvifError {
     Request(#[from] reqwest::Error),
     #[error("设备返回错误: HTTP {status} - {body}")]
     DeviceResponse { status: u16, body: String },
-    #[error("坐标超出ONVIF规范范围")]
-    OutOfRange,
     #[error("设备未注册")]
     DeviceNotFound,
 }
@@ -47,6 +45,31 @@ impl OnvifCamera {
                 .build()
                 .expect("Failed to create HTTP client"),
         }
+    }
+
+    /// 获取 IP 地址
+    pub fn ip(&self) -> &str {
+        &self.ip
+    }
+
+    /// 获取端口
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// 获取用户名
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+
+    /// 获取密码
+    pub fn password(&self) -> &str {
+        &self.password
+    }
+
+    /// 获取 Profile Token
+    pub fn profile_token(&self) -> &str {
+        &self.profile_token
     }
 
     /// 绝对位置控制（ONVIF标准）

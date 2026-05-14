@@ -1,0 +1,4565 @@
+<template>
+  <div class="teacher-window">
+    <!-- 璁稿彲璇侀獙璇?-->
+    <LicenseGuard
+      v-if="!licenseVerified"
+      @license-verified="onLicenseVerified"
+      @license-failed="onLicenseFailed"
+    />
+
+    <!-- 涓绘暀甯堢晫闈?-->
+    <div v-else class="app-shell">
+      <!-- 鏍囬鏍?-->
+      <TitleBar>
+        <template #toolbar>
+          <!-- 馃啎 浣跨敤鐙珛鐨勮棰戞搷浣滃伐鍏锋爮缁勪欢 -->
+          <VideoOperationToolbar
+            :is-recording="isRecording"
+            :is-recording-paused="isRecordingPaused"
+            :is-annotation-enabled="isAnnotationEnabled"
+            @enable-annotation="enableAnnotationForAll"
+            @recording-command="handleRecordingCommand"
+            @pause-recording="handlePauseAllCanvasRecording"
+            @stop-recording="handleStopAllCanvasRecording"
+            @show-recording-dialog="showRecordingDialog = true"
+            @show-settings-dialog="showSettingsDialog = true"
+          />
+        </template>
+      </TitleBar>
+
+      <!-- 涓诲唴瀹瑰尯 -->
+      <div class="main-content-wrapper">
+        <!-- 宸︿晶鍐呭鍖猴紙瑙嗛 + 棰勮鏍忥級 -->
+        <div class="content-area">
+          <div class="main-content">
+            <!-- 瑙嗛鍖哄煙 -->
+            <div class="video-area">
+              <!-- 馃啎 娓叉煋寮曟搸涓荤敾甯冿紙瑕嗙洊妯″紡锛?-->
+              <div class="render-overlay" v-if="useRenderEngine">
+                <RenderEngineWrapper
+                  ref="renderEngineRef"
+                  :sources="mappedRenderSources"
+                  :layout-type="convertLayoutType(currentLayout)"
+                  :width="1280"
+                  :height="720"
+                  :auto-start="true"
+                  @ready="onRenderReady"
+                  @error="onRenderError"
+                  @source-ready="onSourceReady"
+                  @source-error="onSourceError"
+                  @element-click="onRenderElementClick"
+                  @element-dblclick="onRenderElementDoubleClick"
+                  @layout-change="handleLayoutChange"
+                />
+
+                <!-- 娴姩宸ュ叿鏍?-->
+                <div class="render-floating-toolbar">
+                  <button class="tool-btn" @click="toggleDrawingMode" :class="{ active: isDrawingMode }">
+                    <span>鉁忥笍</span>
+                  </button>
+                  <button class="tool-btn" @click="captureScreen">
+                    <span>馃摲</span>
+                  </button>
+                  <button class="tool-btn" @click="switchRenderLayout">
+                    <span>馃攢</span>
+                  </button>
+                  <button class="tool-btn" @click="toggleRenderEngine">
+                    <span>{{ useRenderEngine ? '馃攧' : '馃幀' }}</span>
+                  </button>
+                </div>
+
+                <!-- YOLO 妫€娴嬫ā寮忕姸鎬佹寚绀哄櫒 -->
+                <div class="yolo-status-indicator">
+                  <div class="status-row">
+                    <span class="status-label">缃戠粶:</span>
+                    <span class="status-value" :style="{ color: getNetworkStatusText.color }">
+                      {{ getNetworkStatusText.icon }} {{ getNetworkStatusText.text }}
+                    </span>
+                  </div>
+                  <div class="status-row">
+                    <span class="status-label">妫€娴嬫ā寮?</span>
+                    <span class="status-value" :style="{ color: getDetectionModeText.color }">
+                      {{ getDetectionModeText.icon }} {{ getDetectionModeText.text }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 馃啎 鏍囧噯瑙嗛缃戞牸锛堜紶缁熸ā寮忥級 -->
+              <VideoSection
+                v-if="!useRenderEngine"
+                :current-layout="currentLayout"
+                :canvas-sources="mappedCanvasSources"
+                :canvas-source-map="canvasSourceMap"
+                :drag-over-index="dragOverIndex"
+                :network-quality="networkQuality"
+                :custom-grid-count="customGridCount"
+                :is-maximized="isMaximized"
+                :maximized-index="maximizedIndex"
+                :global-subtitle="globalSubtitle"
+                :subtitle-visible="subtitleVisible"
+                :current-subtitle-text="currentSubtitleText"
+                @show-recording-dialog="showRecordingDialog = true"
+                @show-settings-dialog="showSettingsDialog = true"
+                @show-multicam-dialog="showMulticamDialog = true"
+                @show-vr-dialog="showVRDialog = true"
+                @show-chromakey-dialog="showChromakeyDialog = true"
+                @show-subtitle-dialog="showSubtitleDialog = true"
+                @show-video-to-subtitle-dialog="showVideoToSubtitleDialog = true"
+                @export-subtitles="handleExportSubtitles"
+                @import-subtitles="handleImportSubtitles"
+                @clear-subtitles="handleClearSubtitles"
+                @toggle-maximize="handleToggleMaximize"
+                @show-network-detail="handleShowNetworkDetail"
+                @drop-source="handleDropSourceFromPreview"
+              />
+            </div>
+
+            <!-- 淇″彿婧愰瑙堟爮锛堝浐瀹氬湪鍐呭鍖哄簳閮級 -->
+            <div class="global-preview-bar">
+              <SourcePreviewBar
+                ref="sourcePreviewBarRef"
+                @rename-source="handleOpenRenameSource"
+                @remove-source="handleRemoveSource"
+                @drag-start="handleDragStart"
+                @drag-end="handleDragEnd"
+                @mouse-down="processMouseDown"
+                @touch-start="processTouchStart"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- 鍙充晶杈规爮锛堟媺閫氬埌鏈€搴曢儴锛?-->
+        <SidePanel
+          ref="sidePanelRef"
+          @start-stream="handleStartStream"
+          @stop-stream="handleStopStream"
+          @start-recording="handleStartRecording"
+          @pause-recording="handlePauseRecording"
+          @stop-recording="handleStopRecording"
+          @rename-source="handleOpenRenameSource"
+          @local-video-audio-change="handleLocalVideoAudioChange"
+          @system-audio-change="handleSystemAudioChange"
+          @layout-change="handleLayoutChange"
+        >
+          <template #layout>
+            <div class="panel-header">
+              <h3>鍦烘櫙甯冨眬</h3>
+            </div>
+            <!-- 馃啎 浣跨敤鐙珛鐨勫竷灞€绠＄悊闈㈡澘缁勪欢 -->
+            <LayoutManagementPanel
+              :current-layout="currentLayout"
+              :custom-grid-count="customGridCount"
+              @layout-change="handleLayoutChange"
+              @custom-count-change="handleCustomCountChange"
+            />
+          </template>
+
+          <!-- 馃幆 淇″彿婧愮鐞嗛潰鏉匡紙宸茬Щ闄わ紝鐐瑰嚮淇″彿婧愭寜閽洿鎺ュ脊鍑烘坊鍔犲璇濇锛?-->
+          <template #sources>
+            <div style="padding: 20px; text-align: center; color: #778DA9;">
+              璇烽€氳繃"淇″彿婧?鎸夐挳寮瑰嚭绠＄悊瀵硅瘽妗?
+            </div>
+          </template>
+        </SidePanel>
+
+        <!--  AI璇煶鍔╂墜缁勪欢 -->
+        <VoiceAssistant />
+      </div>
+
+      <!-- 鍏ㄥ眬瀵硅瘽妗嗗拰缁勪欢 -->
+      <RecordingManagerDialog
+        v-model="showRecordingDialog"
+        :recording-config="recordingConfig"
+        :audio-channels="audioChannels"
+        :recording-templates="recordingTemplates"
+        :recordings="recordings"
+        :recording-filter="recordingFilter"
+        @play-recording="handleOpenPlayback"
+        @load-recordings="loadRecordings"
+      />
+      <SettingsDialog v-model="showSettingsDialog" :settings="settings" />
+      <SubtitleManagerDialog v-model="showSubtitleDialog" />
+      <AddSourceDialog
+        v-model="showAddSourceDialog"
+        :local-devices="localDevices"
+        :capture-devices="captureDevicesList"
+        :scanner-devices="scannerDevicesList"
+        :sources="sourceStore.sources"
+        @submit-source-form="handleSubmitNewSource"
+        @add-to-preview="handleAddToPreview"
+        @remove-from-preview="handleRemoveFromPreview"
+        @rename-source="handleRenameSource"
+        @delete-source="handleDeleteSource"
+      />
+      <ScreenShareDialog v-model="showScreenShareDialog" />
+
+      <!-- 澶氳矾闊宠棰戠紪瑙ｇ爜瀵硅瘽妗?-->
+      <MediaCodecDialog v-model="showMediaCodecDialog" />
+
+      <!-- 鍏朵粬鍔熻兘瀵硅瘽妗?-->
+      <PlaybackDialog
+        v-model="showPlaybackDialog"
+        :video-url="playbackVideoUrl"
+      />
+      <NetworkDetailDialog
+        v-model="showNetworkDetailDialog"
+        :network-detail="currentNetworkDetail"
+      />
+      <RenameSourceDialog
+        v-model="showRenameSourceDialog"
+        :source="renameSourceTarget"
+        @rename="handleRenameSource"
+      />
+
+      <!-- 馃啎 浣跨敤鐙珛鐨勫瓧骞曠紪杈戝璇濇缁勪欢 -->
+      <SubtitleEditDialog
+        v-model="showSubtitleEditDialog"
+        :subtitle="editingSubtitle"
+        @save="saveEditedSubtitle"
+      />
+
+      <!-- 馃啎 浣跨敤鐙珛鐨勫瓧骞曞鍏ュ璇濇缁勪欢 -->
+      <!-- 馃啎 浣跨敤鐙珛鐨勫瓧骞曞鍏ュ璇濇缁勪欢 -->
+      <SubtitleImportDialog
+        v-model="showSubtitleImportDialog"
+        @import-subtitles="handleImportSubtitles"
+      />
+
+      <!-- 馃啎 浣跨敤鐙珛鐨勫叏灞€閫氱煡瀹瑰櫒缁勪欢锛堝凡鏇夸唬 HandRaiseNotification锛?-->
+      <GlobalNotifications
+        :hand-raise-notifications="handRaiseNotifications"
+        @accept-hand-raise="handleHandRaiseAccept"
+        @reject-hand-raise="handleHandRaiseReject"
+        @close-notification="handleCloseNotification"
+      />
+
+      <!-- 馃啎 浣跨敤鐙珛鐨勫脊绐楃獥鍙ｅ鍣ㄧ粍浠?-->
+      <TeleportedWindows
+        :show-video-meeting="showVideoMeetingWindow"
+        :show-vision-analysis="showVisionAnalysis"
+        :show-analysis-window="showAnalysisWindow"
+        :show-web-window="showWebWindow"
+        @close-video-meeting="showVideoMeetingWindow = false"
+        @close-vision-analysis="showVisionAnalysis = false"
+        @close-analysis-window="showAnalysisWindow = false"
+        @close-web-window="showWebWindow = false"
+      />
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import { UploadFilled, Refresh } from '@element-plus/icons-vue'
+import TitleBar from './TitleBar.vue'
+import { audioMixer } from '@/utils/audioMixer'
+// 馃啎 閲嶆瀯鏂板缁勪欢
+import VideoOperationToolbar from './teacher-window/toolbar/VideoOperationToolbar.vue'
+import LayoutManagementPanel from './teacher-window/panels/LayoutManagementPanel.vue'
+import SubtitleEditDialog from './teacher-window/dialogs/SubtitleEditDialog.vue'
+import SubtitleImportDialog from './teacher-window/dialogs/SubtitleImportDialog.vue'
+// 馃啎 閲嶆瀯鏂板缁勪欢锛堢浜岄樁娈碉級
+import DropOverlay from './teacher-window/common/DropOverlay.vue'
+import SourceManagementShortcut from './teacher-window/common/SourceManagementShortcut.vue'
+import GlobalNotifications from './teacher-window/common/GlobalNotifications.vue'
+import TeleportedWindows from './teacher-window/common/TeleportedWindows.vue'
+import VideoSection from './teacher-window/layout/VideoSection.vue'
+import SourcePreviewBar from './teacher-window/layout/SourcePreviewBar.vue'
+import SidePanel from './teacher-window/SidePanel.vue'
+import RecordingManagerDialog from './teacher-window/dialogs/RecordingManagerDialog.vue'
+import SettingsDialog from './teacher-window/dialogs/SettingsDialog.vue'
+import SubtitleManagerDialog from './teacher-window/dialogs/SubtitleManagerDialog.vue'
+import AddSourceDialog from './teacher-window/dialogs/AddSourceDialog.vue'
+// 馃幆 棰勭暀鍔熻兘缁勪欢锛堝鏈轰綅銆乂R褰曞埗銆佽壊閿姞鍍忋€佽棰戣浆瀛楀箷锛?
+import MulticamDialog from './teacher-window/dialogs/MulticamDialog.vue'
+import VrRecordingDialog from './teacher-window/dialogs/VrRecordingDialog.vue'
+import ChromakeyDialog from './teacher-window/dialogs/ChromakeyDialog.vue'
+import VideoToSubtitleDialog from './teacher-window/dialogs/VideoToSubtitleDialog.vue'
+// 馃啎 璁稿彲璇侀獙璇佺粍浠?
+import LicenseGuard from './LicenseGuard.vue'
+import ScreenShareDialog from './teacher-window/dialogs/ScreenShareDialog.vue'
+import PlaybackDialog from './teacher-window/dialogs/PlaybackDialog.vue'
+import NetworkDetailDialog from './teacher-window/dialogs/NetworkDetailDialog.vue'
+import RenameSourceDialog from './teacher-window/dialogs/RenameSourceDialog.vue'
+import MediaCodecDialog from './teacher-window/dialogs/MediaCodecDialog.vue'
+import VideoMeetingWindow from './VideoMeetingWindow.vue'
+// 馃啎 娓叉煋寮曟搸缁勪欢
+import RenderEngineWrapper from './render/RenderEngineWrapper.vue'
+import CameraPreview from './render/CameraPreview.vue'
+// 馃啎 AI璇煶鍔╂墜缁勪欢
+import VoiceAssistant from './VoiceAssistant.vue'
+import {
+  EditPen,
+  VideoCamera,
+  VideoPause,
+  VideoPlay,
+  VideoStop,
+  Connection,
+  FolderOpened,
+  Setting,
+  ArrowDown
+} from './icons'
+// ============================================
+// 鏍稿績 Composables - 蹇呴』瀵煎叆鎵嶈兘姝ｅ父宸ヤ綔
+// ============================================
+import { useRecording } from '@/composables/useRecording'
+import { useVideoSync } from '@/composables/useVideoSync'
+import { useNetworkMonitor } from '@/composables/useNetworkMonitor'
+import { useAudioMonitor } from '@/composables/useAudioMonitor'
+import { useSourceDrag } from '@/composables/useSourceDrag'
+import { useSettings } from '@/composables/useSettings'
+
+// 馃啎 涓氬姟閫昏緫 Composables锛堟柊鍒涘缓锛?
+import { useSubtitleManager } from '@/composables/useSubtitleManager'
+import { useLayoutManager } from '@/composables/useLayoutManager'
+import { useLayoutStates } from '@/composables/useLayoutStates'
+import { useSourceManager } from '@/composables/useSourceManager'
+import { useAudioManager } from '@/composables/useAudioManager'
+import { useLiveStream } from '@/composables/useLiveStream'
+import { useTTSAnnouncements } from '@/composables/useTTS'
+
+// ============================================
+// Pinia Stores - 鐘舵€佺鐞?
+// ============================================
+import { useStudentStore, useTaskStore, useVisionStore, useSourceStore } from '@/stores'
+import { useCanvasStore } from '@/stores/canvasStore'
+import { useSubtitleStore } from '@/stores/subtitleStore'
+import { useAudioStore } from '@/stores/audioStore'
+import { useLiveStreamingStore } from '@/stores/liveStreamingStore'
+import { useMediaStore } from '@/stores/mediaStore'
+import { useVideoSourceManager } from '@/utils/videoSource'
+import apiService from '@/services/apiService'
+import { proxyLocalVideo, proxyNetworkStream, stopStreamProxy, controlStreamAudio } from '@/utils/cpp-bridge.js'
+import { minimizeWindow, maximizeWindow, closeApp } from '@/utils/tauri-api.js'
+import { listCaptureDevices, filterCaptureCards, filterDocumentScanners } from '@/services/captureDeviceService'
+import { speechRecognition } from '@/services/subtitleService'
+
+// 馃幆 鎻愬墠鍒濆鍖?stores锛堢敤浜?window.__sourceStore 鍜?window.__canvasStore锛?
+const studentStore = useStudentStore()
+const taskStore = useTaskStore()
+const visionStore = useVisionStore()
+const sourceStore = useSourceStore()
+const canvasStore = useCanvasStore()
+const subtitleStore = useSubtitleStore()
+const audioStore = useAudioStore()
+const liveStreamingStore = useLiveStreamingStore()
+const mediaStore = useMediaStore()
+const videoSourceManager = useVideoSourceManager()
+
+// ============================================
+// 馃啎 TTS 璇煶鎾姤鍒濆鍖?
+// ============================================
+const tts = useTTSAnnouncements()
+
+// ============================================
+// 馃啎 娓叉煋寮曟搸鐩稿叧鐘舵€侊紙蹇呴』鍦?useSourceDrag 涔嬪墠瀹氫箟锛?
+// ============================================
+const renderEngineRef = ref(null) // 娓叉煋寮曟搸缁勪欢寮曠敤
+const selectedCameraId = ref('') // 褰撳墠閫変腑鐨勬憚鍍忓ごID
+const activeSources = ref([]) // 娲昏穬鐨勮棰戞簮鍒楄〃
+const renderLayoutType = ref('single') // 褰撳墠娓叉煋甯冨眬绫诲瀷
+const isDrawingMode = ref(false) // 鏄惁澶勪簬缁樺埗妯″紡
+ const useRenderEngine = ref(true) // 鏄惁鍚敤娓叉煋寮曟搸瑕嗙洊妯″紡锛岄粯璁や负true
+
+// ============================================
+// 鍒濆鍖栨牳蹇?Composables
+// ============================================
+const {
+  // 褰曞埗鐩稿叧
+  recordingConfig,
+  audioChannels,
+  recordings,
+  recordingTemplates,
+  sourceRecordingState,
+  canvasRecordingStates,
+  previewRecordingStates,
+  currentRecordingSession,
+  showPlaybackDialog,
+  showRecordingDialog,
+  playbackVideoRef,
+  recordingFilter,
+
+  // 澶氭満浣嶅姛鑳?
+  startMulticamRecording,
+  stopMulticamRecording,
+  activeCameraIndex,
+  switchCamera,
+
+  // VR/360掳瑙嗛鍔熻兘
+  vrRecordingState,
+  startVrRecording,
+  stopVrRecording,
+
+  // 闊抽绠＄悊
+  toggleNoiseReduction,
+  setChannelEnabled,
+
+  // 妯℃澘绠＄悊
+  loadTemplates: loadRecordingTemplates,
+  saveTemplate,
+  deleteTemplate: deleteRecordingTemplate,
+
+  // 鐢诲竷褰曞埗鎺у埗
+  startAllCanvasRecording,
+  pauseAllCanvasRecording,
+  stopAllCanvasRecording,
+  resumeAllCanvasRecording,
+
+  // 褰曞埗鏂囦欢绠＄悊
+  loadRecordings: loadRecordingsFromComposable,
+  deleteRecording: deleteRecordingFromComposable
+} = useRecording()
+
+const {
+  // 瑙嗛鍚屾鐩稿叧
+  currentLayout,
+  pipVisible,
+  pipPosition,
+  changeLayout,
+  togglePip,
+  addVideoSource,
+  removeVideoSource,
+  setVideoPreviewRef,
+  setCanvasSource,
+  videoPreviews,
+  canvasSourceMap,
+  videoPreviewRefs,
+  // 馃幆 瑙嗛鍚屾璋冪敤鍑芥暟
+  registerMasterVideo,
+  registerSlaveVideo,
+  unregisterSlaveVideo,
+  clearMasterVideo,
+  checkAudioSync,
+  getSyncStatus,
+  addSource: addSourceToVideoSync  // 鑾峰彇useVideoSync鐨刟ddSource鍑芥暟
+} = useVideoSync()
+
+// 馃幆 鍒濆鍖栧竷灞€鐘舵€佺鐞?- 纭繚 window.__layoutStates 琚纭缃?
+const { layoutStates, assignSource, saveToStorage } = useLayoutStates()
+
+// 馃幆 纭繚 window.__layoutStates 宸插垵濮嬪寲
+if (typeof window !== 'undefined' && !window.__layoutStates) {
+  window.__layoutStates = layoutStates
+  console.log('[TeacherWindow] 鍒濆鍖?window.__layoutStates')
+}
+
+// 馃幆 纭繚 window.__sourceStore 宸插垵濮嬪寲锛堢敤浜庤幏鍙栦俊鍙锋簮绫诲瀷锛?
+if (typeof window !== 'undefined' && !window.__sourceStore) {
+  window.__sourceStore = sourceStore
+  console.log('[TeacherWindow] 鍒濆鍖?window.__sourceStore')
+}
+
+const {
+  // 缃戠粶鐩戞帶鐩稿叧
+  networkQuality,
+  startNetworkMonitoring: startNetworkMonitor,
+  stopNetworkMonitoring: stopNetworkMonitor
+} = useNetworkMonitor()
+
+const {
+  // 闊抽鐩戞帶鐩稿叧
+  audioLevels,
+  startAudioMonitor,
+  stopAudioMonitor
+} = useAudioMonitor()
+
+const {
+  // 璁剧疆鐩稿叧
+  settings,
+  showSettingsDialog,
+  loadSettings,
+  saveSettings,
+  resetSettings
+} = useSettings()
+
+// ============================================
+// 鍒濆鍖?Pinia Stores
+// ============================================
+// Stores 宸插湪涓婃柟鎻愬墠鍒濆鍖?
+
+// ============================================
+// 馃啎 璁稿彲璇侀獙璇佺浉鍏崇姸鎬?
+// ============================================
+const licenseVerified = ref(false) // 璁稿彲璇佹槸鍚﹀凡楠岃瘉閫氳繃
+
+// 馃幆 淇″彿婧愭嫋鎷界鐞嗭紙鏀寔浠庨瑙堝尯鎷栨嫿鍒扮敾甯冪綉鏍硷級
+// 馃幆 淇锛氶噸鍛藉悕瑙ｆ瀯浠ラ伩鍏嶄笌 useVideoSync 鍐茬獊
+const {
+  dragOverIndex,
+  draggedSourceType,
+  isDraggingSource,
+  currentSelectedSource,
+  canvasSourceMap: dragCanvasSourceMap,  // 馃幆 閲嶅懡鍚嶉伩鍏嶅啿绐?
+  videoPreviews: dragVideoPreviews,  // 馃幆 淇锛氶噸鍛藉悕瑙ｆ瀯浠ラ伩鍏嶄笌 useVideoSync 鍐茬獊
+  handleMouseDown,
+  handleMouseMove,
+  handleMouseUp,
+  handleDrop,
+  setCurrentSelectedSource,
+  setVideoPreviews,
+  cloneSourceForCanvas  // 馃幆 鏂板锛氬鍑哄厠闅嗗嚱鏁?
+} = useSourceDrag({
+  // 馃幆 鍏抽敭淇锛氫紶閫?canvasSourceMap锛岀‘淇濇嫋鎷芥洿鏂扮殑鏄纭殑鏄犲皠
+  canvasSourceMap,
+  saveLayoutMap: saveToStorage,
+  assignSource,
+  currentLayout,
+  allSources: sourceStore.sources,  // 浼犻€掓墍鏈夋簮缁檜seSourceDrag
+  renderEngineRef,  // 馃幆 浼犻€掓覆鏌撳紩鎿庡紩鐢紝鐢ㄤ簬Canvas鎷栨嫿妫€娴?
+  addSourceToGlobalList: (source) => {
+    // 灏嗗厠闅嗙殑婧愭坊鍔犲埌婧愬瓨鍌ㄤ腑
+    if (!sourceStore.sources.some(s => s.id === source.id)) {
+      sourceStore.sources.push(source);
+      console.log(`[TeacherWindow] 宸插皢鍏嬮殕婧愭坊鍔犲埌鍏ㄥ眬鍒楄〃: ${source.name} (${source.id})`);
+    }
+
+    // 鍚屾椂灏嗗厠闅嗙殑婧愭坊鍔犲埌useVideoSync鐨勬簮鍒楄〃涓?
+    if (typeof addSourceToVideoSync === 'function') {
+      addSourceToVideoSync(source);
+      console.log(`[TeacherWindow] 宸插皢鍏嬮殕婧愭坊鍔犲埌VideoSync鍒楄〃: ${source.name} (${source.id})`);
+    }
+  }
+})
+
+
+// ============================================
+// 鎷栨嫿浜嬩欢澶勭悊鍑芥暟锛堜緵 VideoSection 璋冪敤锛?
+// ============================================
+const onDragOver = (event, index) => {
+  if (typeof handleMouseDown === 'function') {
+    // 浣跨敤 handleMouseDown 鍐呴儴鐨勬嫋鎷介€昏緫
+  }
+  dragOverIndex.value = index
+}
+
+const onDragLeave = (event) => {
+  dragOverIndex.value = null
+}
+
+const onDrop = (event, index) => {
+  if (typeof handleDrop === 'function') {
+    const source = {
+      id: event?.dataTransfer?.getData('sourceId') || `drop_${Date.now()}`,
+      type: event?.dataTransfer?.getData('sourceType') || 'localVideo',
+      name: event?.dataTransfer?.getData('sourceName') || 'Dropped Source'
+    }
+    handleDrop(event, index)
+  }
+}
+
+// ============================================
+// 璁剧疆瀵硅瘽妗嗙浉鍏崇姸鎬?
+// ============================================
+const settingsActiveTab = ref('recording')
+const customVideoBitrate = ref(0)
+const customLiveBitrate = ref(0)
+
+// ============================================
+// 淇″彿婧愮鐞嗙浉鍏崇姸鎬?
+// ============================================
+// 馃幆 淇锛歛llSources 搴旇浠?sourceStore 鍚屾鑾峰彇
+const allSources = computed(() => {
+  return sourceStore.sources.map(source => ({
+    ...source,
+    // 纭繚 addedToPreview 灞炴€у瓨鍦?
+    addedToPreview: source.addedToPreview || false
+  }))
+})
+
+// 灏嗙敾甯冩簮鏄犲皠杞崲涓烘覆鏌撳紩鎿庢墍闇€鐨勬牸寮?
+const mappedRenderSources = computed(() => {
+  if (!useRenderEngine.value) return []
+
+  const sources = []
+
+  // 鏍规嵁canvasSourceMap鏄犲皠锛屽皢褰撳墠甯冨眬鐨勬簮杞崲涓烘覆鏌撳紩鎿庢牸寮?
+  const validIndices = getVisibleCanvasIndices(currentLayout.value)
+
+  validIndices.forEach(index => {
+    const sourceId = canvasSourceMap.value[index]
+    if (sourceId) {
+      const source = allSources.value.find(s => s.id === sourceId)
+      if (source) {
+        // 杞崲涓烘覆鏌撳紩鎿庨渶瑕佺殑鏍煎紡
+        sources.push({
+          id: source.id,
+          name: source.name,
+          type: mapSourceType(source.type), // 鏄犲皠鍒版覆鏌撳紩鎿庢敮鎸佺殑绫诲瀷
+          url: source.url,
+          deviceId: source.deviceId,
+          stream: source.stream,
+          properties: source.properties || {}
+        })
+      }
+    }
+  })
+
+  return sources
+})
+
+// 灏嗙敾甯冩簮鏄犲皠杞崲涓篤ideoGrid鎵€闇€鐨勬牸寮?
+const mappedCanvasSources = computed(() => {
+  // 淇濇寔鍘熸湁鐨勬槧灏勯€昏緫锛岀敤浜庡吋瀹圭洰鐨勶紙褰搖seRenderEngine涓篺alse鏃讹級
+  return allSources.value.filter(source => {
+    // 妫€鏌ヨ繖涓簮鏄惁鍦ㄥ綋鍓嶅竷灞€鐨刢anvasSourceMap涓?
+    return Object.values(canvasSourceMap.value).some(id => id === source.id)
+  })
+})
+
+const currentPage = ref(1)
+const pageSize = ref(6) // 姣忛〉鏄剧ず 6 涓俊鍙锋簮
+const previewVideoRefs = ref([]) // 婧愰瑙堢獥鍙ｈ棰戝紩鐢?
+
+// 灏嗘簮绫诲瀷鏄犲皠鍒版覆鏌撳紩鎿庢敮鎸佺殑绫诲瀷
+const mapSourceType = (sourceType) => {
+  const typeMap = {
+    'localVideo': 'video',
+    'localDevice': 'camera',
+    'networkCamera': 'netcam',
+    'remoteDesktop': 'desktop',
+    'screenShare': 'screen',
+    'localCamera': 'camera',
+    'ppt': 'web',
+    'pptx': 'web',
+    'word': 'web',
+    'doc': 'web',
+    'docx': 'web',
+    'pdf': 'web'
+  }
+
+  return typeMap[sourceType] || 'video'
+}
+
+// 灏嗗竷灞€缂栧彿杞崲涓烘覆鏌撳紩鎿庢敮鎸佺殑甯冨眬绫诲瀷
+const convertLayoutType = (layoutNum) => {
+  const layoutMap = {
+    1: 'single',           // 1鍒嗗睆
+    2: 'grid-1x2',         // 2鍒嗗睆
+    3: 'grid-3-special',   // 3鍒嗗睆锛堝乏浜屽彸涓€锛?
+    4: 'grid-2x2',         // 4鍒嗗睆
+    5: 'grid-2x3',         // 6鍒嗗睆
+    7: 'grid-3x3',         // 9鍒嗗睆
+    10: 'grid-4x4',        // 16鍒嗗睆
+    11: 'grid-5x5',        // 25鍒嗗睆
+    12: 'grid-6x6',        // 36鍒嗗睆
+    13: 'grid-7x7',        // 49鍒嗗睆
+    14: 'special-1',       // 鐗规畩甯冨眬1锛堝皬鐨勫乏涓婅锛?
+    15: 'special-2',       // 鐗规畩甯冨眬2锛堝皬鐨勫乏涓嬭锛?
+    16: 'special-3',       // 鐗规畩甯冨眬3锛堝皬鐨勫彸涓婅锛?
+    17: 'special-4',       // 鐗规畩甯冨眬4锛堝皬鐨勫彸涓嬭锛?
+    18: 'free'             // 鑷敱甯冨眬
+  }
+
+  return layoutMap[layoutNum] || 'single'
+}
+
+// 灏嗘覆鏌撳紩鎿庣殑甯冨眬绫诲瀷杞崲涓哄竷灞€绱㈠紩锛堝弽鍚戣浆鎹級
+const convertLayoutTypeToIndex = (layoutType) => {
+  const layoutMap = {
+    'single': 1,           // 1鍒嗗睆
+    'grid-1x2': 2,         // 2鍒嗗睆
+    'grid-3-special': 3,   // 3鍒嗗睆锛堝乏浜屽彸涓€锛?
+    'grid-2x2': 4,         // 4鍒嗗睆
+    'grid-2x3': 5,         // 6鍒嗗睆
+    'grid-3x3': 7,         // 9鍒嗗睆
+    'grid-4x4': 10,        // 16鍒嗗睆
+    'grid-5x5': 11,        // 25鍒嗗睆
+    'grid-6x6': 12,        // 36鍒嗗睆
+    'grid-7x7': 13,        // 49鍒嗗睆
+    'special-1': 14,       // 鐗规畩甯冨眬1锛堝皬鐨勫乏涓婅锛?
+    'special-2': 15,       // 鐗规畩甯冨眬2锛堝皬鐨勫乏涓嬭锛?
+    'special-3': 16,       // 鐗规畩甯冨眬3锛堝皬鐨勫彸涓婅锛?
+    'special-4': 17,       // 鐗规畩甯冨眬4锛堝皬鐨勫彸涓嬭锛?
+    'free': 18             // 鑷敱甯冨眬
+  }
+
+  return layoutMap[layoutType] || 1
+}
+
+// 鑾峰彇甯冨眬鏄剧ず鍚嶇О锛堢敤浜庢秷鎭彁绀猴級
+const getLayoutDisplayName = (layoutIndex) => {
+  const displayNames = {
+    1: '1',           // 1鍒嗗睆
+    2: '2',           // 2鍒嗗睆
+    3: '3',           // 3鍒嗗睆
+    4: '4',           // 4鍒嗗睆
+    5: '6',           // 6鍒嗗睆
+    7: '9',           // 9鍒嗗睆
+    10: '16',         // 16鍒嗗睆
+    11: '25',         // 25鍒嗗睆
+    12: '36',         // 36鍒嗗睆
+    13: '49',         // 49鍒嗗睆
+    14: '鐗规畩1',      // 鐗规畩甯冨眬1
+    15: '鐗规畩2',      // 鐗规畩甯冨眬2
+    16: '鐗规畩3',      // 鐗规畩甯冨眬3
+    17: '鐗规畩4',      // 鐗规畩甯冨眬4
+    18: '鑷敱'        // 鑷敱甯冨眬
+  }
+
+  return displayNames[layoutIndex] || layoutIndex
+}
+
+// ============================================
+// 闊抽鐩戞帶鐩稿叧鐘舵€?
+// ============================================
+const enableAudioMonitor = ref(false) // 鐩戝惉
+const enableTerminalMute = ref(false) // 缁堢闈欓煶
+const enableAudioNoiseReduction = ref(false) // 闊抽闄嶅櫔
+
+// ============================================
+// 瀛︾敓銆佷换鍔＄瓑绠＄悊鐘舵€?
+// ============================================
+const activeTab = ref('students')
+const students = ref([])
+const tasks = ref([])
+const trainings = ref([])
+const analysisResults = ref([])
+
+// ============================================
+// 鐩存挱鐩稿叧鐘舵€?
+// ============================================
+const isLive = ref(false)
+const liveStreamUrl = ref('')
+
+// ============================================
+// 涓炬墜鐩稿叧鐘舵€?
+// ============================================
+const handRaiseNotifications = ref([])
+const handRaiseSound = ref(null)
+
+// ============================================
+// 鏈嶅姟鍣ㄧ姸鎬佺浉鍏?
+// ============================================
+// 鏈嶅姟鍣ㄧ姸鎬佸凡绉昏嚦鏈嶅姟绔鐞?
+
+// ============================================
+// Web 鍔熻兘瀵艰埅
+// ============================================
+const WEB_FEATURES_BASE_URL = 'http://127.0.0.1:8080/web'
+
+// 鎵撳紑澶栭儴閾炬帴鐨勮緟鍔╁嚱鏁?
+const openExternal = async (url) => {
+  try {
+    const { open } = await import('@tauri-apps/plugin-shell')
+    await open(url)
+  } catch (e) {
+    console.error('浣跨敤 Tauri shell 鎵撳紑閾炬帴澶辫触:', e)
+    window.open(url, '_blank')
+  }
+}
+
+const openWebFeature = async (feature) => {
+  const featureUrls = {
+    student: `${WEB_FEATURES_BASE_URL}/student-training.html`,
+    teacher: `${WEB_FEATURES_BASE_URL}/teacher-management.html`,
+    vision: `${WEB_FEATURES_BASE_URL}/vision-analysis.html`,
+    api: `${WEB_FEATURES_BASE_URL}/api-test.html`,
+    home: `${WEB_FEATURES_BASE_URL}/index.html`,
+    status: `${WEB_FEATURES_BASE_URL}/service-status.html`
+  }
+
+  const url = featureUrls[feature]
+  if (url) {
+    await openExternal(url)
+  } else {
+    ElMessage.warning(`鍔熻兘 "${feature}" 鏆傛湭瀹炵幇`)
+  }
+}
+
+const openWebFunctions = async () => {
+  await openExternal(`${WEB_FEATURES_BASE_URL}/index.html`)
+}
+
+// ============================================
+// 甯冨眬鍙樺寲鐩戝惉
+// ============================================
+let isHandlingLayoutChange = false
+
+// 鐩戝惉甯冨眬鍙樺寲锛屼繚瀛樺拰鎭㈠姣忎釜甯冨眬鐨勭嫭绔嬬姸鎬?
+watch(currentLayout, (newLayout, oldLayout) => {
+  // 濡傛灉鏄?handleLayoutChange 瑙﹀彂鐨勶紝璺宠繃澶勭悊
+  if (isHandlingLayoutChange) {
+    console.log(`[甯冨眬鍒囨崲] watch 璺宠繃锛坔andleLayoutChange 宸插鐞嗭級`)
+    isHandlingLayoutChange = false
+    return
+  }
+
+  console.log(`[甯冨眬鍒囨崲] watch 瑙﹀彂 - oldLayout: ${oldLayout}, newLayout: ${newLayout}`)
+
+  // 淇濆瓨鏃у竷灞€鐨勭姸鎬侊紙oldLayout 涓?undefined 琛ㄧず鍒濆鍖栵紝涓嶉渶瑕佷繚瀛橈級
+  if (oldLayout !== undefined && oldLayout !== newLayout) {
+    console.log(`[甯冨眬鍒囨崲] 浠?${oldLayout} 鍒嗗睆鍒囨崲鍒?${newLayout} 鍒嗗睆`)
+
+    // 馃幆 淇濆瓨鏃у竷灞€鐨勭姸鎬侊紙鍙繚瀛樻壒娉紝涓嶆搷浣?canvasSourceMap锛?
+    saveCurrentLayoutState(oldLayout)
+
+    // 馃幆 鍒囨崲鏃跺己鍒?maximizedIndex = null
+    maximizedIndex.value = null
+    isMaximized.value = false
+
+    // 馃幆 鍒囨崲鏃堕噸缃棰戦瑙堝尯鍩熺姸鎬侊紙璁?VideoPreview 缁勪欢閲嶆柊鎸傝浇锛?
+    // 娉ㄦ剰锛氫笉鎿嶄綔 canvasSourceMap锛岃 useVideoSync.js 缁熶竴澶勭悊
+    videoPreviews.value = []
+  } else if (oldLayout === undefined) {
+    console.log(`[甯冨眬鍒囨崲] 鍒濆鍖栧竷灞€ ${newLayout}`)
+  }
+})
+
+// ============================================
+// 鏈湴鐘舵€佸畾涔?(闈?Composable 绠＄悊鐨?
+// ============================================
+
+// 馃幆 娉ㄦ剰锛歨andRaiseNotification 宸插簾寮冿紝浣跨敤 handRaiseNotifications 鏁扮粍鏇夸唬
+// const handRaiseNotification = ref({
+//   show: false,
+//   studentName: ''
+// })
+
+// 鍒濆鍖栫ず渚嬫暟鎹?
+const initializeSampleData = () => {
+  // 鍒濆鍖栧鐢熸暟鎹?
+  if (students.value.length === 0) {
+    students.value = [
+      { id: 'S001', name: '寮犱笁', online: true, handRaised: false },
+      { id: 'S002', name: '鏉庡', online: true, handRaised: false },
+      { id: 'S003', name: '鐜嬩簲', online: false, handRaised: false }
+    ]
+  }
+
+  // 初始化任务数据
+  if (tasks.value.length === 0) {
+    tasks.value = [
+      { id: 'T001', title: '第一章练习', status: 'completed', description: '完成第一章的练习题', submitted: 5, total: 10 },
+      { id: 'T002', title: '第二章测试', status: 'in_progress', description: '进行第二章的测试', submitted: 3, total: 10 }
+    ]
+  }
+
+  // 鍒濆鍖栧疄璁暟鎹?
+  if (trainings.value.length === 0) {
+    trainings.value = [
+      { id: 'TR001', title: '鍩虹鎿嶄綔璁粌', description: '鎺屾彙鍩烘湰鎿嶄綔', progress: 80, status: 'success', icon: '馃幆' },
+      { id: 'TR002', title: '楂樼骇鍔熻兘璁粌', description: '瀛︿範楂樼骇鍔熻兘', progress: 45, status: 'warning', icon: '馃殌' }
+    ]
+  }
+
+  // 鍒濆鍖栬瑙夊垎鏋愭暟鎹?
+  if (analysisResults.value.length === 0) {
+    analysisResults.value = [
+      { id: 'A001', studentName: '寮犱笁', type: '涓撴敞搴', focus: 85, emotion: '涓撴敞', behavior: '绉瀬鍙備笌', time: '13:30' },
+      { id: 'A002', studentName: '鏉庡洓', type: '鎯呯华', focus: 72, emotion: '骞抽潤', behavior: '璁ょ湡鍚', time: '13:35' }
+    ]
+  }
+
+  console.log('[TeacherWindow] 宸插垵濮嬪寲绀轰緥鏁版嵁')
+}
+
+// 楂樼骇褰曞埗鍔熻兘瀵硅瘽妗?
+const showMulticamDialog = ref(false)
+const showVrDialog = ref(false)
+const showChromakeyDialog = ref(false)
+
+// 瑙嗛浼氳绐楀彛
+const showVideoMeetingWindow = ref(false)
+
+// 馃啎 鏅鸿兘瑙嗚鍒嗘瀽绐楀彛锛圷OLO妫€娴?鑰冭瘯璇勫垽锛?
+const showVisionAnalysis = ref(false)
+
+// Analysis 鍏ㄥ睆绐楀彛
+const showAnalysisWindow = ref(false)
+
+// Web 鍏ㄥ睆绐楀彛
+const showWebWindow = ref(false)
+
+// 甯冨眬閫夐」
+// 馃幆 2026-04-20 鏇存柊锛氱粺涓€浣跨敤鏂板竷灞€绱㈠紩
+const basicLayouts = [
+  { label: '1 鍒嗗睆', value: 1 },
+  { label: '2 鍒嗗睆', value: 2 },
+  { label: '3 鍒嗗睆', value: 3 },
+  { label: '4 鍒嗗睆', value: 4 },
+  { label: '6 鍒嗗睆', value: 5 },   // 鏂扮储寮? 5
+  { label: '9 鍒嗗睆', value: 7 },   // 鏂扮储寮? 7
+  { label: '16 鍒嗗睆', value: 10 },  // 鏂扮储寮? 10
+  { label: '25 鍒嗗睆', value: 11 }, // 鏂扮储寮? 11
+  { label: '36 鍒嗗睆', value: 12 }, // 鏂扮储寮? 12
+  { label: '49 鍒嗗睆', value: 13 }  // 鏂扮储寮? 13
+]
+
+// 鍩虹鍔熻兘瀵硅瘽妗?
+// showRecordingDialog 宸蹭粠 useRecording 瀵煎叆
+// showSettingsDialog 宸蹭粠 useSettings 瀵煎叆
+// showPlaybackDialog 宸蹭粠 useRecording 瀵煎叆
+const showSubtitleDialog = ref(false)
+const showAddSourceDialog = ref(false)
+const showRenameSourceDialog = ref(false)
+const renameSourceTarget = ref(null)
+const showSubtitleEditDialog = ref(false)
+const showSubtitleImportDialog = ref(false)
+const showVideoToSubtitleDialog = ref(false)
+const showScreenShareDialog = ref(false)
+
+// 澶氳矾闊宠棰戠紪瑙ｇ爜瀵硅瘽妗?
+const showMediaCodecDialog = ref(false)
+
+// 鍏朵粬鍔熻兘瀵硅瘽妗?
+const scannerDevicesList = ref([])
+const captureDevicesList = ref([]) // 閲囬泦璁惧鍒楄〃
+const localDevices = ref([]) // 鏈湴鎽勫儚澶磋澶囧垪琛?
+const playbackVideoUrl = ref('') // 鍥炴斁瑙嗛URL
+const showNetworkDetailDialog = ref(false) // 缃戠粶璇︽儏瀵硅瘽妗?
+
+// 瀛楀箷缂栬緫鐩稿叧
+const exportedSubtitles = ref([])
+const editingSubtitle = ref(null)
+
+// 缁垮箷閰嶇疆
+const chromakeyConfig = reactive({
+  enabled: false,
+  color: '0x00FF00',
+  similarity: 0.4,
+  blend: 0.1,
+  background_image: ''
+})
+
+// 鍙屽嚮鏀惧ぇ鐩稿叧鐘舵€?
+const isMaximized = ref(false)
+const maximizedIndex = ref(null) // 浣跨敤 null 琛ㄧず娌℃湁鏈€澶у寲
+
+// 鑷敱甯冨眬鑷畾涔夋牸瀛愭暟閲?
+const customGridCount = ref(4) // 榛樿4涓牸瀛?
+const MAX_CUSTOM_GRID_COUNT = 49
+
+const handleCustomCountChange = (value) => {
+  console.log('[TeacherWindow] 鑷畾涔夋牸瀛愭暟閲忓彉鏇?', value)
+  ElMessage.success(`鑷畾涔夋牸瀛愭暟閲忓凡璁剧疆涓?${value}`)
+}
+
+// 瀛楀箷鐘舵€?
+const globalSubtitle = ref('')
+const subtitleVisible = ref(true)
+const currentSubtitleText = ref('')
+
+// 瀛楀箷绠＄悊鐩稿叧鐘舵€?
+const generatedSubtitles = ref([]) // 鎵€鏈夌敓鎴愮殑瀛楀箷鏁版嵁
+const activeSubtitleTab = ref('list')
+const exportFormat = ref('srt')
+const exporting = ref(false)
+const exportPreview = ref('')
+const subtitleLanguage = ref('zh')
+const subtitleModel = ref('tiny')
+const selectedVideoIndex = ref(-1)
+const previewVideos = ref([])
+const isVideoSubtitleRunning = ref(false)
+const videoSubtitleText = ref('')
+
+// 缃戠粶璐ㄩ噺璇︽儏
+const currentNetworkDetail = ref(null)
+
+// 鎷栨嫿鐘舵€?
+// SidePanel 寮曠敤
+const sidePanelRef = ref(null)
+
+// 澶氭満浣嶄細璇滻D
+const multicamSessionId = ref('default')
+
+// ASR 杩愯鐘舵€?
+const isASRRunning = ref(false)
+
+// 鍏ㄥ眬鎵规敞鐩稿叧
+const globalAnnotationEnabled = ref(false)
+const isAnnotationEnabled = computed(() => globalAnnotationEnabled.value)
+const globalAnnotationCanvasRef = ref(null)
+const isGlobalDrawing = ref(false)
+const annotationBrushType = ref('pen')
+const annotationColor = ref('#ff0000')
+const annotationBrushSize = ref(3)
+let lastGlobalX = 0
+let lastGlobalY = 0
+
+// 宸ュ叿鏍忓綍鍒剁姸鎬?
+const isRecording = ref(false)
+const isRecordingPaused = ref(false)
+
+// ============================================
+// 鏆撮湶鍏ㄥ眬鏂规硶渚涘瓙缁勪欢璋冪敤
+// ============================================
+
+// ============================================
+// 馃啎 璁稿彲璇侀獙璇佹柟娉?
+// ============================================
+const onLicenseVerified = () => {
+  licenseVerified.value = true
+  ElMessage.success('璁稿彲璇侀獙璇佹垚鍔燂紝娆㈣繋浣跨敤鏁欏笀绔紒')
+  console.log('[TeacherWindow] 璁稿彲璇侀獙璇侀€氳繃锛岃繘鍏ユ暀甯堢晫闈?')
+}
+
+const onLicenseFailed = (error) => {
+  console.error('[TeacherWindow] 璁稿彲璇侀獙璇佸け璐?', error)
+  ElMessage.error('璁稿彲璇侀獙璇佸け璐ワ紝璇锋鏌ヨ鍙瘉鏈嶅姟鍣ㄧ姸鎬?')
+}
+
+// ============================================
+// 绐楀彛鎺у埗鍑芥暟
+// ============================================
+const minimize = async () => {
+  try {
+    await minimizeWindow()
+    console.log('[TeacherWindow] 绐楀彛宸叉渶灏忓寲')
+  } catch (error) {
+    console.error('[TeacherWindow] 鏈€灏忓寲绐楀彛澶辫触:', error)
+    ElMessage.error('鏈€灏忓寲绐楀彛澶辫触')
+  }
+}
+
+const maximize = async () => {
+  try {
+    await maximizeWindow()
+    console.log('[TeacherWindow] 绐楀彛鏈€澶у寲鐘舵€佸凡鍒囨崲')
+  } catch (error) {
+    console.error('[TeacherWindow] 鏈€澶у寲绐楀彛澶辫触:', error)
+    ElMessage.error('鏈€澶у寲绐楀彛澶辫触')
+  }
+}
+
+const close = async () => {
+  try {
+    await closeApp()
+    console.log('[TeacherWindow] 绐楀彛宸插叧闂?')
+  } catch (error) {
+    console.error('[TeacherWindow] 鍏抽棴绐楀彛澶辫触:', error)
+    ElMessage.error('鍏抽棴绐楀彛澶辫触')
+  }
+}
+
+// ============================================
+// VideoHeader 鎸夐挳鍔熻兘瀹炵幇
+// ============================================
+
+// 鍒锋柊鎵€鏈夋憚鍍忓ご
+const refreshAllCameras = async () => {
+  try {
+    ElMessage.info('姝ｅ湪鍒锋柊鎵€鏈夋憚鍍忓ご...')
+    if (videoSourceManager && videoSourceManager.refreshDevices) {
+      await videoSourceManager.refreshDevices()
+    }
+    ElMessage.success('鎽勫儚澶村埛鏂版垚鍔?)
+  } catch (error) {
+    console.error('鍒锋柊鎽勫儚澶村け璐?, error)
+    ElMessage.error('鍒锋柊鎽勫儚澶村け璐?)
+  }
+}
+
+const enableAnnotationForAll = async () => {
+  globalAnnotationEnabled.value = !globalAnnotationEnabled.value
+  if (globalAnnotationEnabled.value) {
+    ElMessage.success('宸插惎鐢ㄥ叏灞€鎵规敞')
+    await nextTick()
+    initGlobalAnnotationCanvas()
+  } else {
+    ElMessage.info('宸插叧闂叏灞€鎵规敞')
+    clearGlobalAnnotation()
+  }
+}
+
+const initGlobalAnnotationCanvas = () => {
+  if (globalAnnotationCanvasRef.value) {
+    const canvas = globalAnnotationCanvasRef.value
+    const videoGrid = canvas.parentElement
+    canvas.width = videoGrid.offsetWidth
+    canvas.height = videoGrid.offsetHeight
+    console.log('[TeacherWindow] 鍏ㄥ眬鎵规敞鐢诲竷宸插垵濮嬪寲:', canvas.width, 'x', canvas.height)
+  }
+}
+
+const startGlobalAnnotation = (e) => {
+  isGlobalDrawing.value = true
+  lastGlobalX = e.offsetX
+  lastGlobalY = e.offsetY
+}
+
+const drawGlobalAnnotation = (e) => {
+  if (!isGlobalDrawing.value || !globalAnnotationCanvasRef.value) return
+  const canvas = globalAnnotationCanvasRef.value
+  const ctx = canvas.getContext('2d')
+
+  if (annotationBrushType.value === 'eraser') {
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.strokeStyle = 'rgba(0, 0, 0, 1)'
+    ctx.lineWidth = annotationBrushSize.value * 3
+  } else if (annotationBrushType.value === 'highlighter') {
+    ctx.globalCompositeOperation = 'source-over'
+    const color = annotationColor.value
+    const hexColor = color.startsWith('#') ? color : '#' + color
+    ctx.strokeStyle = hexColor + '40'
+    ctx.lineWidth = annotationBrushSize.value * 2
+  } else {
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.strokeStyle = annotationColor.value
+    ctx.lineWidth = annotationBrushSize.value
+  }
+
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  ctx.beginPath()
+  ctx.moveTo(lastGlobalX, lastGlobalY)
+  ctx.lineTo(e.offsetX, e.offsetY)
+  ctx.stroke()
+  lastGlobalX = e.offsetX
+  lastGlobalY = e.offsetY
+}
+
+const stopGlobalAnnotation = () => {
+  isGlobalDrawing.value = false
+}
+
+const eraseGlobalAnnotation = () => {
+  annotationBrushType.value = 'eraser'
+  ElMessage.info('宸插垏鎹㈠埌姗＄毊鎿︽ā寮忥紝璇峰湪鐢诲竷涓婃摝闄?)
+}
+
+const clearGlobalAnnotation = () => {
+  if (!globalAnnotationCanvasRef.value) return
+  const canvas = globalAnnotationCanvasRef.value
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.strokeStyle = annotationColor.value
+  ctx.lineWidth = annotationBrushSize.value
+  ctx.lineCap = 'round'
+
+  ElMessage.success('宸叉竻绌烘壒娉?)
+}
+
+const saveGlobalAnnotation = async () => {
+  if (!globalAnnotationCanvasRef.value) return
+  try {
+    const canvas = globalAnnotationCanvasRef.value
+    const dataUrl = canvas.toDataURL('image/png')
+
+    const link = document.createElement('a')
+    link.download = `annotation_${Date.now()}.png`
+    link.href = dataUrl
+    link.click()
+
+    ElMessage.success('鎵规敞宸蹭繚瀛?)
+  } catch (error) {
+    console.error('淇濆瓨鎵规敞澶辫触:', error)
+    ElMessage.error('淇濆瓨鎵规敞澶辫触')
+  }
+}
+
+const disableAnnotation = () => {
+  globalAnnotationEnabled.value = false
+  ElMessage.info('宸插叧闂叏灞€鎵规敞')
+}
+
+// 鍚姩 ASR (璇煶璇嗗埆杞瓧骞?
+const startASRForAll = async () => {
+  try {
+    if (isASRRunning.value) {
+      if (speechRecognition && speechRecognition.stop) {
+        speechRecognition.stop()
+      }
+      isASRRunning.value = false
+      ElMessage.info('宸插仠姝㈣闊宠瘑鍒?')
+    } else {
+      if (speechRecognition && speechRecognition.start) {
+        await speechRecognition.start()
+      }
+      isASRRunning.value = true
+      ElMessage.success('宸插惎鍔ㄨ闊宠瘑鍒?)
+    }
+  } catch (error) {
+    console.error('鍚姩/鍋滄 ASR 澶辫触:', error)
+    ElMessage.error('鎿嶄綔澶辫触')
+  }
+}
+
+// 鎵撳紑瑙嗛杞瓧骞曞璇濇
+const openVideoToSubtitleDialog = () => {
+  showVideoToSubtitleDialog.value = true
+  console.log('[TeacherWindow] 鎵撳紑瑙嗛杞瓧骞曞璇濇')
+}
+
+// ============================================
+// 褰曞埗鍔熻兘 - 鍙充晶闈㈡澘鎺у埗瑙嗛灞曠ず鍖哄煙(鐢诲竷+闊抽娣峰悎)
+// ============================================
+
+// 涓€閿綍鍒舵墍鏈夌敾甯?浣跨敤 FFmpeg 鍚庣,鏀寔闊抽娣峰悎)
+const handleStartAllCanvasRecording = async () => {
+  try {
+    console.log('[褰曞埗-灞曠ず鍖哄煙] 寮€濮嬪綍鍒惰棰戝睍绀哄尯鍩?鍚煶棰戞贩鍚?')
+    if (typeof startAllCanvasRecording === 'function') {
+      await startAllCanvasRecording()
+      isRecording.value = true
+      isRecordingPaused.value = false
+    } else {
+      ElMessage.warning('褰曞埗鍔熻兘涓嶅彲鐢?)
+    }
+  } catch (error) {
+    console.error('[褰曞埗-灞曠ず鍖哄煙] 涓€閿綍鍒跺け璐?, error)
+    ElMessage.error('涓€閿綍鍒跺け璐?)
+  }
+}
+
+// 鏆傚仠鎵€鏈夌敾甯冨綍鍒?
+const handlePauseAllCanvasRecording = () => {
+  try {
+    console.log('[褰曞埗-灞曠ず鍖哄煙] 鏆傚仠/鎭㈠褰曞埗')
+    if (typeof pauseAllCanvasRecording === 'function') {
+      pauseAllCanvasRecording()
+      isRecordingPaused.value = !isRecordingPaused.value
+    } else {
+      ElMessage.warning('褰曞埗鍔熻兘涓嶅彲鐢?)
+    }
+  } catch (error) {
+    console.error('[褰曞埗-灞曠ず鍖哄煙] 鏆傚仠褰曞埗澶辫触', error)
+    ElMessage.error('鏆傚仠褰曞埗澶辫触')
+  }
+}
+
+// 鍋滄鎵€鏈夌敾甯冨綍鍒?
+const handleStopAllCanvasRecording = async () => {
+  try {
+    console.log('[褰曞埗-灞曠ず鍖哄煙] 鍋滄褰曞埗')
+    if (typeof stopAllCanvasRecording === 'function') {
+      await stopAllCanvasRecording()
+    } else {
+      ElMessage.warning('褰曞埗鍔熻兘涓嶅彲鐢?)
+    }
+    isRecording.value = false
+    isRecordingPaused.value = false
+  } catch (error) {
+    console.error('[褰曞埗-灞曠ず鍖哄煙] 鍋滄褰曞埗澶辫触', error)
+    ElMessage.error('鍋滄褰曞埗澶辫触')
+  }
+}
+
+// ============================================
+// 宸ュ叿鏍忔寜閽鐞嗗嚱鏁?
+// ============================================
+
+const handleRecordingCommand = (command) => {
+  if (command === 'multicam') {
+    console.log('[褰曞埗-棰勮鍖哄煙] 瑙﹀彂澶氳矾鎽勫儚澶村綍鍒?)
+    handleStartMultiRecording()
+  } else if (command === 'chromakey') {
+    showChromakeyDialog.value = true
+  } else if (command === 'vr') {
+    showVrDialog.value = true
+  }
+}
+
+// ============================================
+// SidePanel 浜嬩欢澶勭悊鍑芥暟 - 鎺у埗瑙嗛灞曠ず鍖哄煙
+// ============================================
+
+// 寮€濮嬬洿鎾?- 鎵撳紑璁剧疆涓殑 RTMP 鎺ㄦ祦
+const handleStartStream = async () => {
+  try {
+    console.log('[TeacherWindow] 鎵撳紑 RTMP 鎺ㄦ祦璁剧疆')
+    activeTab.value = 'rtmp'
+    showSettingsDialog.value = true
+  } catch (error) {
+    console.error('[TeacherWindow] 鎵撳紑璁剧疆澶辫触', error)
+    ElMessage.error('鎵撳紑璁剧疆澶辫触')
+  }
+}
+
+// 鍋滄鐩存挱 - 宸插湪 SettingsDialog 涓鐞?
+const handleStopStream = async () => {
+  try {
+    console.log('[TeacherWindow] 鍋滄鐩存挱')
+    // RTMP 鍋滄閫昏緫宸插湪 SettingsDialog 涓鐞?
+    // 馃啎 璇煶鎾姤
+    tts.liveStopped()
+  } catch (error) {
+    console.error('[TeacherWindow] 鍋滄鐩存挱澶辫触', error)
+    ElMessage.error('鍋滄鐩存挱澶辫触')
+  }
+}
+
+// 寮€濮嬪綍鍒讹紙浠?SidePanel 璋冪敤 - 褰曞埗鏁翠釜瑙嗛灞曠ず鍖哄煙锛?
+const handleStartRecording = async () => {
+  try {
+    console.log('[褰曞埗-灞曠ず鍖哄煙] SidePanel 瑙﹀彂寮€濮嬪綍鍒?)
+    await handleStartAllCanvasRecording()
+    // 馃啎 璇煶鎾姤
+    tts.recordingStarted()
+  } catch (error) {
+    console.error('[褰曞埗-灞曠ず鍖哄煙] 寮€濮嬪綍鍒跺け璐?, error)
+    ElMessage.error('寮€濮嬪綍鍒跺け璐?)
+    tts.error('褰曞埗鍚姩澶辫触')
+  }
+}
+
+// 鏆傚仠褰曞埗锛堜粠 SidePanel 璋冪敤锛?
+const handlePauseRecording = async (paused) => {
+  try {
+    console.log('[褰曞埗-灞曠ず鍖哄煙] SidePanel 瑙﹀彂鏆傚仠/鎭㈠褰曞埗:', paused)
+    if (paused) {
+      await handlePauseAllCanvasRecording()
+      // 馃啎 璇煶鎾姤
+      tts.recordingPaused()
+    } else {
+      if (typeof resumeAllCanvasRecording === 'function') {
+        await resumeAllCanvasRecording()
+        // 馃啎 璇煶鎾姤
+        tts.recordingResumed()
+      } else {
+        ElMessage.warning('鎭㈠褰曞埗鍔熻兘涓嶅彲鐢?)
+      }
+    }
+  } catch (error) {
+    console.error('[褰曞埗-灞曠ず鍖哄煙] 鏆傚仠/鎭㈠褰曞埗澶辫触', error)
+    ElMessage.error('鏆傚仠/鎭㈠褰曞埗澶辫触')
+  }
+}
+
+// 鍋滄褰曞埗锛堜粠 SidePanel 璋冪敤锛?
+const handleStopRecording = async () => {
+  try {
+    console.log('[褰曞埗-灞曠ず鍖哄煙] SidePanel 瑙﹀彂鍋滄褰曞埗')
+    await handleStopAllCanvasRecording()
+    // 馃啎 璇煶鎾姤
+    tts.recordingStopped()
+  } catch (error) {
+    console.error('[褰曞埗-灞曠ず鍖哄煙] 鍋滄褰曞埗澶辫触', error)
+    ElMessage.error('鍋滄褰曞埗澶辫触')
+  }
+}
+
+// ============================================
+// 澶氳矾褰曞埗鍔熻兘 - 椤堕儴宸ュ叿鏍忔帶鍒堕瑙堝尯鍩?鍗曚釜淇″彿婧?
+// ============================================
+const handleStartMultiRecording = async () => {
+  try {
+    console.log('[褰曞埗-棰勮鍖哄煙] 椤堕儴宸ュ叿鏍忚Е鍙戝璺憚鍍忓ご褰曞埗')
+    // 瑙﹀彂褰曞埗闈㈡澘鐨勫璺綍鍒跺紑濮?浣跨敤 MediaRecorder,杞婚噺绾?
+    window.dispatchEvent(new CustomEvent('start-multi-recording'))
+    ElMessage.success('宸插紑濮嬪綍鍒舵墍鏈夐瑙堝尯鍩熸憚鍍忓ご')
+    // 馃啎 璇煶鎾姤
+    tts.recordingStarted()
+  } catch (error) {
+    console.error('[褰曞埗-棰勮鍖哄煙] 寮€濮嬪璺綍鍒跺け璐?, error)
+    ElMessage.error('寮€濮嬪璺綍鍒跺け璐?)
+  }
+}
+
+const handleStopMultiRecording = async () => {
+  try {
+    console.log('[褰曞埗-棰勮鍖哄煙] 椤堕儴宸ュ叿鏍忚Е鍙戝仠姝㈠璺綍鍒?)
+    // 瑙﹀彂褰曞埗闈㈡澘鐨勫璺綍鍒跺仠姝?
+    window.dispatchEvent(new CustomEvent('stop-multi-recording'))
+    ElMessage.success('宸插仠姝㈡墍鏈夋憚鍍忓ご褰曞埗')
+    // 馃啎 璇煶鎾姤
+    tts.recordingStopped()
+  } catch (error) {
+    console.error('[褰曞埗-棰勮鍖哄煙] 鍋滄澶氳矾褰曞埗澶辫触', error)
+    ElMessage.error('鍋滄澶氳矾褰曞埗澶辫触')
+  }
+}
+
+// ============================================
+// 灞忓箷鍏变韩鍔熻兘
+// ============================================
+const screenShareStream = ref(null)
+const screenShareSourceId = ref(null)
+
+const startScreenShare = async (type) => {
+  try {
+    let stream = null
+
+    switch (type) {
+      case 'screen':
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: 'always' },
+          audio: true
+        })
+        break
+      case 'window':
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: 'always' },
+          audio: true
+        })
+        break
+      case 'tab':
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: 'never' },
+          audio: true
+        })
+        break
+      default:
+        throw new Error('鏈煡鐨勫睆骞曞叡浜被鍨?)
+    }
+
+    screenShareStream.value = stream
+
+    const screenShareSource = {
+      id: `screen_share_${Date.now()}`,
+      name: `灞忓箷鍏变韩 - ${type === 'screen' ? '鏁翠釜灞忓箷' : type === 'window' ? '绐楀彛' : '鏍囩椤?}`,
+      type: 'screen',
+      stream: stream,
+      status: 'online',
+      audioEnabled: true,
+      volume: 100
+    }
+
+    addVideoSource(screenShareSource)
+    screenShareSourceId.value = screenShareSource.id
+
+    ElMessage.success('灞忓箷鍏变韩宸插惎鍔?)
+    showScreenShareDialog.value = false
+
+    stream.getVideoTracks()[0].onended = () => {
+      stopScreenShare()
+    }
+  } catch (error) {
+    console.error('鍚姩灞忓箷鍏变韩澶辫触:', error)
+    if (error.name === 'NotAllowedError') {
+      ElMessage.warning('鐢ㄦ埛鎷掔粷浜嗗睆骞曞叡浜潈闄?)
+    } else {
+      ElMessage.error('鍚姩灞忓箷鍏变韩澶辫触: ' + error.message)
+    }
+  }
+}
+
+const stopScreenShare = () => {
+  if (screenShareStream.value) {
+    screenShareStream.value.getTracks().forEach(track => track.stop())
+    screenShareStream.value = null
+  }
+
+  if (screenShareSourceId.value) {
+    removeVideoSource(screenShareSourceId.value)
+    screenShareSourceId.value = null
+  }
+
+  ElMessage.info('灞忓箷鍏变韩宸插仠姝?)
+}
+
+// ============================================
+// 瀛楀箷绠＄悊鍔熻兘
+// ============================================
+
+// 瀵煎嚭鍏ㄩ儴瀛楀箷
+const exportAllSubtitles = async () => {
+  try {
+    showSubtitleImportDialog.value = false
+    showSubtitleDialog.value = true
+  } catch (error) {
+    console.error('瀵煎嚭瀛楀箷澶辫触:', error)
+    ElMessage.error('瀵煎嚭瀛楀箷澶辫触')
+  }
+}
+
+// 瀵煎叆瀛楀箷
+const importSubtitles = async () => {
+  try {
+    showSubtitleImportDialog.value = true
+  } catch (error) {
+    console.error('[TeacherWindow] 瀵煎叆瀛楀箷澶辫触:', error)
+    ElMessage.error('瀵煎叆瀛楀箷澶辫触')
+  }
+}
+
+// 澶勭悊瀛楀箷鏂囦欢瀵煎叆
+const handleSubtitleImport = (file) => {
+  try {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const content = e.target.result
+        let subtitles = []
+
+        if (file.name.endsWith('.srt')) {
+          subtitles = parseSRT(content)
+        } else if (file.name.endsWith('.json')) {
+          subtitles = JSON.parse(content)
+        } else if (file.name.endsWith('.txt')) {
+          subtitles = parseTXT(content)
+        }
+
+        importedSubtitles.value = subtitles
+        ElMessage.success(`鎴愬姛瑙ｆ瀽 ${subtitles.length} 鏉″瓧骞昤)
+      } catch (error) {
+        console.error('[TeacherWindow] 瑙ｆ瀽瀛楀箷鏂囦欢澶辫触:', error)
+        ElMessage.error('瑙ｆ瀽瀛楀箷鏂囦欢澶辫触: ' + error.message)
+      }
+    }
+    reader.readAsText(file.raw)
+  } catch (error) {
+    console.error('[TeacherWindow] 瀵煎叆瀛楀箷澶辫触:', error)
+    ElMessage.error('瀵煎叆瀛楀箷澶辫触')
+  }
+}
+
+// 瑙ｆ瀽 SRT 鏍煎紡瀛楀箷
+const parseSRT = (content) => {
+  const lines = content.split('\n')
+  const subtitles = []
+  let currentSubtitle = null
+  let lineIndex = 0
+
+  while (lineIndex < lines.length) {
+    const line = lines[lineIndex].trim()
+    if (!line) {
+      if (currentSubtitle && currentSubtitle.text) {
+        subtitles.push(currentSubtitle)
+      }
+      currentSubtitle = null
+      lineIndex++
+      continue
+    }
+
+    if (!currentSubtitle) {
+      currentSubtitle = {
+        index: parseInt(line),
+        startTime: '',
+        endTime: '',
+        text: ''
+      }
+      lineIndex++
+      continue
+    }
+
+    if (currentSubtitle.startTime === '') {
+      const timeMatch = line.match(/(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})/)
+      if (timeMatch) {
+        currentSubtitle.startTime = timeMatch[1]
+        currentSubtitle.endTime = timeMatch[2]
+      }
+      lineIndex++
+      continue
+    }
+
+    if (currentSubtitle.text) {
+      currentSubtitle.text += '\n' + line
+    } else {
+      currentSubtitle.text = line
+    }
+    lineIndex++
+  }
+
+  if (currentSubtitle && currentSubtitle.text) {
+    subtitles.push(currentSubtitle)
+  }
+
+  return subtitles
+}
+
+// 瑙ｆ瀽 TXT 鏍煎紡瀛楀箷锛堢函鏂囨湰锛?
+const parseTXT = (content) => {
+  const lines = content.split('\n').filter(line => line.trim())
+  return lines.map((line, index) => ({
+    index: index + 1,
+    startTime: '00:00:00,000',
+    endTime: '00:00:05,000',
+    text: line.trim()
+  }))
+}
+
+// 纭瀵煎叆瀛楀箷
+const confirmImportSubtitles = () => {
+  try {
+    // 灏嗗鍏ョ殑瀛楀箷娣诲姞鍒?subtitleStore
+    importedSubtitles.value.forEach(subtitle => {
+      subtitleStore.addSubtitle({
+        startTime: subtitle.startTime,
+        endTime: subtitle.endTime,
+        text: subtitle.text
+      })
+    })
+
+    ElMessage.success(`宸插鍏?${importedSubtitles.value.length} 鏉″瓧骞昤)
+    showSubtitleImportDialog.value = false
+    importedSubtitles.value = []
+  } catch (error) {
+    console.error('[TeacherWindow] 纭瀵煎叆瀛楀箷澶辫触:', error)
+    ElMessage.error('瀵煎叆澶辫触')
+  }
+}
+
+// 缂栬緫瀛楀箷
+const editSubtitle = (videoIndex, subtitleIndex) => {
+  try {
+    // 鑾峰彇瀛楀箷鏁版嵁骞跺～鍏呭埌缂栬緫琛ㄥ崟
+    const subtitles = subtitleStore.subtitles
+    if (subtitleIndex >= 0 && subtitleIndex < subtitles.length) {
+      const subtitle = subtitles[subtitleIndex]
+      editingSubtitle.value = {
+        index: subtitleIndex,
+        startTime: subtitle.startTime,
+        endTime: subtitle.endTime,
+        text: subtitle.text
+      }
+      showSubtitleEditDialog.value = true
+    } else {
+      ElMessage.warning('瀛楀箷涓嶅瓨鍦?)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 缂栬緫瀛楀箷澶辫触:', error)
+    ElMessage.error('缂栬緫澶辫触')
+  }
+}
+
+// 淇濆瓨缂栬緫鐨勫瓧骞?
+const saveEditedSubtitle = () => {
+  try {
+    // 鏇存柊瀛楀箷鏁版嵁
+    if (editingSubtitle.value && editingSubtitle.value.index !== undefined) {
+      const index = editingSubtitle.value.index
+      subtitleStore.subtitles[index] = {
+        startTime: editingSubtitle.value.startTime,
+        endTime: editingSubtitle.value.endTime,
+        text: editingSubtitle.value.text
+      }
+      ElMessage.success('瀛楀箷宸蹭繚瀛?)
+      showSubtitleEditDialog.value = false
+      editingSubtitle.value = null
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 淇濆瓨瀛楀箷澶辫触:', error)
+    ElMessage.error('淇濆瓨澶辫触')
+  }
+}
+
+// 鍒犻櫎瀛楀箷
+const deleteSubtitle = (videoIndex, subtitleIndex) => {
+  try {
+    // 鍒犻櫎鎸囧畾瀛楀箷
+    if (subtitleIndex >= 0 && subtitleIndex < subtitleStore.subtitles.length) {
+      subtitleStore.subtitles.splice(subtitleIndex, 1)
+      ElMessage.success('瀛楀箷宸插垹闄?)
+    } else {
+      ElMessage.warning('瀛楀箷涓嶅瓨鍦?)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 鍒犻櫎瀛楀箷澶辫触:', error)
+    ElMessage.error('鍒犻櫎澶辫触')
+  }
+}
+
+// 绠＄悊瀛楀箷
+const showSubtitleManager = () => {
+  showSubtitleDialog.value = true
+}
+
+// 娓呴櫎鍏ㄩ儴瀛楀箷
+const clearAllSubtitles = () => {
+  try {
+    // 浠?subtitleStore 娓呴櫎鎵€鏈夊瓧骞?
+    subtitleStore.clearSubtitles()
+    ElMessage.success('鎵€鏈夊瓧骞曞凡娓呴櫎')
+  } catch (error) {
+    console.error('娓呴櫎瀛楀箷澶辫触:', error)
+    ElMessage.error('娓呴櫎瀛楀箷澶辫触')
+  }
+}
+
+// 娓呴櫎瀛楀箷锛堝揩鎹锋柟寮忥級
+const clearSubtitles = () => {
+  clearAllSubtitles()
+}
+
+// ============================================
+// 瀛楀箷瀵煎嚭鍔熻兘
+// ============================================
+
+// 瀵煎嚭瀛楀箷锛堟牴鎹牸寮忥級
+const exportSubtitles = async () => {
+  try {
+    exporting.value = true
+
+    let content = ''
+    let filename = `subtitles_${Date.now()}`
+    let mimeType = 'text/plain'
+
+    switch (exportFormat.value) {
+      case 'srt':
+        content = exportToSRT()
+        filename += '.srt'
+        mimeType = 'text/plain'
+        break
+      case 'json':
+        content = exportToJSON()
+        filename += '.json'
+        mimeType = 'application/json'
+        break
+      case 'txt':
+        content = exportToTXT()
+        filename += '.txt'
+        mimeType = 'text/plain'
+        break
+    }
+
+    exportPreview.value = content
+
+    // 鍒涘缓涓嬭浇閾炬帴
+    const blob = new Blob([content], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
+
+    ElMessage.success(`瀛楀箷宸插鍑轰负 ${exportFormat.value.toUpperCase()} 鏍煎紡`)
+  } catch (error) {
+    console.error('[TeacherWindow] 瀵煎嚭瀛楀箷澶辫触:', error)
+    ElMessage.error('瀵煎嚭澶辫触: ' + error.message)
+  } finally {
+    exporting.value = false
+  }
+}
+
+// 瀵煎嚭涓?SRT 鏍煎紡
+const exportToSRT = () => {
+  let srtContent = ''
+  let globalIndex = 1
+
+  generatedSubtitles.value.forEach(videoSub => {
+    if (videoSub.subtitles) {
+      videoSub.subtitles.forEach(sub => {
+        srtContent += `${globalIndex}\n`
+        srtContent += `${sub.startTime} --> ${sub.endTime}\n`
+        srtContent += `${sub.text}\n\n`
+        globalIndex++
+      })
+    }
+  })
+
+  return srtContent
+}
+
+// 瀵煎嚭涓?JSON 鏍煎紡
+const exportToJSON = () => {
+  return JSON.stringify(generatedSubtitles.value, null, 2)
+}
+
+// 瀵煎嚭涓?TXT 鏍煎紡
+const exportToTXT = () => {
+  let txtContent = ''
+
+  generatedSubtitles.value.forEach(videoSub => {
+    if (videoSub.subtitles) {
+      txtContent += `=== ${videoSub.videoName} ===\n`
+      videoSub.subtitles.forEach(sub => {
+        txtContent += `[${sub.startTime}] ${sub.text}\n`
+      })
+      txtContent += '\n'
+    }
+  })
+
+  return txtContent
+}
+
+// ============================================
+// 瑙嗛杞瓧骞曞姛鑳?
+// ============================================
+
+// 鍒囨崲瑙嗛瀛楀箷璇嗗埆
+const toggleVideoSubtitle = async () => {
+  try {
+    if (isVideoSubtitleRunning.value) {
+      // 鍋滄璇嗗埆
+      // TODO: 瀹炵幇 videoToSubtitleService
+      // if (videoToSubtitleService && videoToSubtitleService.stop) {
+      //   await videoToSubtitleService.stop()
+      // }
+      isVideoSubtitleRunning.value = false
+      videoSubtitleText.value = ''
+      ElMessage.success('宸插仠姝㈣棰戝瓧骞曡瘑鍒?)
+    } else {
+      // 寮€濮嬭瘑鍒?
+      if (selectedVideoIndex.value === -1) {
+        ElMessage.warning('璇峰厛閫夋嫨涓€涓棰?)
+        return
+      }
+
+      // TODO: 瀹炵幇 videoToSubtitleService
+      // if (videoToSubtitleService && videoToSubtitleService.start) {
+      //   await videoToSubtitleService.start(
+      //     previewVideos.value[selectedVideoIndex.value],
+      //     subtitleLanguage.value,
+      //     subtitleModel.value
+      //   )
+      // }
+      isVideoSubtitleRunning.value = true
+      ElMessage.success('宸插紑濮嬭棰戝瓧骞曡瘑鍒?)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 瑙嗛瀛楀箷璇嗗埆澶辫触:', error)
+    ElMessage.error('鎿嶄綔澶辫触: ' + error.message)
+    isVideoSubtitleRunning.value = false
+  }
+}
+
+// 棰勮瑙嗛閫夋嫨
+const onPreviewVideoSelected = (index) => {
+  console.log('[TeacherWindow] 棰勮瑙嗛宸查€夋嫨:', index)
+  selectedVideoIndex.value = index
+}
+
+// 鏍煎紡鍖栦笓娉ㄥ害
+const formatFocus = (percentage) => {
+  return `${percentage}%`
+}
+
+// ============================================
+// 淇″彿婧愮鐞嗙浉鍏宠绠楀睘鎬?
+// ============================================
+
+// 鏈湴瑙嗛婧?
+const localVideoSources = computed(() => {
+  return allSources.value.filter(s => s.type === 'localVideo')
+})
+
+// 鍒嗛〉鏄剧ず鐨勪俊鍙锋簮
+const paginatedSources = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return allSources.value.slice(start, end)
+})
+
+// 鎬婚〉鏁?
+const totalPages = computed(() => {
+  return Math.ceil(allSources.value.length / pageSize.value)
+})
+
+// ============================================
+// 淇″彿婧愮鐞嗙浉鍏虫柟娉?
+// ============================================
+
+// 浠庨瑙堝尯鍩熺Щ闄や俊鍙锋簮
+const removeFromPreview = (sourceId) => {
+  try {
+    const index = allSources.value.findIndex(s => s.id === sourceId)
+    if (index !== -1) {
+      allSources.value[index].addedToPreview = false
+      ElMessage.success(`宸茬Щ闄? ${allSources.value[index].name}`)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 绉婚櫎淇″彿婧愬け璐?', error)
+    ElMessage.error('绉婚櫎澶辫触')
+  }
+}
+
+// 鎵撳紑閲嶅懡鍚嶅璇濇
+const openRenameDialog = (source) => {
+  renameSourceTarget.value = source
+  showRenameSourceDialog.value = true
+}
+
+// 淇″彿婧愮被鍨嬮€夐」
+const sourceTypeOptions = [
+  { label: '鏈湴鎽勫儚澶?, value: 'localCamera' },
+  { label: '鏈湴瑙嗛', value: 'localVideo' },
+  { label: '缃戠粶鎽勫儚澶?, value: 'networkCamera' },
+  { label: '灞忓箷鍏变韩', value: 'screenShare' },
+  { label: '杩滅▼妗岄潰', value: 'remoteDesktop' }
+]
+
+
+// ============================================
+// 甯冨眬鐘舵€佺鐞嗘柟娉?
+// ============================================
+
+// 鑾峰彇甯冨眬鐘舵€佺殑閿悕
+const getLayoutKey = (layout) => {
+  return String(layout)
+}
+
+// 淇濆瓨褰撳墠甯冨眬鐘舵€?
+// 娉ㄦ剰锛氫俊鍙锋簮鐘舵€佸凡鐢?useVideoSync.js 閫氳繃 layoutStates 缁熶竴绠＄悊
+// 杩欓噷鍙繚瀛?TeacherWindow 鐗规湁鐨?UI 鐘舵€侊紙濡傚叏灞€鎵规敞绛夛級
+const saveCurrentLayoutState = (layout) => {
+  const layoutKey = getLayoutKey(layout)
+
+  // 淇濆瓨鍏ㄥ眬鎵规敞鐘舵€?
+  if (globalAnnotationCanvasRef.value && typeof globalAnnotationCanvasRef.value.saveAnnotation === 'function') {
+    globalAnnotationCanvasRef.value.saveAnnotation(layoutKey)
+  }
+
+  console.log(`[甯冨眬鐘舵€乚 淇濆瓨甯冨眬 ${layoutKey} 鐨?UI 鐘舵€乣)
+}
+
+// 鎭㈠甯冨眬鐘舵€?
+// 娉ㄦ剰锛氫俊鍙锋簮鐘舵€佸凡鐢?useVideoSync.js 閫氳繃 layoutStates 缁熶竴绠＄悊
+// 杩欓噷鍙仮澶?TeacherWindow 鐗规湁鐨?UI 鐘舵€侊紙濡傚叏灞€鎵规敞绛夛級
+const restoreLayoutState = (layout) => {
+  const layoutKey = getLayoutKey(layout)
+
+  // 鎭㈠鍏ㄥ眬鎵规敞鐘舵€?
+  if (globalAnnotationCanvasRef.value && typeof globalAnnotationCanvasRef.value.restoreAnnotation === 'function') {
+    globalAnnotationCanvasRef.value.restoreAnnotation(layoutKey)
+  }
+
+  console.log(`[甯冨眬鐘舵€乚 鎭㈠甯冨眬 ${layoutKey} 鐨?UI 鐘舵€乣)
+}
+
+// 娓呯┖鎵€鏈夎棰戦瑙?
+const clearAllVideoPreviews = () => {
+  // 娓呯悊娓叉煋寮曟搸鐩稿叧鐨勯瑙堝紩鐢?
+  dragVideoPreviews.value = []
+
+  Object.keys(canvasSourceMap.value).forEach(key => {
+    delete canvasSourceMap.value[key]
+  })
+
+  // 娓呯┖棰勮缁勪欢
+  videoPreviews.value = []
+
+  console.log('[甯冨眬鐘舵€乚 宸叉竻绌烘墍鏈夐瑙?)
+}
+
+// 鑾峰彇鎸囧畾甯冨眬鐨勫彲瑙佺敾甯冪储寮曪紙鏂板竷灞€绱㈠紩鏂规锛?
+// 馃幆 2026-04-20 鏇存柊锛氱粺涓€浣跨敤鏂板竷灞€绱㈠紩
+// 甯冨眬绱㈠紩: 1=1鍒嗗睆, 2=2鍒嗗睆, 3=3鍒嗗睆, 4=4鍒嗗睆, 5=6鍒嗗睆, 7=9鍒嗗睆, 10=16鍒嗗睆,
+//           11=25鍒嗗睆, 12=36鍒嗗睆, 13=49鍒嗗睆, 14-17=鐗规畩甯冨眬, 18=鑷敱甯冨眬
+// 姣忕甯冨眬鐙珛绱㈠紩鑼冨洿
+const getVisibleCanvasIndices = (layout) => {
+  // 鏂板竷灞€绱㈠紩鍒版牸瀛愭暟閲忕殑鏄犲皠
+  const layoutCellMap = {
+    1: 1,   // 1鍒嗗睆
+    2: 2,   // 2鍒嗗睆
+    3: 3,   // 3鍒嗗睆
+    4: 4,   // 4鍒嗗睆
+    5: 6,   // 6鍒嗗睆
+    7: 9,   // 9鍒嗗睆
+    10: 16, // 16鍒嗗睆
+    11: 25, // 25鍒嗗睆
+    12: 36, // 36鍒嗗睆
+    13: 49, // 49鍒嗗睆
+    14: 2,  // 鐗规畩甯冨眬1锛?澶?灏忥級
+    15: 2,  // 鐗规畩甯冨眬2锛?澶?灏忥級
+    16: 2,  // 鐗规畩甯冨眬3锛?澶?灏忥級
+    17: 2,  // 鐗规畩甯冨眬4锛?澶?灏忥級
+    18: 1   // 鑷敱甯冨眬锛堣嚦灏?涓尯鍩燂紝鍙姩鎬佹坊鍔狅級
+  };
+
+  const count = layoutCellMap[layout];
+  if (count) {
+    return Array.from({ length: count }, (_, i) => i + 1);
+  }
+  return [1];
+}
+
+// ============================================
+// 甯冨眬鍒囨崲澶勭悊
+// ============================================
+
+// 澶勭悊甯冨眬鍙樺寲
+// 缁熶竴浣跨敤 window.__layoutStates 杩涜甯冨眬鐘舵€佺鐞嗭紝閬垮厤鐘舵€佷笉涓€鑷?
+
+const handleLayoutChange = async (newLayout) => {
+  try {
+    console.log(`[甯冨眬鍒囨崲] handleLayoutChange 琚皟鐢? newLayout=${newLayout}, typeof=${typeof newLayout}`)
+
+    // 馃幆 澶勭悊瀵硅薄绫诲瀷鐨勮緭鍏ワ紙鏉ヨ嚜 RenderEngineWrapper 缁勪欢锛?
+    if (typeof newLayout === 'object' && newLayout !== null) {
+      // 濡傛灉鏄璞★紝鎻愬彇 layoutType 灞炴€?
+      if (newLayout.layoutType !== undefined) {
+        console.log(`[甯冨眬鍒囨崲] 妫€娴嬪埌瀵硅薄绫诲瀷杈撳叆锛屾彁鍙?layoutType: ${newLayout.layoutType}`)
+        newLayout = convertLayoutTypeToIndex(newLayout.layoutType)
+      } else {
+        console.error('[甯冨眬鍒囨崲] 鉂?瀵硅薄绫诲瀷杈撳叆浣嗙己灏?layoutType 灞炴€?', newLayout)
+        ElMessage.error('甯冨眬鍙傛暟鏃犳晥')
+        return
+      }
+    }
+
+    // 鍙傛暟楠岃瘉
+    if (newLayout === undefined || newLayout === null) {
+      console.error('[甯冨眬鍒囨崲] 鉂?鏃犳晥鐨勫竷灞€鍙傛暟: newLayout=', newLayout)
+      ElMessage.error('甯冨眬鍙傛暟鏃犳晥')
+      return
+    }
+
+    // 鏍囪姝ｅ湪澶勭悊甯冨眬鍙樺寲锛岄伩鍏?watch 閲嶅澶勭悊
+    isHandlingLayoutChange = true
+
+    const oldLayout = currentLayout.value
+    console.log(`[甯冨眬鍒囨崲] oldLayout=${oldLayout}, currentLayout.value=${currentLayout?.value}`)
+
+    //  缁熶竴鐘舵€佺鐞嗭細鍖哄垎鏍囧噯甯冨眬鍜岃嚜鐢卞竷灞€锛堝繀椤诲湪if鍧楀澹版槑锛?
+    const isOldFreeLayout = oldLayout === 18 || oldLayout === 'free'
+    const isNewFreeLayout = newLayout === 18 || newLayout === 'free'
+
+    // 馃幆 缁熶竴鐘舵€佺鐞嗭細浣跨敤 window.__layoutStates 淇濆瓨鏃у竷灞€鐘舵€?
+    if (oldLayout !== newLayout) {
+      console.log(`[甯冨眬鍒囨崲] 淇濆瓨鏃у竷灞€ ${oldLayout} 鐨勭姸鎬乣)
+
+      // 纭繚 window.__layoutStates 瀛樺湪
+      if (!window.__layoutStates) {
+        window.__layoutStates = {}
+      }
+
+      // 涓烘棫甯冨眬鍒涘缓妲戒綅瀵硅薄锛堝鏋滀笉瀛樺湪锛?
+      if (!window.__layoutStates[oldLayout]) {
+        window.__layoutStates[oldLayout] = { slots: {}, maximizedIndex: null, freeSources: [] }
+      }
+
+      if (isOldFreeLayout) {
+        // 馃幆 鑷敱甯冨眬锛氫繚瀛?canvasStore 鐨?sources 鍒?window.__layoutStates
+        window.__layoutStates[oldLayout].freeSources = JSON.parse(JSON.stringify(canvasStore.sources))
+        window.__layoutStates[oldLayout].maximizedIndex = maximizedIndex.value
+        console.log(`[甯冨眬鍒囨崲] 宸蹭繚瀛樿嚜鐢卞竷灞€ ${oldLayout} 鐨勪俊鍙锋簮:`, canvasStore.sources.length, '涓?)
+      } else {
+        // 馃幆 鏍囧噯甯冨眬锛氫繚瀛樺畬鏁寸殑淇″彿婧愬璞★紙涓嶄粎浠呮槸ID锛?
+        const oldSlots = {}
+        Object.keys(canvasSourceMap.value).forEach(key => {
+          const sourceId = canvasSourceMap.value[key]
+          if (sourceId) {
+            // 浠?allSources 涓幏鍙栧畬鏁寸殑淇″彿婧愬璞?
+            const source = allSources.value.find(s => s.id === sourceId)
+            if (source) {
+              // 淇濆瓨瀹屾暣鐨勪俊鍙锋簮瀵硅薄锛屽寘鍚墍鏈夌姸鎬?
+              oldSlots[key] = JSON.parse(JSON.stringify(source))
+              console.log(`[甯冨眬鍒囨崲] 淇濆瓨淇″彿婧? 绱㈠紩${key} -> ${source.name} (${source.id})`)
+            } else {
+              // 濡傛灉鎵句笉鍒颁俊鍙锋簮瀵硅薄锛屽彧淇濆瓨ID
+              oldSlots[key] = sourceId
+              console.warn(`[甯冨眬鍒囨崲] 鎵句笉鍒颁俊鍙锋簮 ${sourceId}锛屽彧淇濆瓨ID`)
+            }
+          }
+        })
+        window.__layoutStates[oldLayout].slots = oldSlots
+        window.__layoutStates[oldLayout].maximizedIndex = maximizedIndex.value
+      }
+
+      console.log(`[甯冨眬鍒囨崲] 宸蹭繚瀛樺竷灞€ ${oldLayout} 鐨勭姸鎬?`, window.__layoutStates[oldLayout])
+    }
+
+    // 馃幆 鍏堟竻绌?canvasSourceMap锛岄伩鍏嶆棫甯冨眬鐨勪俊鍙锋簮娈嬬暀
+    if (!isNewFreeLayout) {
+      canvasSourceMap.value = {}
+      console.log('[甯冨眬鍒囨崲] 宸叉竻绌烘棫鍒嗗睆甯冨眬鐘舵€?)
+    }
+
+    // 鏇存柊甯冨眬
+    currentLayout.value = newLayout
+
+    // 馃幆 浠?window.__layoutStates 鍔犺浇鏂板竷灞€鐨勭姸鎬?
+    // 娉ㄦ剰锛歩sNewFreeLayout 宸插湪鍓嶉潰澹版槑锛堝嚱鏁板紑澶达級
+
+    if (window.__layoutStates && window.__layoutStates[newLayout]) {
+      const layoutConfig = window.__layoutStates[newLayout]
+      console.log(`[甯冨眬鍒囨崲] 浠?layoutStates 鍔犺浇鏂板竷灞€ ${newLayout} 鐨勯厤缃?`, layoutConfig)
+
+      if (isNewFreeLayout) {
+        // 馃幆 鑷敱甯冨眬锛氫粠 window.__layoutStates 鎭㈠ canvasStore 鐨?sources
+        if (layoutConfig.freeSources && Array.isArray(layoutConfig.freeSources)) {
+          canvasStore.sources = layoutConfig.freeSources
+          console.log(`[甯冨眬鍒囨崲] 宸叉仮澶嶈嚜鐢卞竷灞€ ${newLayout} 鐨勪俊鍙锋簮:`, canvasStore.sources.length, '涓?)
+        } else {
+          canvasStore.clearCanvas()
+        }
+        // 鎭㈠鏈€澶у寲鐘舵€?
+        maximizedIndex.value = layoutConfig.maximizedIndex || null
+        isMaximized.value = maximizedIndex.value !== null
+      } else {
+        // 馃幆 鏍囧噯鍒嗗睆甯冨眬锛氫紭鍏堟仮澶嶄箣鍓嶄繚瀛樼殑閰嶇疆
+        const savedSlots = layoutConfig?.slots
+        const validIndices = getVisibleCanvasIndices(newLayout)
+        console.log(`[甯冨眬鍒囨崲] 鏂板竷灞€鏈夋晥绱㈠紩:`, validIndices)
+
+        // 妫€鏌ユ槸鍚︽湁淇濆瓨鐨?slots 閰嶇疆
+        const hasSavedConfig = savedSlots && Object.keys(savedSlots).length > 0
+        console.log(`[甯冨眬鍒囨崲] 鏂板竷灞€ ${newLayout} 鏄惁宸叉湁淇濆瓨閰嶇疆:`, hasSavedConfig)
+
+        if (hasSavedConfig) {
+          // 馃幆 鎭㈠涔嬪墠淇濆瓨鐨勫垎灞忎俊鍙锋簮閰嶇疆
+          const newCanvasSourceMap = {}
+          const sourcesToRestore = []
+
+          validIndices.forEach(index => {
+            const key = String(index)
+            const slotData = savedSlots[key] || savedSlots[Number(index)] || savedSlots[index]
+
+            if (slotData) {
+              let sourceId = null
+              let sourceObj = null
+
+              if (typeof slotData === 'string') {
+                sourceId = slotData
+              } else if (typeof slotData === 'object') {
+                sourceId = slotData.id
+                sourceObj = slotData
+              }
+
+              if (sourceId) {
+                newCanvasSourceMap[key] = sourceId
+                console.log(`[甯冨眬鍒囨崲] 鎭㈠淇″彿婧? 鏍煎瓙${key} -> ${sourceId}`)
+
+                if (sourceObj) {
+                  sourcesToRestore.push(sourceObj)
+                }
+              }
+            }
+          })
+
+          // 馃幆 纭繚淇″彿婧愬瓨鍦ㄤ簬 sourceStore
+          sourcesToRestore.forEach(sourceObj => {
+            const existsInStore = sourceStore.sources.some(s => s.id === sourceObj.id)
+            if (!existsInStore) {
+              sourceStore.addSource(sourceObj)
+              console.log(`[甯冨眬鍒囨崲] 宸叉仮澶嶄俊鍙锋簮鍒?sourceStore: ${sourceObj.name}`)
+            }
+          })
+
+          canvasSourceMap.value = newCanvasSourceMap
+          console.log(`[甯冨眬鍒囨崲] 宸叉仮澶?${Object.keys(newCanvasSourceMap).length} 涓俊鍙锋簮鍒版柊甯冨眬`)
+        } else {
+          // 馃幆 棣栨鍒囨崲鍒拌甯冨眬锛氬垵濮嬪寲涓虹┖甯冨眬锛屼笉浠庨瑙堝尯鍩熷厠闅嗕俊鍙锋簮
+          // 杩欐牱鐢ㄦ埛蹇呴』鏄庣‘鍦版嫋鎷戒俊鍙锋簮鍒板垎灞忔牸瀛愶紝鑰屼笉鏄嚜鍔ㄥ～鍏?
+          const newCanvasSourceMap = {}
+
+          // 鍒濆鍖栧苟淇濆瓨鍒?layoutStates
+          const sourcesToSave = {}
+
+          // 鍒濆鍖?layoutStates
+          window.__layoutStates[newLayout] = {
+            slots: sourcesToSave,
+            maximizedIndex: null
+          }
+
+          canvasSourceMap.value = newCanvasSourceMap
+          console.log(`[甯冨眬鍒囨崲] 鍒濆鍖栫┖甯冨眬 ${newLayout}锛屾湭浠庨瑙堝尯鍩熷厠闅嗕换浣曚俊鍙锋簮`)
+        }
+
+        // 鎭㈠鏈€澶у寲鐘舵€?
+        maximizedIndex.value = layoutConfig.maximizedIndex || null
+        isMaximized.value = maximizedIndex.value !== null
+      }
+    } else {
+      // 馃幆 濡傛灉娌℃湁淇濆瓨鐨勯厤缃紝鍒濆鍖栨柊甯冨眬锛屼繚鎸佺┖鐘舵€?
+      console.log(`[甯冨眬鍒囨崲] 鏂板竷灞€ ${newLayout} 娌℃湁淇濆瓨鐨勯厤缃紝鍒濆鍖栦负绌哄竷灞€`)
+
+      if (isNewFreeLayout) {
+        canvasStore.clearCanvas()
+      } else {
+        // 鍒濆鍖栦负绌哄竷灞€锛屼笉浠庨瑙堝尯鍩熷厠闅嗕换浣曚俊鍙锋簮
+        const newCanvasSourceMap = {}
+
+        // 鍒濆鍖栧苟淇濆瓨鍒?layoutStates
+        const sourcesToSave = {}
+
+        // 鍒濆鍖?layoutStates
+        window.__layoutStates[newLayout] = {
+          slots: sourcesToSave,
+          maximizedIndex: null
+        }
+
+        canvasSourceMap.value = newCanvasSourceMap
+        console.log(`[甯冨眬鍒囨崲] 鍒濆鍖栫┖甯冨眬 ${newLayout}锛屾湭鏀剧疆浠讳綍淇″彿婧恅)
+      }
+      maximizedIndex.value = null
+      isMaximized.value = false
+    }
+
+    console.log(`[甯冨眬鍒囨崲] 鏈€缁?canvasSourceMap:`, canvasSourceMap.value)
+    const displayName = getLayoutDisplayName(newLayout)
+    ElMessage.success(`宸插垏鎹㈠埌 ${displayName} 鍒嗗睆甯冨眬`)
+  } catch (error) {
+    console.error('[甯冨眬鍒囨崲] 鍒囨崲甯冨眬澶辫触:', error)
+    console.error('[甯冨眬鍒囨崲] 閿欒鍫嗘爤:', error.stack)
+    try {
+      console.error('[甯冨眬鍒囨崲] 褰撳墠鐘舵€?', {
+        newLayout,
+        currentLayout: currentLayout?.value,
+        canvasSourceMap: canvasSourceMap?.value || {},
+        videoPreviewsCount: videoPreviews?.value?.length || 0
+      })
+    } catch (logError) {
+      console.error('[甯冨眬鍒囨崲] 璁板綍鐘舵€佹椂鍑洪敊:', logError)
+    }
+    ElMessage.error('鍒囨崲甯冨眬澶辫触: ' + (error.message || '鏈煡閿欒'))
+  }
+}
+
+// 馃啎 缁熶竴娓叉煋鏋舵瀯澶勭悊鍑芥暟
+
+// 灏嗙敾甯冩簮鍚屾鍒?allSources
+const syncCanvasSourceToAllSources = (canvasIndex) => {
+  const sourceId = canvasSourceMap.value[canvasIndex]
+  if (!sourceId) return
+
+  // 鍦?allSources 涓煡鎵惧苟鏇存柊婧?
+  const sourceIndex = allSources.value.findIndex(s => s.id === sourceId)
+  if (sourceIndex !== -1) {
+    const canvasSource = allSources.value[sourceIndex]
+    // 鏂版灦鏋勶細鏃犻渶鍚屾 videoSyncGroupKey锛孲yncStateReplicator 鑷姩澶勭悊
+  }
+}
+
+// ============================================
+// 闊抽鐩戞帶鐩稿叧鏂规硶
+// ============================================
+
+// 鍒囨崲楹﹀厠椋?
+const onMicrophoneToggle = async (mic) => {
+  try {
+    if (typeof toggleMicrophone === 'function') {
+      await toggleMicrophone(mic)
+    }
+    if (mic.enabled) {
+      if (typeof startMicrophoneLevelMonitoring === 'function') {
+        await startMicrophoneLevelMonitoring()
+      }
+      ElMessage.success(`宸插惎鐢? ${mic.label || '楹﹀厠椋?}`)
+    } else {
+      if (typeof stopMicrophoneMonitoring === 'function') {
+        stopMicrophoneMonitoring()
+      }
+      ElMessage.info(`宸茬鐢? ${mic.label || '楹﹀厠椋?}`)
+    }
+  } catch (error) {
+    console.error('[闊抽] 鍒囨崲楹﹀厠椋庡け璐?', error)
+    mic.enabled = !mic.enabled
+    ElMessage.error('鎿嶄綔澶辫触')
+  }
+}
+
+// 楹﹀厠椋庨煶閲忚皟鑺?
+const onMicrophoneVolumeChange = (mic) => {
+  try {
+    if (typeof originalOnMicrophoneVolumeChange === 'function') {
+      originalOnMicrophoneVolumeChange(mic)
+    }
+    if (window.microphoneAudioOutput) {
+      window.microphoneAudioOutput.volume = mic.volume / 100
+    }
+    console.log(`[闊抽] 楹﹀厠椋庨煶閲? ${mic.label || '楹﹀厠椋?} - ${mic.volume}%`)
+  } catch (error) {
+    console.error('[闊抽] 璋冭妭楹﹀厠椋庨煶閲忓け璐?', error)
+  }
+}
+
+// 瑙嗛闊抽寮€鍏冲垏鎹?
+const onVideoAudioToggle = (source) => {
+  try {
+    if (typeof toggleVideoAudio === 'function') {
+      toggleVideoAudio(source)
+    }
+    if (source.audioEnabled) {
+      ElMessage.success(`宸插惎鐢ㄩ煶棰? ${source.name}`)
+    } else {
+      ElMessage.info(`宸茬鐢ㄩ煶棰? ${source.name}`)
+    }
+  } catch (error) {
+    console.error('[闊抽] 鍒囨崲瑙嗛闊抽澶辫触:', error)
+    source.audioEnabled = !source.audioEnabled
+    ElMessage.error('鎿嶄綔澶辫触')
+  }
+}
+
+// 瑙嗛闊抽闊抽噺璋冭妭
+const onVideoAudioVolumeChange = (source) => {
+  try {
+    if (typeof originalOnVideoAudioVolumeChange === 'function') {
+      originalOnVideoAudioVolumeChange(source)
+    }
+    console.log(`[闊抽] 瑙嗛闊抽噺: ${source.name} - ${source.volume}%`)
+  } catch (error) {
+    console.error('[闊抽] 璋冭妭瑙嗛闊抽噺澶辫触:', error)
+  }
+}
+
+// 馃幆 闊抽鐘舵€佽拷韪?- 璁板綍姣忎釜婧愬綋鍓嶆鍦ㄦ挱鏀鹃煶棰戠殑鐢诲竷绱㈠紩
+const activeAudioSource = ref({}) // sourceId -> canvasIndex
+
+// 鏇存柊淇″彿婧愮殑闊抽鐘舵€佸埌瑙嗛鍏冪礌
+const updateSourceAudioState = (source) => {
+  try {
+    console.log(`[闊抽] 鏇存柊 ${source.name} 鐨勯煶棰戠姸鎬?`, {
+      audioEnabled: source.audioEnabled,
+      muted: source.muted,
+      volume: source.volume
+    })
+
+    // 缁熻璇ユ簮鍦ㄧ敾甯冧腑鍑虹幇鐨勬鏁?
+    const canvasOccurrences = Object.values(canvasSourceMap.value).filter(id => id === source.id).length
+
+    // 馃幆 绗竴姝ワ細鎵惧嚭璇ユ簮鍦ㄧ敾甯冧腑鐨勬墍鏈夊疄渚?
+    const sourceCanvasIndices = []
+    for (let canvasIndex = 1; canvasIndex <= Object.keys(canvasSourceMap.value).length; canvasIndex++) {
+      if (canvasSourceMap.value[canvasIndex] === source.id) {
+        sourceCanvasIndices.push(canvasIndex)
+      }
+    }
+    // 馃幆 纭繚鏁扮粍鎸夋暟瀛楅『搴忔帓搴?
+    sourceCanvasIndices.sort((a, b) => a - b)
+
+    // 馃幆 绗簩姝ワ細鏇存柊棰勮鍖哄煙鐨勮棰戝厓绱?
+    // 濡傛灉婧愬凡娣诲姞鍒扮敾甯冿紝棰勮鍖哄煙闈欓煶锛涘惁鍒欓瑙堝尯鍩熷彲浠ユ挱鏀鹃煶棰?
+    // 鏌ユ壘鎵€鏈夊叿鏈夎 sourceId 鐨勮棰戝厓绱?
+    const allVideos = document.querySelectorAll(`video[data-source-id="${source.id}"]`)
+    console.log(`[闊抽] 鎵惧埌 ${allVideos.length} 涓棰戝厓绱?for ${source.name}`)
+
+    // 鏇存柊 audioMixer 鐨勯煶閲?
+    const audioVolume = source.audioEnabled ? (source.volume || 100) / 100 : 0
+    audioMixer.setVolume(source.id, audioVolume)
+
+    if (allVideos.length > 0) {
+      // 棰勮鍖哄煙鐨勮棰戯紙绗竴涓壘鍒扮殑瑙嗛锛?
+      const previewVideo = allVideos[0]
+      const shouldMutePreview = canvasOccurrences > 0 || !source.audioEnabled
+      previewVideo.muted = shouldMutePreview
+      previewVideo.volume = (source.volume || 100) / 100
+      console.log(`[闊抽] 鉁?棰勮瑙嗛 ${source.name}: muted=${previewVideo.muted}, volume=${previewVideo.volume}, 鐢诲竷瀹炰緥鏁?${canvasOccurrences}`)
+    }
+
+    // 馃幆 绗笁姝ワ細鏇存柊鐢诲竷涓殑瑙嗛鍏冪礌 - 闊抽鍘婚噸鏍稿績閫昏緫
+    if (sourceCanvasIndices.length === 0) {
+      // 璇ユ簮鏈坊鍔犲埌鐢诲竷锛屾棤闇€澶勭悊
+      return
+    }
+
+    // 纭畾鍝釜瀹炰緥搴旇鎾斁闊抽锛堜紭鍏堜娇鐢ㄤ箣鍓嶆縺娲荤殑瀹炰緥锛屽惁鍒欎娇鐢ㄧ涓€涓級
+    const previousActiveIndex = activeAudioSource.value[source.id]
+    let shouldPlayAudioIndex = sourceCanvasIndices.includes(previousActiveIndex)
+      ? previousActiveIndex
+      : sourceCanvasIndices[0]
+
+    // 鏇存柊娲昏穬闊抽婧愯褰?
+    activeAudioSource.value[source.id] = shouldPlayAudioIndex
+
+    // 馃幆 淇锛氫娇鐢?allVideos 鏁扮粍澶勭悊鐢诲竷涓殑瑙嗛锛堣烦杩囩涓€涓紝鍥犱负绗竴涓槸棰勮鍖哄煙鐨勶級
+    const canvasVideos = allVideos.length > 1 ? Array.from(allVideos).slice(1) : []
+
+    // 閬嶅巻鎵€鏈夌敾甯冨疄渚嬶紝璁剧疆姝ｇ‘鐨勯潤闊崇姸鎬?
+    sourceCanvasIndices.forEach((canvasIndex, index) => {
+      // 浠?canvasVideos 鏁扮粍涓幏鍙栧搴旂殑瑙嗛鍏冪礌
+      const canvasVideo = canvasVideos[index]
+
+      if (canvasVideo) {
+        // 鍒ゆ柇鏄惁涓哄簲璇ユ挱鏀鹃煶棰戠殑瀹炰緥
+        const isAudioInstance = canvasIndex === shouldPlayAudioIndex
+        const shouldMute = !source.audioEnabled || !isAudioInstance
+
+        canvasVideo.muted = shouldMute
+        canvasVideo.volume = (source.volume || 100) / 100
+
+        console.log(`[闊抽] 鉁?鐢诲竷 ${canvasIndex} 瑙嗛 ${source.name}: muted=${canvasVideo.muted}, volume=${canvasVideo.volume}, 闊抽瀹炰緥=${isAudioInstance}`)
+      } else {
+        console.log(`[闊抽] 鈿狅笍 鏃犳硶鎵惧埌鐢诲竷 ${canvasIndex} 涓殑瑙嗛鍏冪礌: ${source.name}`)
+      }
+    })
+
+  } catch (error) {
+    console.error('[闊抽] 鏇存柊闊抽鐘舵€佸け璐?', error)
+  }
+}
+
+// 馃幆 鍏ㄥ眬闊抽妫€鏌?- 纭繚鎵€鏈夎棰戞簮鐨勯煶棰戠姸鎬佹纭?
+const checkAllAudioStates = () => {
+  try {
+    console.log('[闊抽] 鎵ц鍏ㄥ眬闊抽妫€鏌?)
+
+    // 鑾峰彇鎵€鏈夌嫭鐗圭殑瑙嗛婧愶紙鍚屾椂浠?sourceStore 鍜?mediaStore 鑾峰彇锛?
+    const uniqueSources = new Set()
+    Object.values(canvasSourceMap.value).forEach(sourceId => {
+      // 鍏堜粠 mediaStore 鏌ユ壘锛堟湰鍦拌棰戞簮锛?
+      const mediaSource = mediaStore.sources.get(sourceId)
+      if (mediaSource) {
+        uniqueSources.add(mediaSource)
+      } else {
+        // 鍐嶄粠 sourceStore 鏌ユ壘锛堝叾浠栫被鍨嬫簮锛?
+        const source = sourceStore.sources.find(s => s.id === sourceId)
+        if (source) {
+          uniqueSources.add(source)
+        }
+      }
+    })
+
+    // 瀵规瘡涓簮鎵ц闊抽鐘舵€佹洿鏂?
+    uniqueSources.forEach(source => {
+      updateSourceAudioState(source)
+    })
+
+    console.log('[闊抽] 鍏ㄥ眬闊抽妫€鏌ュ畬鎴?)
+  } catch (error) {
+    console.error('[闊抽] 鍏ㄥ眬闊抽妫€鏌ュけ璐?', error)
+  }
+}
+
+// 馃幆 褰撶敾甯冩簮鍙戠敓鍙樺寲鏃讹紝鑷姩妫€鏌ラ煶棰戠姸鎬?
+const handleCanvasSourceChange = () => {
+  // 寤惰繜鎵ц锛岀‘淇滵OM宸叉洿鏂?
+  setTimeout(checkAllAudioStates, 100)
+}
+
+// 澶勭悊鏈湴瑙嗛闊抽鍙樺寲锛堜粠闊抽闈㈡澘锛?
+const handleLocalVideoAudioChange = ({ enabled, volume, sourceId }) => {
+  try {
+    console.log('[闊抽闈㈡澘] 鏈湴瑙嗛闊抽鍙樺寲:', { enabled, volume, sourceId })
+
+    if (sourceId) {
+      // 鏇存柊鎸囧畾婧愮殑闊抽鐘舵€?
+      const source = sourceStore.sources.find(s => s.id === sourceId)
+      if (source) {
+        // 馃幆 浣跨敤 sourceStore.updateSource 纭繚鍝嶅簲寮忔洿鏂?
+        sourceStore.updateSource(sourceId, { audioEnabled: enabled, volume })
+        // 鑾峰彇鏇存柊鍚庣殑婧愬璞?
+        const updatedSource = sourceStore.sources.find(s => s.id === sourceId)
+        if (updatedSource) {
+          updateSourceAudioState(updatedSource)
+        }
+      }
+    } else {
+      // 鏇存柊鎵€鏈夋湰鍦拌棰戞簮鐨勯煶棰戠姸鎬?
+      sourceStore.sources.forEach(source => {
+        if (source.type === 'localVideo' || source.type === 'local-file') {
+          sourceStore.updateSource(source.id, { audioEnabled: enabled, volume })
+          const updatedSource = sourceStore.sources.find(s => s.id === source.id)
+          if (updatedSource) {
+            updateSourceAudioState(updatedSource)
+          }
+        }
+      })
+    }
+  } catch (error) {
+    console.error('[闊抽闈㈡澘] 澶勭悊鏈湴瑙嗛闊抽鍙樺寲澶辫触:', error)
+  }
+}
+
+// 澶勭悊绯荤粺闊抽鍙樺寲锛堜粠闊抽闈㈡澘锛?
+const handleSystemAudioChange = ({ enabled, volume }) => {
+  try {
+    console.log('[闊抽闈㈡澘] 绯荤粺闊抽鍙樺寲:', { enabled, volume })
+
+    // 鏇存柊鎵€鏈夐潪楹﹀厠椋庢簮鐨勯煶棰戠姸鎬?
+    sourceStore.sources.forEach(source => {
+      if (source.type !== 'microphone') {
+        source.audioEnabled = enabled
+        source.volume = volume
+        updateSourceAudioState(source)
+      }
+    })
+  } catch (error) {
+    console.error('[闊抽闈㈡澘] 澶勭悊绯荤粺闊抽鍙樺寲澶辫触:', error)
+  }
+}
+
+// 鐩戝惉鍏ㄥ眬闊抽鎺у埗閫夐」鍙樺寲
+watch(enableAudioMonitor, (enabled) => {
+  console.log('[闊抽] 鐩戝惉妯″紡:', enabled ? '宸插惎鐢? : '宸茬鐢?)
+})
+
+watch(enableTerminalMute, (enabled) => {
+  console.log('[闊抽] 缁堢闈欓煶:', enabled ? '宸插惎鐢? : '宸茬鐢?)
+})
+
+watch(enableAudioNoiseReduction, (enabled) => {
+  console.log('[闊抽] 闊抽闄嶅櫔:', enabled ? '宸插惎鐢? : '宸茬鐢?)
+})
+
+// 鑾峰彇鍒嗘瀽绫诲瀷鏍囩
+const getAnalysisTypeTag = (type) => {
+  const tags = {
+    '涓撴敞搴?: 'success',
+    '鎯呯华': 'warning',
+    '琛屼负': 'info'
+  }
+  return tags[type] || 'info'
+}
+
+// ============================================
+// 璁剧疆瀵硅瘽妗嗙浉鍏虫柟娉?
+// ============================================
+
+// 閫夋嫨褰曞埗璺緞
+const selectRecordingPath = async () => {
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: '閫夋嫨褰曞儚鏂囦欢瀛樻斁浣嶇疆'
+    })
+    if (selected) {
+      settings.value.recordingPath = selected
+      ElMessage.success('宸查€夋嫨: ' + selected)
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('[TeacherWindow] 閫夋嫨璺緞澶辫触:', error)
+      ElMessage.error('閫夋嫨璺緞澶辫触')
+    }
+  }
+}
+
+// 閲嶇疆褰曞埗璺緞
+const resetRecordingPath = () => {
+  settings.value.recordingPath = './recordings'
+  ElMessage.info('褰曞埗璺緞宸查噸缃负榛樿鍊?)
+}
+
+// 閲嶇疆鎵€鏈夎缃?
+const resetAllSettings = () => {
+  try {
+    resetSettings()
+    settingsActiveTab.value = 'recording'
+    ElMessage.success('鎵€鏈夎缃凡鎭㈠榛樿')
+  } catch (error) {
+    console.error('[TeacherWindow] 閲嶇疆璁剧疆澶辫触:', error)
+    ElMessage.error('閲嶇疆澶辫触')
+  }
+}
+
+// ============================================
+// 瀛︾敓绠＄悊鐩稿叧鏂规硶
+// ============================================
+
+const addStudent = () => {
+  ElMessage.info('娣诲姞瀛︾敓鍔熻兘寮€鍙戜腑')
+}
+
+const answerHand = (student) => {
+  student.handRaised = false
+  ElMessage.success(`宸插洖搴?${student.name} 鐨勪妇鎵媊)
+}
+
+const viewDetail = (student) => {
+  ElMessage.info(`鏌ョ湅 ${student.name} 鐨勮鎯卄)
+}
+
+const kickStudent = (student) => {
+  ElMessage.warning(`宸茬Щ闄?${student.name}`)
+}
+
+// ============================================
+// 浠诲姟绠＄悊鐩稿叧鏂规硶
+// ============================================
+
+const addTask = () => {
+  ElMessage.info('鍙戝竷浠诲姟鍔熻兘寮€鍙戜腑')
+}
+
+const viewTaskDetail = (task) => {
+  ElMessage.info(`鏌ョ湅浠诲姟: ${task.title}`)
+}
+
+// ============================================
+// 瀹炶绠＄悊鐩稿叧鏂规硶
+// ============================================
+
+const startTraining = () => {
+  ElMessage.info('寮€濮嬪疄璁姛鑳藉紑鍙戜腑')
+}
+
+const viewTraining = (training) => {
+  ElMessage.info(`鏌ョ湅瀹炶: ${training.title}`)
+}
+
+const submitTraining = (training) => {
+  ElMessage.success(`宸叉彁浜ゅ疄璁? ${training.title}`)
+}
+
+// ============================================
+// 瑙嗚鍒嗘瀽鐩稿叧鏂规硶
+// ============================================
+
+const isAnalyzing = ref(false)
+
+// 妫€娴嬫ā寮忕姸鎬?
+const detectionMode = ref('online')
+const networkStatus = ref(navigator.onLine)
+
+// 鐩戝惉缃戠粶鐘舵€佸彉鍖?
+window.addEventListener('online', () => {
+  networkStatus.value = true
+  ElMessage.success('缃戠粶宸茶繛鎺?)
+})
+window.addEventListener('offline', () => {
+  networkStatus.value = false
+  ElMessage.warning('缃戠粶宸叉柇寮€锛屽皢浣跨敤鏈湴妯″紡')
+})
+
+// 棰勫姞杞?YOLO 妯″瀷
+const preloadYolo = async () => {
+  try {
+    ElMessage.info('姝ｅ湪鍔犺浇 YOLO 妯″瀷锛岃绋嶅€?..')
+    const success = await visionStore.preloadYoloModel()
+    updateDetectionMode()
+
+    if (success) {
+      ElMessage.success('YOLO 妯″瀷鍔犺浇瀹屾垚锛屽綋鍓嶆ā寮? ' + getDetectionModeText.value.icon + ' ' + getDetectionModeText.value.text)
+    } else {
+      ElMessage.error('YOLO 妯″瀷鍔犺浇澶辫触')
+    }
+    return success
+  } catch (error) {
+    console.error('[TeacherWindow] YOLO 棰勫姞杞藉け璐?', error)
+    ElMessage.error('YOLO 妯″瀷鍔犺浇澶辫触: ' + error.message)
+    return false
+  }
+}
+
+// 寮€濮嬭瑙夊垎鏋?
+const startAnalysis = async () => {
+  if (isAnalyzing.value) {
+    ElMessage.warning('鍒嗘瀽姝ｅ湪杩涜涓?)
+    return
+  }
+
+  try {
+    // 棰勫姞杞?YOLO 妯″瀷
+    const loaded = await preloadYolo()
+    if (!loaded) {
+      return
+    }
+
+    // 璁剧疆妫€娴嬮槇鍊?
+    visionStore.setConfig({ yoloThreshold: 0.6 })
+
+    // 鑾峰彇瑙嗛鍏冪礌
+    const videoElement = playbackVideoRef.value
+    if (!videoElement) {
+      ElMessage.error('鏈壘鍒拌棰戝厓绱?)
+      return
+    }
+
+    // 寮€濮嬪垎鏋?
+    isAnalyzing.value = true
+    ElMessage.success('瑙嗚鍒嗘瀽宸插紑濮?)
+
+    // 鎸佺画鍒嗘瀽瑙嗛甯?
+    const analyzeLoop = async () => {
+      if (!isAnalyzing.value) return
+
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = videoElement.videoWidth || 640
+        canvas.height = videoElement.videoHeight || 480
+        const ctx = canvas.getContext('2d')
+
+        if (videoElement.readyState >= 2) {
+          ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height)
+          await visionStore.analyzeFrame(canvas)
+        }
+      } catch (error) {
+        console.error('[TeacherWindow] 甯у垎鏋愬け璐?', error)
+      }
+
+      // 姣?500ms 鍒嗘瀽涓€娆?
+      if (isAnalyzing.value) {
+        setTimeout(analyzeLoop, 500)
+      }
+    }
+
+    analyzeLoop()
+  } catch (error) {
+    console.error('[TeacherWindow] 鍚姩鍒嗘瀽澶辫触:', error)
+    ElMessage.error('鍚姩鍒嗘瀽澶辫触: ' + error.message)
+    isAnalyzing.value = false
+  }
+}
+
+// 鍋滄瑙嗚鍒嗘瀽
+const stopAnalysis = () => {
+  isAnalyzing.value = false
+  visionStore.stopAnalysis()
+  ElMessage.info('瑙嗚鍒嗘瀽宸插仠姝?)
+}
+
+// 鏇存柊妫€娴嬫ā寮忕姸鎬?
+const updateDetectionMode = () => {
+  detectionMode.value = visionStore.detectionMode || 'online'
+  networkStatus.value = visionStore.isOnline !== undefined ? visionStore.isOnline : navigator.onLine
+}
+
+// 閲嶈浇 YOLO 妯″瀷
+const handleReloadYoloModel = async () => {
+  try {
+    ElMessage.info('姝ｅ湪閲嶈浇 YOLO 妯″瀷...')
+    await visionStore.resetYoloModel()
+    updateDetectionMode()
+
+    const mode = visionStore.detectionMode
+    const modeText = {
+      online: '馃寪 鍦ㄧ嚎妯″紡',
+      local: '馃捑 鏈湴妯″紡',
+      fallback: '鈿狅笍 闄嶇骇妯″紡'
+    }
+
+    ElMessage.success(`妯″瀷宸查噸杞斤紝褰撳墠妯″紡: ${modeText[mode] || mode}`)
+  } catch (error) {
+    console.error('[TeacherWindow] 閲嶈浇 YOLO 妯″瀷澶辫触:', error)
+    ElMessage.error('閲嶈浇 YOLO 妯″瀷澶辫触')
+  }
+}
+
+// 鑾峰彇妫€娴嬫ā寮忔樉绀烘枃鏈?
+const getDetectionModeText = computed(() => {
+  const modeMap = {
+    online: { text: '鍦ㄧ嚎妯″紡', icon: '馃寪', color: '#67C23A' },
+    local: { text: '鏈湴妯″紡', icon: '馃捑', color: '#409EFF' },
+    fallback: { text: '闄嶇骇妯″紡', icon: '鈿狅笍', color: '#E6A23C' }
+  }
+  return modeMap[detectionMode.value] || modeMap.online
+})
+
+// 鑾峰彇缃戠粶鐘舵€佹樉绀烘枃鏈?
+const getNetworkStatusText = computed(() => {
+  return networkStatus.value ? { text: '鍦ㄧ嚎', icon: '馃摱', color: '#67C23A' } : { text: '绂荤嚎', icon: '馃摰', color: '#909399' }
+})
+
+// ============================================
+// 鏈嶅姟绠＄悊鐩稿叧鏂规硶
+// ============================================
+// 鏈嶅姟鐘舵€佺洃鎺у凡绉昏嚦鏈嶅姟绔?
+
+
+// ============================================
+// 鐩存挱鐩稿叧鏂规硶
+// ============================================
+
+// 寮€濮嬬洿鎾?- 鎵撳紑璁剧疆涓殑 RTMP 鎺ㄦ祦
+const startLive = async () => {
+  try {
+    activeTab.value = 'rtmp'
+    showSettingsDialog.value = true
+    ElMessage.info('璇峰湪璁剧疆涓厤缃?RTMP 鎺ㄦ祦')
+  } catch (error) {
+    console.error('[TeacherWindow] 寮€濮嬬洿鎾け璐?', error)
+    ElMessage.error('寮€濮嬬洿鎾け璐?)
+  }
+}
+
+// 鍋滄鐩存挱 - 宸插湪 SettingsDialog 涓鐞?
+const stopLive = async () => {
+  try {
+    isLive.value = false
+    liveStreamUrl.value = ''
+    ElMessage.success('鐩存挱宸插仠姝?)
+  } catch (error) {
+    console.error('[TeacherWindow] 鍋滄鐩存挱澶辫触:', error)
+    ElMessage.error('鍋滄鐩存挱澶辫触')
+  }
+}
+
+// ============================================
+// 涓炬墜鐩稿叧鏂规硶
+// ============================================
+
+// 澶勭悊绗竴涓妇鎵嬬殑瀛︾敓
+const answerFirstHandRaise = () => {
+  if (students.value.length === 0) return
+
+  const handRaisedStudent = students.value.find(s => s.handRaised)
+  if (handRaisedStudent) {
+    handleHandRaiseAccept()
+  }
+}
+
+// 璁＄畻灞炴€э細鏄惁鏈夊鐢熶妇鎵?
+const anyHandRaised = computed(() => {
+  return students.value.some(s => s.handRaised)
+})
+
+// 璁＄畻灞炴€э細绗竴涓妇鎵嬬殑瀛︾敓濮撳悕
+const firstHandRaisedStudentName = computed(() => {
+  const student = students.value.find(s => s.handRaised)
+  return student ? student.name : ''
+})
+
+// 鎾斁涓炬墜鎻愮ず闊?
+const playHandRaiseSound = () => {
+  if (handRaiseSound.value) {
+    handRaiseSound.value.play()
+  }
+}
+
+// 鑾峰彇缃戠粶璐ㄩ噺鏍囩
+const getNetworkQualityTag = (quality) => {
+  const tags = {
+    good: 'success',
+    fair: 'warning',
+    poor: 'danger'
+  }
+  return tags[quality] || 'info'
+}
+
+// 鑾峰彇缃戠粶璐ㄩ噺鏍囩鏂囧瓧
+const getNetworkQualityLabel = (quality) => {
+  const labels = {
+    good: '鑹ソ',
+    fair: '涓€鑸?,
+    poor: '杈冨樊'
+  }
+  return labels[quality] || quality
+}
+
+// 鑾峰彇婧愮被鍨嬫爣绛?
+const getSourceTypeTag = (type) => {
+  const tags = {
+    camera: 'success',
+    local: '',
+    screen: 'warning',
+    network: 'info'
+  }
+  return tags[type] || 'info'
+}
+
+// 鑾峰彇婧愮被鍨嬫爣绛炬枃瀛?
+const getSourceTypeLabel = (type) => {
+  const labels = {
+    camera: '鎽勫儚澶?,
+    local: '鏈湴瑙嗛',
+    screen: '灞忓箷鍏变韩',
+    network: '缃戠粶娴?
+  }
+  return labels[type] || type
+}
+
+// ============================================
+// 甯冨眬鐩稿叧鍔熻兘
+// ============================================
+
+// 甯冨眬绱㈠紩鍒版牸瀛愭暟閲忕殑鏄犲皠
+const layoutCellMap = {
+  1: { cols: 1, rows: 1 },
+  2: { cols: 2, rows: 1 },
+  3: { cols: 2, rows: 2, custom: true }, // 3鍒嗗睆鐗规畩
+  4: { cols: 2, rows: 2 },
+  5: { cols: 3, rows: 2 }, // 6鍒嗗睆
+  7: { cols: 3, rows: 3 }, // 9鍒嗗睆
+  10: { cols: 4, rows: 4 }, // 16鍒嗗睆
+  11: { cols: 5, rows: 5 }, // 25鍒嗗睆
+  12: { cols: 6, rows: 6 }, // 36鍒嗗睆
+  13: { cols: 7, rows: 7 }, // 49鍒嗗睆
+  14: { cols: 4, rows: 4, special: true }, // 鐗规畩甯冨眬1
+  15: { cols: 4, rows: 4, special: true }, // 鐗规畩甯冨眬2
+  16: { cols: 4, rows: 4, special: true }, // 鐗规畩甯冨眬3
+  17: { cols: 4, rows: 4, special: true }, // 鐗规畩甯冨眬4
+  18: { free: true } // 鑷敱甯冨眬
+}
+
+// 璁＄畻缃戞牸鏍峰紡
+const gridStyle = computed(() => {
+  const layout = currentLayout.value
+
+  // 鑷敱甯冨眬
+  if (layout === 18 || layout === 'free') {
+    return {
+      display: 'block',
+      position: 'relative'
+    }
+  }
+
+  const config = layoutCellMap[layout]
+  if (!config) {
+    // 榛樿杩斿洖1鍒嗗睆
+    return {
+      'grid-template-columns': '1fr',
+      'grid-template-rows': '1fr'
+    }
+  }
+
+  // 鐗规畩甯冨眬
+  if (config.special) {
+    return {
+      'grid-template-columns': 'repeat(4, 1fr)',
+      'grid-template-rows': 'repeat(4, 1fr)'
+    }
+  }
+
+  // 3鍒嗗睆鐗规畩澶勭悊
+  if (config.custom) {
+    return {
+      'grid-template-columns': '1fr 1fr',
+      'grid-template-rows': '1fr 1fr'
+    }
+  }
+
+  // 鏍囧噯缃戞牸
+  return {
+    'grid-template-columns': `repeat(${config.cols}, 1fr)`,
+    'grid-template-rows': `repeat(${config.rows}, 1fr)`
+  }
+})
+
+// 鏍煎紡鍖栭瑙堟椂闂?
+// 鏍煎紡鍖栨椂闂?
+const formatTime = (seconds) => {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
+
+// 鏍煎紡鍖栭瑙堟椂闂达紙閽堝婧愬璞★級
+const formatPreviewTime = (source) => {
+  if (!source.previewProgress) return '00:00:00'
+  return formatTime(source.previewProgress.currentTime)
+}
+
+// 瀛楀箷缁熻璁＄畻灞炴€?
+const totalSubtitleCount = computed(() => {
+  return generatedSubtitles.value.reduce((total, videoSub) => {
+    return total + (videoSub.subtitles?.length || 0)
+  }, 0)
+})
+
+const avgSubtitleCount = computed(() => {
+  const videoCount = generatedSubtitles.value.length
+  if (videoCount === 0) return 0
+  return Math.round(totalSubtitleCount.value / videoCount)
+})
+
+const totalDuration = computed(() => {
+  let totalSeconds = 0
+  generatedSubtitles.value.forEach(videoSub => {
+    if (videoSub.subtitles && videoSub.subtitles.length > 0) {
+      const lastSub = videoSub.subtitles[videoSub.subtitles.length - 1]
+      totalSeconds += parseTimeToSeconds(lastSub.endTime)
+    }
+  })
+  return formatTime(totalSeconds)
+})
+
+// 灏嗘椂闂村瓧绗︿覆杞崲涓虹鏁?
+const parseTimeToSeconds = (timeStr) => {
+  const match = timeStr.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})/)
+  if (!match) return 0
+  const [, hours, minutes, seconds, milliseconds] = match
+  return parseInt(hours) * 3600 + parseInt(minutes) * 60 + parseInt(seconds) + parseInt(milliseconds) / 1000
+}
+
+// 鑾峰彇鐢诲竷瀵瑰簲鐨勬簮 ID
+const getCanvasSourceId = (index) => {
+  return canvasSourceMap.value[index] || null
+}
+
+// 鑾峰彇鐢诲竷瀵瑰簲鐨勮棰戞簮
+const getCanvasVideoSource = (index) => {
+  const sourceId = getCanvasSourceId(index)
+  if (!sourceId) return null
+  return videoPreviews.value.find(s => s.id === sourceId)
+}
+
+// 妫€鏌ョ敾甯冩槸鍚﹀湪褰撳墠甯冨眬涓殣钘?
+const isHiddenInLayout = (index) => {
+  const visibleIndices = getVisibleCanvasIndices(currentLayout.value)
+  return !visibleIndices.includes(index)
+}
+
+// 鑾峰彇缃戠粶璐ㄩ噺
+const getNetworkQuality = (index) => {
+  // TODO: 鏍规嵁瀹為檯缃戠粶璐ㄩ噺鏁版嵁杩斿洖
+  return 'good'
+}
+
+// 鑾峰彇婧愮被鍨嬪浘鏍?
+const getSourceTypeIcon = (type) => {
+  const icons = {
+    camera: '馃摲',
+    localVideo: '馃幀',
+    screen: '馃枼锔?,
+    network: '馃寪',
+    usb: '馃摴'
+  }
+  return icons[type] || '馃摵'
+}
+
+// ============================================
+// 褰曞埗鏂囦欢绠＄悊鍔熻兘
+// ============================================
+
+// 鎾斁褰曞埗鏂囦欢
+const playRecording = async (recording) => {
+  try {
+    console.log('[TeacherWindow] 鎾斁褰曞埗:', recording)
+    playbackVideoUrl.value = recording.url || recording.path
+    showPlaybackDialog.value = true
+
+    await nextTick()
+    if (playbackVideoRef.value) {
+      playbackVideoRef.value.src = playbackVideoUrl.value
+      await playbackVideoRef.value.play().catch(err => {
+        console.warn('[TeacherWindow] 鑷姩鎾斁琚樆姝?, err)
+      })
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 鎾斁褰曞埗鏂囦欢澶辫触:', error)
+    ElMessage.error('鎾斁澶辫触')
+  }
+}
+
+// 瀵煎嚭褰曞埗鏂囦欢
+const exportRecording = async (recording) => {
+  try {
+    console.log('[TeacherWindow] 瀵煎嚭褰曞埗:', recording)
+
+    const { ElMessageBox } = await import('element-plus')
+    await ElMessageBox.confirm(
+      `纭畾瀵煎嚭褰曞埗鏂囦欢 "${recording.name}" 鍚楋紵`,
+      '瀵煎嚭纭',
+      {
+        confirmButtonText: '纭畾',
+        cancelButtonText: '鍙栨秷',
+        type: 'info'
+      }
+    )
+
+    if (recording.path) {
+      const link = document.createElement('a')
+      link.href = recording.path
+      link.download = recording.name
+      link.click()
+    }
+
+    if (recording.url) {
+      const response = await fetch(recording.url)
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+
+      const link = document.createElement('a')
+      link.href = url
+      link.download = recording.name
+      link.click()
+
+      URL.revokeObjectURL(url)
+    }
+
+    ElMessage.success('瀵煎嚭鎴愬姛')
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('[TeacherWindow] 瀵煎嚭澶辫触:', error)
+      ElMessage.error('瀵煎嚭澶辫触: ' + error.message)
+    }
+  }
+}
+
+// 鍒犻櫎褰曞埗鏂囦欢
+const deleteRecording = async (recording) => {
+  try {
+    console.log('[TeacherWindow] 鍒犻櫎褰曞埗:', recording)
+
+    const { ElMessageBox } = await import('element-plus')
+    await ElMessageBox.confirm(
+      `纭畾鍒犻櫎褰曞埗鏂囦欢 "${recording.name}" 鍚楋紵 姝ゆ搷浣滀笉鍙仮澶嶃€俙,
+      '鍒犻櫎纭',
+      {
+        confirmButtonText: '纭畾',
+        cancelButtonText: '鍙栨秷',
+        type: 'warning'
+      }
+    )
+
+    if (typeof deleteRecordingFromComposable === 'function') {
+      await deleteRecordingFromComposable(recording)
+    } else {
+      const index = recordings.value.findIndex(r => r.id === recording.id)
+      if (index !== -1) {
+        recordings.value.splice(index, 1)
+      }
+    }
+
+    ElMessage.success('鍒犻櫎鎴愬姛')
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('[TeacherWindow] 鍒犻櫎澶辫触:', error)
+      ElMessage.error('鍒犻櫎澶辫触: ' + error.message)
+    }
+  }
+}
+
+// 鍔犺浇褰曞埗鏂囦欢鍒楄〃
+const loadRecordings = async () => {
+  try {
+    console.log('[TeacherWindow] 鍔犺浇褰曞埗鍒楄〃')
+    if (typeof loadRecordingsFromComposable === 'function') {
+      await loadRecordingsFromComposable()
+    } else {
+      ElMessage.warning('鍔犺浇褰曞埗鍒楄〃鍔熻兘涓嶅彲鐢?)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 鍔犺浇褰曞埗鍒楄〃澶辫触:', error)
+    ElMessage.error('鍔犺浇褰曞埗鍒楄〃澶辫触: ' + error.message)
+  }
+}
+
+// 鑾峰彇杩囨护鍚庣殑褰曞埗鏂囦欢
+const filteredRecordings = computed(() => {
+  if (!recordingFilter.value || recordingFilter.value === 'all') {
+    return recordings.value
+  }
+  return recordings.value.filter(r => r.type === recordingFilter.value)
+})
+
+// ============================================
+// 澶氭満浣嶅拰 VR 褰曞埗澶勭悊鍑芥暟
+// ============================================
+
+// 澶氭満浣嶅仠姝?
+const handleMulticamStop = async () => {
+  try {
+    console.log('[TeacherWindow] 鍋滄澶氭満浣嶅綍鍒?)
+
+    if (typeof stopMulticamRecording === 'function') {
+      await stopMulticamRecording()
+      console.log('[TeacherWindow] 澶氭満浣嶅綍鍒跺凡鍋滄')
+    } else {
+      ElMessage.warning('澶氭満浣嶅綍鍒跺姛鑳戒笉鍙敤')
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 鍋滄澶氭満浣嶅綍鍒跺け璐?, error)
+    ElMessage.error('鍋滄澶氭満浣嶅綍鍒跺け璐?)
+  }
+}
+
+// 澶氭満浣嶅垏鎹㈡憚鍍忓ご
+const handleMulticamSwitchCamera = async (cameraIndex) => {
+  try {
+    console.log('[TeacherWindow] 鍒囨崲澶氭満浣嶆憚鍍忓ご:', cameraIndex)
+
+    if (typeof switchCamera === 'function') {
+      await switchCamera(multicamSessionId.value, cameraIndex)
+      console.log('[TeacherWindow] 宸插垏鎹㈠埌鎽勫儚澶?, cameraIndex)
+    } else {
+      ElMessage.warning('澶氭満浣嶅垏鎹㈠姛鑳戒笉鍙敤')
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 鍒囨崲鎽勫儚澶村け璐?, error)
+    ElMessage.error('鍒囨崲鎽勫儚澶村け璐?)
+  }
+}
+
+// VR 褰曞埗鍋滄
+const handleVrStop = async () => {
+  try {
+    console.log('[TeacherWindow] 鍋滄 VR 褰曞埗')
+
+    if (typeof stopVrRecording === 'function') {
+      await stopVrRecording()
+      console.log('[TeacherWindow] VR 褰曞埗宸插仠姝?)
+    } else {
+      ElMessage.warning('VR 褰曞埗鍔熻兘涓嶅彲鐢?)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 鍋滄 VR 褰曞埗澶辫触:', error)
+    ElMessage.error('鍋滄 VR 褰曞埗澶辫触')
+  }
+}
+
+// ============================================
+// 浜嬩欢澶勭悊
+// ============================================
+
+// 澶勭悊闈㈡澘鍒囨崲
+const handleSwitchPanel = (e) => {
+  console.log('[TeacherWindow] 鍒囨崲闈㈡澘:', e.detail?.tab)
+  // 鍙互鏍规嵁闇€瑕佸疄鐜伴潰鏉垮垏鎹㈤€昏緫
+}
+
+// 澶勭悊涓炬墜鎺ュ彈
+const handleHandRaiseAccept = () => {
+  console.log('鎺ュ彈涓炬墜')
+  // 馃幆 handRaiseNotification 宸插簾寮冿紝姝ゅ嚱鏁颁繚鐣欑敤浜庡吋瀹?
+}
+
+// 澶勭悊涓炬墜鎷掔粷
+const handleHandRaiseReject = () => {
+  console.log('鎷掔粷涓炬墜')
+  // 馃幆 handRaiseNotification 宸插簾寮冿紝姝ゅ嚱鏁颁繚鐣欑敤浜庡吋瀹?
+}
+
+// 澶勭悊鍏抽棴閫氱煡
+const handleCloseNotification = (notificationId) => {
+  console.log('鍏抽棴閫氱煡:', notificationId)
+  // 浠庨€氱煡鍒楄〃涓Щ闄ゆ寚瀹氶€氱煡
+  const index = handRaiseNotifications.findIndex(n => n.id === notificationId)
+  if (index !== -1) {
+    handRaiseNotifications.splice(index, 1)
+  }
+}
+
+// 瀵煎嚭瀛楀箷
+const handleExportSubtitles = async () => {
+  try {
+    console.log('[TeacherWindow] 瀵煎嚭鍏ㄩ儴瀛楀箷')
+    await exportAllSubtitles()
+  } catch (error) {
+    console.error('[TeacherWindow] 瀵煎嚭瀛楀箷澶辫触:', error)
+  }
+}
+
+// 瀵煎叆瀛楀箷
+const handleImportSubtitles = async () => {
+  try {
+    console.log('[TeacherWindow] 瀵煎叆瀛楀箷')
+    await importSubtitles()
+  } catch (error) {
+    console.error('[TeacherWindow] 瀵煎叆瀛楀箷澶辫触:', error)
+  }
+}
+
+// 娓呴櫎瀛楀箷
+const handleClearSubtitles = () => {
+  try {
+    console.log('[TeacherWindow] 娓呴櫎鍏ㄩ儴瀛楀箷')
+    clearAllSubtitles()
+  } catch (error) {
+    console.error('[TeacherWindow] 娓呴櫎瀛楀箷澶辫触:', error)
+  }
+}
+
+// 澶勭悊澶氭満浣嶅綍鍒跺紑濮?
+const handleMulticamStart = async ({ config, outputConfig }) => {
+  console.log('澶氭満浣嶅綍鍒跺紑濮?, config, outputConfig)
+  try {
+    await startMulticamRecording(config, outputConfig)
+  } catch (error) {
+    console.error('鍚姩澶氭満浣嶅綍鍒跺け璐?, error)
+  }
+}
+
+// 馃幆 澶勭悊鏄剧ず娣诲姞淇″彿婧愬璇濇
+const handleShowAddSourceDialog = async () => {
+  console.log('[TeacherWindow] 鎺ユ敹鍒版墦寮€娣诲姞淇″彿婧愬璇濇浜嬩欢')
+  console.log('[TeacherWindow] showAddSourceDialog 褰撳墠鍊?', showAddSourceDialog.value)
+
+  // 鍔犺浇閲囬泦璁惧鍒楄〃
+  await loadCaptureDevices()
+
+  showAddSourceDialog.value = true
+  console.log('[TeacherWindow] showAddSourceDialog 璁剧疆鍚庡€?', showAddSourceDialog.value)
+}
+
+/**
+ * 鍔犺浇閲囬泦璁惧鍒楄〃
+ */
+const loadCaptureDevices = async () => {
+  try {
+    console.log('[閲囬泦璁惧] 寮€濮嬪姞杞借澶囧垪琛?..')
+    const devices = await listCaptureDevices()
+
+    // 杩囨护閲囬泦鍗″拰楂樻媿浠?
+    captureDevicesList.value = filterCaptureCards(devices)
+    scannerDevicesList.value = filterDocumentScanners(devices)
+
+    console.log('[閲囬泦璁惧] 鍔犺浇瀹屾垚:', {
+      total: devices.length,
+      captureCards: captureDevicesList.value.length,
+      scanners: scannerDevicesList.value.length
+    })
+  } catch (error) {
+    console.error('[閲囬泦璁惧] 鍔犺浇澶辫触:', error)
+    ElMessage.warning('閲囬泦璁惧鍒楄〃鍔犺浇澶辫触: ' + error.message)
+  }
+}
+
+// 鍔犺浇鏈湴鎽勫儚澶磋澶?
+const loadLocalCameraDevices = async () => {
+  try {
+    console.log('[鏈湴鎽勫儚澶碷 寮€濮嬪姞杞借澶囧垪琛?..')
+
+    // 鍏堝皾璇曡幏鍙栬澶囧垪琛紙鍗充娇娌℃湁鏉冮檺涔熻兘鑾峰彇璁惧鏁伴噺锛屽彧鏄悕绉颁細琚殣钘忥級
+    let devices
+    try {
+      devices = await navigator.mediaDevices.enumerateDevices()
+      console.log('[鏈湴鎽勫儚澶碷 璁惧鍒楄〃鑾峰彇鎴愬姛')
+    } catch (enumError) {
+      console.error('[鏈湴鎽勫儚澶碷 璁惧鍒楄〃鑾峰彇澶辫触:', enumError)
+      // 濡傛灉 enumerateDevices 澶辫触锛屽皾璇曞厛璇锋眰鏉冮檺
+      try {
+        await navigator.mediaDevices.getUserMedia({ video: true })
+        console.log('[鏈湴鎽勫儚澶碷 鎽勫儚澶存潈闄愬凡鑾峰彇')
+        devices = await navigator.mediaDevices.enumerateDevices()
+      } catch (permError) {
+        console.error('[鏈湴鎽勫儚澶碷 鏉冮檺璇锋眰涔熷け璐?', permError)
+        ElMessage.warning('鏃犳硶鑾峰彇鎽勫儚澶存潈闄愶紝閮ㄥ垎鍔熻兘鍙兘鍙楅檺')
+        localDevices.value = []
+        return
+      }
+    }
+
+    // 鑾峰彇鎵€鏈夎棰戣緭鍏ヨ澶?
+    const videoDevices = devices.filter(device => device.kind === 'videoinput')
+
+    localDevices.value = videoDevices
+
+    console.log('[鏈湴鎽勫儚澶碷 鍔犺浇瀹屾垚:', videoDevices.length, '涓澶?)
+    console.log('[鏈湴鎽勫儚澶碷 璁惧鍒楄〃:', videoDevices)
+
+    if (videoDevices.length === 0) {
+      console.warn('[鏈湴鎽勫儚澶碷 鏈娴嬪埌鎽勫儚澶磋澶?)
+      // 鎻愪緵鏇磋缁嗙殑鎺掓煡寤鸿
+      ElMessage.warning('鏈娴嬪埌USB鎽勫儚澶磋澶囷紝璇锋鏌ワ細\n1. 鎽勫儚澶存槸鍚︽纭繛鎺n2. 鎽勫儚澶撮┍鍔ㄦ槸鍚﹀凡瀹夎\n3. 鏄惁鏈夊叾浠栫▼搴忔鍦ㄤ娇鐢ㄦ憚鍍忓ご')
+    } else {
+      ElMessage.success(`鎴愬姛鍔犺浇 ${videoDevices.length} 涓憚鍍忓ご璁惧`)
+    }
+  } catch (error) {
+    console.error('[鏈湴鎽勫儚澶碷 鍔犺浇澶辫触:', error)
+    ElMessage.error('鏈湴鎽勫儚澶磋澶囧垪琛ㄥ姞杞藉け璐? ' + error.message)
+  }
+}
+
+// 澶勭悊VR褰曞埗寮€濮?
+const handleVrStart = async ({ config }) => {
+  console.log('[TeacherWindow] 寮€濮媀R褰曞埗:', config)
+  // TODO: 瀹炵幇VR褰曞埗閫昏緫
+}
+
+// 澶勭悊缁垮箷閰嶇疆淇濆瓨
+const handleChromakeySave = (config) => {
+  Object.assign(chromakeyConfig, config)
+  recordingConfig.enableChromakey = config.enabled
+  recordingConfig.chromakeyColor = config.color
+  recordingConfig.chromakeySimilarity = config.similarity
+  recordingConfig.chromakeyBlend = config.blend
+  console.log('缁垮箷閰嶇疆宸蹭繚瀛?, chromakeyConfig)
+}
+
+// ============================================
+// 馃啎 娓叉煋寮曟搸鐩稿叧鏂规硶
+// ============================================
+
+// 娓叉煋寮曟搸灏辩华鍥炶皟
+const onRenderReady = () => {
+  console.log('[TeacherWindow] 娓叉煋寮曟搸灏辩华')
+}
+
+// 娓叉煋寮曟搸閿欒鍥炶皟
+const onRenderError = (e) => {
+  console.error('[TeacherWindow] 娓叉煋寮曟搸閿欒:', e.error)
+}
+
+// 鏁版嵁婧愬氨缁洖璋?
+const onSourceReady = (e) => {
+  console.log('[TeacherWindow] 鏁版嵁婧愬氨缁?', e.sourceId)
+}
+
+// 鏁版嵁婧愰敊璇洖璋?
+const onSourceError = (e) => {
+  console.error('[TeacherWindow] 鏁版嵁婧愰敊璇?', e.sourceId, e.error)
+}
+
+// 娓叉煋鍏冪礌鐐瑰嚮鍥炶皟
+const onRenderElementClick = (e) => {
+  console.log('[TeacherWindow] 娓叉煋鍏冪礌鐐瑰嚮:', e.element.id)
+}
+
+// 娓叉煋鍏冪礌鍙屽嚮鍥炶皟 - 鍒囨崲鍏ㄥ睆
+const onRenderElementDoubleClick = (e) => {
+  console.log('[TeacherWindow] 娓叉煋鍏冪礌鍙屽嚮:', e.element.id)
+
+  // 瑙ｆ瀽鍏冪礌ID鑾峰彇妲戒綅绱㈠紩
+  const elementId = e.element.id
+  const match = elementId.match(/\d+/)
+  if (match) {
+    const slotIndex = parseInt(match[0])
+
+    // 濡傛灉褰撳墠鏈夋渶澶у寲鐨勭敾闈紝杩樺師瀹?
+    if (maximizedIndex.value !== null) {
+      console.log('[TeacherWindow] 杩樺師鍒嗗睆鏄剧ず')
+      maximizedIndex.value = null
+      isMaximized.value = false
+    } else {
+      // 鏈€澶у寲褰撳墠鐐瑰嚮鐨勭敾闈?
+      console.log('[TeacherWindow] 鏈€澶у寲鐢婚潰:', slotIndex)
+      maximizedIndex.value = slotIndex
+      isMaximized.value = true
+    }
+  }
+}
+
+// 鍒囨崲缁樺埗妯″紡
+const toggleDrawingMode = () => {
+  isDrawingMode.value = !isDrawingMode.value
+  console.log('[TeacherWindow] 缁樺埗妯″紡:', isDrawingMode.value ? '寮€鍚? : '鍏抽棴')
+}
+
+// 鎴浘
+const captureScreen = () => {
+  if (renderEngineRef.value) {
+    const dataUrl = renderEngineRef.value.capture()
+    if (dataUrl) {
+      const link = document.createElement('a')
+      link.download = `capture_${Date.now()}.png`
+      link.href = dataUrl
+      link.click()
+    }
+  }
+}
+
+// 鍒囨崲娓叉煋甯冨眬
+const switchRenderLayout = () => {
+  const layouts = ['single', 'grid-1x2', 'grid-2x2', 'grid-3x3', 'picture-in-picture']
+  const currentIndex = layouts.indexOf(renderLayoutType.value)
+  const nextIndex = (currentIndex + 1) % layouts.length
+  renderLayoutType.value = layouts[nextIndex]
+  console.log('[TeacherWindow] 鍒囨崲娓叉煋甯冨眬:', renderLayoutType.value)
+}
+
+// 娣诲姞瑙嗛婧愬埌娓叉煋寮曟搸
+const addSourceToRender = (source) => {
+  const exists = activeSources.value.find(s => s.id === source.id)
+  if (!exists) {
+    activeSources.value.push(source)
+    console.log('[TeacherWindow] 娣诲姞瑙嗛婧愬埌娓叉煋寮曟搸:', source.name)
+  }
+}
+
+// 浠庢覆鏌撳紩鎿庣Щ闄よ棰戞簮
+const removeSourceFromRender = (sourceId) => {
+  activeSources.value = activeSources.value.filter(s => s.id !== sourceId)
+  console.log('[TeacherWindow] 浠庢覆鏌撳紩鎿庣Щ闄よ棰戞簮:', sourceId)
+}
+
+// 閫夋嫨鎽勫儚澶?
+const selectCamera = async (deviceId) => {
+  selectedCameraId.value = deviceId
+  console.log('[TeacherWindow] 閫夋嫨鎽勫儚澶?', deviceId)
+}
+
+// 鍒囨崲娓叉煋寮曟搸妯″紡
+const toggleRenderEngine = () => {
+  useRenderEngine.value = !useRenderEngine.value
+  console.log('[TeacherWindow] 娓叉煋寮曟搸妯″紡:', useRenderEngine.value ? '寮€鍚? : '鍏抽棴')
+
+  // 濡傛灉寮€鍚覆鏌撳紩鎿庯紝鑷姩娣诲姞绗竴涓憚鍍忓ご婧?
+  if (useRenderEngine.value && activeSources.value.length === 0) {
+    const cameraSource = sourceStore.sources.find(s => s.type === 'camera' || s.type === 'usb')
+    if (cameraSource) {
+      addSourceToRender(cameraSource)
+    }
+  }
+}
+
+// ============================================
+// 瑙嗛缃戞牸浜嬩欢澶勭悊鍑芥暟
+// ============================================
+
+// 鍙屽嚮瑙嗛鏍煎瓙 - 鍒囨崲鏈€澶у寲鏄剧ず
+const handleDoubleClick = (index) => {
+  console.log('[TeacherWindow] 鍙屽嚮瑙嗛鏍煎瓙:', index, '褰撳墠鏈€澶у寲鐘舵€?', isMaximized.value, maximizedIndex.value)
+
+  // 馃幆 鍏抽敭淇锛氫粠鐢诲竷鏄犲皠涓幏鍙栦俊鍙锋簮锛岃€屼笉鏄瑙堝垪琛?
+  // canvasSourceMap 浣跨敤 1-based 绱㈠紩
+  const sourceId = canvasSourceMap.value[index]
+
+  if (!sourceId) {
+    console.log('[TeacherWindow] 鏍煎瓙娌℃湁瑙嗛婧愶紝涓嶅鐞嗗弻鍑?)
+    ElMessage.warning('璇峰厛鎷栨嫿淇″彿婧愬埌璇ユ牸瀛?)
+    return
+  }
+
+  // 馃幆 鐘舵€佹満閫昏緫锛氬垏鎹㈡渶澶у寲鐘舵€?
+  // maximizedIndex === index 鏃惰繕鍘燂紙璁剧疆涓?null锛夛紝鍚﹀垯鏈€澶у寲鍒拌绱㈠紩
+  if (isMaximized.value && maximizedIndex.value === index) {
+    // 濡傛灉褰撳墠宸茬粡鏄渶澶у寲涓旂偣鍑荤殑鏄悓涓€涓牸瀛愶紝鍒欏彇娑堟渶澶у寲
+    isMaximized.value = false
+    maximizedIndex.value = null // 浣跨敤 null 淇濇寔鐘舵€佷竴鑷?
+    console.log('[TeacherWindow] 鍙栨秷鏈€澶у寲')
+  } else {
+    // 鍚﹀垯璁剧疆涓烘渶澶у寲
+    isMaximized.value = true
+    maximizedIndex.value = index
+    console.log('[TeacherWindow] 鏈€澶у寲鏍煎瓙:', index)
+  }
+}
+
+// 褰曞埗鐘舵€佸彉鍖?
+const handleRecordingChanged = (data) => {
+  console.log('[TeacherWindow] 褰曞埗鐘舵€佸彉鍖?, data)
+
+  try {
+    if (data && data.index !== undefined) {
+      const index = data.index
+      const isRecording = data.isRecording
+
+      if (isRecording) {
+        if (currentRecordingSession.value) {
+          currentRecordingSession.value.isRecording = true
+          currentRecordingSession.value.startTime = currentRecordingSession.value.startTime || new Date()
+        }
+        console.log(`[TeacherWindow] 鏍煎瓙 ${index} 寮€濮嬪綍鍒禶)
+      } else {
+        const stillRecording = canvasRecordingStates.value && Object.values(canvasRecordingStates.value).some(
+          state => state && state.recording
+        )
+
+        if (currentRecordingSession.value && !stillRecording) {
+          currentRecordingSession.value.isRecording = false
+          currentRecordingSession.value.startTime = null
+        }
+
+        console.log(`[TeacherWindow] 鏍煎瓙 ${index} 鍋滄褰曞埗`)
+      }
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 澶勭悊褰曞埗鐘舵€佸彉鍖栧け璐?, error)
+  }
+}
+
+// 馃幆 澶勭悊瑙嗛鏍煎瓙鐨勬嫋鎷芥斁缃紙浠庨瑙堟爮鎷栨嫿锛?
+const handleVideoDrop = (event, index) => {
+  console.log('[TeacherWindow] 瑙嗛鏍煎瓙鎷栨嫿鏀剧疆锛岀储寮?', index)
+
+  try {
+    // 浼樺厛灏濊瘯鑾峰彇 JSON 鏍煎紡鐨勬嫋鎷芥暟鎹紙鏀寔浠庤棰戞牸瀛?鐢讳腑鐢绘嫋鎷斤級
+    const jsonData = event.dataTransfer.getData('application/json')
+
+    // 濡傛灉鏄粠瑙嗛鏍煎瓙鎷栨嫿杩囨潵鐨?
+    if (jsonData) {
+      const parsed = JSON.parse(jsonData)
+      if (parsed.type === 'canvas') {
+        // 浠庡叾浠栬棰戞牸瀛愭嫋鎷?- 鎵ц浜掓崲
+        console.log(`[TeacherWindow] 浠庢牸瀛?${parsed.index} 鎷栨嫿鍒版牸瀛?${index}`)
+
+        // 鑾峰彇鎷栨嫿鏉ユ簮鏍煎瓙鐨勬簮
+        const sourceId = parsed.sourceId
+        const targetSourceId = canvasSourceMap.value[index]
+
+        // 馃幆 浣跨敤瀵硅薄灞曞紑瑙﹀彂鍝嶅簲寮忔洿鏂?
+        const newMap = { ...canvasSourceMap.value }
+
+        // 浜掓崲涓や釜鏍煎瓙鐨勬簮
+        newMap[parsed.index] = targetSourceId || null
+        newMap[index] = sourceId
+
+        canvasSourceMap.value = newMap
+
+        // 鏌ユ壘婧愬悕绉?
+        const sourceInfo = allSources.value.find(s => s.id === sourceId)
+        const targetInfo = allSources.value.find(s => s.id === targetSourceId)
+
+        ElMessage.success(`宸蹭簰鎹?${sourceInfo?.name || '瑙嗛'} 鍜?${targetInfo?.name || '绌轰綅'}`)
+        return
+      }
+    }
+
+    // 鑾峰彇淇″彿婧愭暟鎹?
+    const sourceId = event.dataTransfer?.getData('sourceId')
+    const sourceType = event.dataTransfer?.getData('sourceType')
+    const sourceName = event.dataTransfer?.getData('sourceName')
+
+    console.log('[TeacherWindow] 鎷栨嫿鏁版嵁:', { sourceId, sourceType, sourceName })
+
+    if (!sourceId) {
+      console.warn('[TeacherWindow] 娌℃湁鎵惧埌淇″彿婧怚D')
+      return
+    }
+
+    // 浠?allSources 涓煡鎵句俊鍙锋簮
+    const source = allSources.value.find(s => s.id === sourceId)
+
+    if (!source) {
+      console.error('[TeacherWindow] 鏈壘鍒颁俊鍙锋簮:', sourceId)
+      ElMessage.error('鏈壘鍒颁俊鍙锋簮')
+      return
+    }
+
+    // 馃幆 鍏抽敭淇锛氱洿鎺ヨ皟鐢?handleDrop 澶勭悊鏀剧疆
+    if (typeof handleDrop === 'function') {
+      handleDrop({ ...source, dataTransfer: {} }, index)
+    } else {
+      console.error('[TeacherWindow] handleDrop 鏂规硶涓嶅瓨鍦?)
+      ElMessage.error('鎷栨嫿鍔熻兘涓嶅彲鐢?)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 澶勭悊瑙嗛鎷栨嫿澶辫触:', error)
+    ElMessage.error('鎷栨嫿澶辫触: ' + error.message)
+  }
+}
+
+// 馃幆 澶勭悊浠庨瑙堟爮鎷栨嫿浜嬩欢寮€濮?
+const handleDragStart = (source) => {
+  console.log('[TeacherWindow] 棰勮鏍忔嫋鎷藉紑濮?', source.name)
+  // 璁剧疆褰撳墠閫変腑鐨勪俊鍙锋簮锛屼緵鏀剧疆鏃朵娇鐢?
+  // useSourceDrag 浼氬鐞嗗疄闄呮嫋鎷介€昏緫
+}
+
+// 馃幆 澶勭悊浠庨瑙堟爮鎷栨嫿浜嬩欢缁撴潫
+const handleDragEnd = () => {
+  console.log('[TeacherWindow] 棰勮鏍忔嫋鎷界粨鏉?)
+  // 娓呯悊鎷栨嫿鐘舵€?
+}
+
+// 馃幆 澶勭悊浠庨瑙堟爮鎷栨嫿鏀剧疆鍒拌棰戝尯鍩燂紙HTML5 鎷栨嫿锛?
+const handleDropSourceFromPreview = (data) => {
+  console.log('[TeacherWindow] 鎷栨嫿鏀剧疆:', data)
+
+  const { source, slotIndex, position } = data
+
+  if (!source || !slotIndex) {
+    console.warn('[TeacherWindow] 鏃犳晥鐨勬嫋鎷芥暟鎹?)
+    return
+  }
+
+  try {
+    // 鏌ユ壘瀹屾暣鐨勪俊鍙锋簮瀵硅薄
+    const fullSource = allSources.value.find(s => s.id === source.id)
+
+    if (!fullSource) {
+      console.error('[TeacherWindow] 鏈壘鍒颁俊鍙锋簮:', source.id)
+      ElMessage.error('鏈壘鍒颁俊鍙锋簮')
+      return
+    }
+
+    console.log(`[TeacherWindow] 鏀剧疆淇″彿婧?"${fullSource.name}" 鍒版Ы浣?${slotIndex}`)
+
+    // 馃幆 浣跨敤 useSourceDrag 鐨?handleDropToCanvas 鏂规硶
+    if (typeof handleDropToCanvas === 'function') {
+      // 鍒涘缓鍏嬮殕锛堝鏋滀粠棰勮鍖哄煙鎷栨嫿锛?
+      const clonedSource = cloneSourceForCanvas(fullSource, slotIndex, true)
+
+      if (clonedSource) {
+        handleDropToCanvas(clonedSource, slotIndex)
+        ElMessage.success(`宸插皢 "${fullSource.name}" 娣诲姞鍒扮敾甯?${slotIndex}`)
+      } else {
+        ElMessage.error('鍏嬮殕淇″彿婧愬け璐?)
+      }
+    } else {
+      console.error('[TeacherWindow] handleDropToCanvas 鏂规硶涓嶅瓨鍦?)
+      ElMessage.error('鎷栨嫿鍔熻兘涓嶅彲鐢?)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 澶勭悊鎷栨嫿鏀剧疆澶辫触:', error)
+    ElMessage.error('鎷栨嫿澶辫触: ' + error.message)
+  }
+}
+
+// 馃幆 澶勭悊榧犳爣鎸変笅浜嬩欢锛堢敤浜庤嚜瀹氫箟鎷栨嫿锛?
+const processMouseDown = (event, source) => {
+const processMouseDown = (event, source) => {
+  console.log('[TeacherWindow] 榧犳爣鎸変笅棰勮婧?', source.name)
+
+  // 馃幆 璋冪敤 useSourceDrag 鐨?handleMouseDown 鏂规硶澶勭悊瀹為檯鎷栨嫿
+  // 鍙傛暟: source, event, isFromPreview
+  if (typeof handleMouseDown === 'function') {
+    handleMouseDown(source, event, true)  // 浼犻€?isFromPreview=true锛岃〃绀轰粠棰勮鍖哄煙鎷栨嫿
+  } else {
+    console.error('[TeacherWindow] handleMouseDown 鏂规硶涓嶅瓨鍦?)
+  }
+}
+
+// 馃幆 澶勭悊瑙︽懜寮€濮嬩簨浠讹紙鐢ㄤ簬瑙︽帶璁惧鎷栨嫿锛?
+const processTouchStart = (event, source) => {
+  console.log('[TeacherWindow] 瑙︽懜寮€濮嬮瑙堟簮:', source.name)
+
+  // 馃幆 璋冪敤 useSourceDrag 鐨?handleMouseDown 鏂规硶澶勭悊瑙︽懜鎷栨嫿锛堢粺涓€浣跨敤榧犳爣浜嬩欢澶勭悊锛?
+  // 鍙傛暟: source, event, isFromPreview
+  if (typeof handleMouseDown === 'function') {
+    handleMouseDown(source, event, true)  // 浼犻€?isFromPreview=true
+  } else {
+    console.error('[TeacherWindow] handleMouseDown 鏂规硶涓嶅瓨鍦?)
+  }
+}
+
+// ============================================
+// 鏈湴鐘舵€佸畾涔?(闈?Composable 绠＄悊鐨?
+// ============================================
+
+// 馃幆 娉ㄦ剰锛歨andRaiseNotification 宸插簾寮冿紝浣跨敤 handRaiseNotifications 鏁扮粍鏇夸唬
+// const handRaiseNotification = ref({
+//   show: false,
+//   studentName: ''
+// })
+
+// ============================================
+// 鏂板鍔熻兘鐨勪簨浠跺鐞嗗嚱鏁?
+// ============================================
+const handleOpenPlayback = (videoUrl) => {
+  playbackVideoUrl.value = videoUrl
+  showPlaybackDialog.value = true
+}
+
+// 鏄剧ず缃戠粶璐ㄩ噺璇︽儏
+const handleShowNetworkDetail = (detail) => {
+  currentNetworkDetail.value = detail
+  showNetworkDetailDialog.value = true
+}
+
+// 鎵撳紑閲嶅懡鍚嶅璇濇
+const handleOpenRenameSource = (source) => {
+  renameSourceTarget.value = source
+  showRenameSourceDialog.value = true
+}
+
+// 馃幆 鍒锋柊淇″彿婧愬垪琛?
+const handleRefreshSources = async () => {
+  console.log('[TeacherWindow] 鍒锋柊淇″彿婧愬垪琛?)
+  try {
+    // 閲嶆柊鍔犺浇鏈湴璁惧
+    await loadLocalCameraDevices()
+    ElMessage.success('淇″彿婧愬垪琛ㄥ凡鍒锋柊')
+  } catch (error) {
+    console.error('[TeacherWindow] 鍒锋柊淇″彿婧愬け璐?', error)
+    ElMessage.error('鍒锋柊澶辫触: ' + error.message)
+  }
+}
+
+// 馃幆 娣诲姞鍒伴瑙堝尯鍩?
+const handleAddToPreview = (source) => {
+  console.log('[TeacherWindow] 娣诲姞鍒伴瑙堝尯鍩?', source.name, source.id)
+  try {
+    // 妫€鏌ユ槸鍚﹀凡缁忓湪棰勮鏉′腑
+    const existsInPreviews = videoPreviews.value.find(s => s.id === source.id)
+    if (existsInPreviews) {
+      ElMessage.warning(`${source.name} 宸插湪棰勮鍖哄煙涓璥)
+      return
+    }
+
+    console.log('[TeacherWindow] 姝ラ1: 鏇存柊 sourceStore 涓殑淇″彿婧愮姸鎬?)
+    // 鏇存柊 sourceStore 涓殑淇″彿婧愮姸鎬?
+    const updateResult = sourceStore.updateSource(source.id, { addedToPreview: true })
+    console.log('[TeacherWindow] updateSource 缁撴灉:', updateResult)
+    console.log('[TeacherWindow] sourcePreviewStatus 褰撳墠鍊?', sourceStore.sourcePreviewStatus[source.id])
+    console.log('[TeacherWindow] previewSources 鏁伴噺:', sourceStore.previewSources.length)
+
+    console.log('[TeacherWindow] 姝ラ2: 灏嗕俊鍙锋簮娣诲姞鍒?videoPreviews 棰勮鏉?)
+    // 灏嗕俊鍙锋簮娣诲姞鍒?videoPreviews 棰勮鏉?
+    addVideoSource(source)
+    console.log('[TeacherWindow] videoPreviews 鏁伴噺:', videoPreviews.value.length)
+
+    // 馃幆 鐢ㄦ埛闇€姹傦細鎽勫儚澶村厛娣诲姞鍒伴瑙堝尯鍩燂紝鐢辩敤鎴锋墜鍔ㄦ嫋鏇冲埌鐢诲竷
+    // 涓嶈嚜鍔ㄦ槧灏勫埌鐢诲竷鏍煎瓙锛屼繚鎸佺敤鎴锋帶鍒?
+    ElMessage.success(`淇″彿婧?"${source.name}" 宸叉坊鍔犲埌棰勮鍖哄煙锛屽彲鎷栨洺鍒扮敾甯冩牸瀛恅)
+  } catch (error) {
+    console.error('[TeacherWindow] 娣诲姞鍒伴瑙堝け璐?', error)
+    ElMessage.error('娣诲姞鍒伴瑙堝尯鍩熷け璐?)
+  }
+}
+
+// 馃幆 浠庨瑙堝尯鍩熺Щ闄?
+const handleRemoveFromPreview = (sourceId) => {
+  console.log('[TeacherWindow] 浠庨瑙堝尯鍩熺Щ闄?', sourceId)
+  try {
+    const source = allSources.value.find(s => s.id === sourceId)
+    if (!source) {
+      ElMessage.error('鏈壘鍒颁俊鍙锋簮')
+      return
+    }
+
+    // 浠庣敾甯冧腑绉婚櫎
+    const canvasIndex = Object.keys(canvasSourceMap.value).find(index =>
+      canvasSourceMap.value[index] === sourceId
+    )
+
+    if (canvasIndex !== undefined) {
+      // 馃幆 娉ㄩ攢浠庡睘瑙嗛鍚屾
+      unregisterSlaveVideo(parseInt(canvasIndex), sourceId)
+      delete canvasSourceMap.value[canvasIndex]
+      console.log(`[TeacherWindow] 宸蹭粠鐢诲竷 ${canvasIndex} 绉婚櫎: ${source.name}`)
+    }
+
+    // 馃幆 娓呯悊涓绘帶瑙嗛鍚屾
+    clearMasterVideo(sourceId)
+
+    // 浠?videoPreviews 涓Щ闄?
+    removeVideoSource(sourceId)
+
+    // 馃幆 浣跨敤 sourceStore 鏇存柊 addedToPreview 鐘舵€侊紙淇濈暀鍦ㄤ俊鍙锋簮鍒楄〃锛?
+    sourceStore.updateSource(sourceId, { addedToPreview: false })
+    console.log(`[TeacherWindow] 宸茶缃?addedToPreview = false: ${source.name}`)
+
+    ElMessage.success(`宸蹭粠棰勮鍖哄煙绉婚櫎 "${source.name}"锛屼俊鍙锋簮鍒楄〃淇濈暀`)
+  } catch (error) {
+    console.error('[TeacherWindow] 浠庨瑙堢Щ闄ゅけ璐?', error)
+    ElMessage.error('绉婚櫎澶辫触')
+  }
+}
+
+// 馃幆 鍒犻櫎淇″彿婧?
+const handleDeleteSource = (sourceId) => {
+  console.log('[TeacherWindow] 鍒犻櫎淇″彿婧?', sourceId)
+  try {
+    const source = allSources.value.find(s => s.id === sourceId)
+    if (!source) {
+      ElMessage.error('鏈壘鍒颁俊鍙锋簮')
+      return
+    }
+
+    // 馃幆 濡傛灉宸叉坊鍔犲埌棰勮锛屽厛浠庨瑙堝尯鍩熺Щ闄?
+    if (source.addedToPreview) {
+      // 浠庣敾甯冧腑绉婚櫎锛堝鏋滃湪鐢诲竷涓級
+      const canvasIndex = Object.keys(canvasSourceMap.value).find(index =>
+        canvasSourceMap.value[index] === sourceId
+      )
+
+      if (canvasIndex !== undefined) {
+        // 馃幆 娉ㄩ攢浠庡睘瑙嗛鍚屾
+        unregisterSlaveVideo(parseInt(canvasIndex), sourceId)
+        delete canvasSourceMap.value[canvasIndex]
+        console.log(`[TeacherWindow] 宸蹭粠鐢诲竷 ${canvasIndex} 绉婚櫎: ${source.name}`)
+      }
+
+      // 馃幆 娓呯悊涓绘帶瑙嗛鍚屾
+      clearMasterVideo(sourceId)
+
+      // 浠?videoPreviews 涓Щ闄?
+      removeVideoSource(sourceId)
+    }
+
+    // 浠?sourceStore 涓Щ闄?
+    sourceStore.removeSource(sourceId)
+
+    ElMessage.success(`宸插垹闄や俊鍙锋簮 "${source.name}"`)
+  } catch (error) {
+    console.error('[TeacherWindow] 鍒犻櫎淇″彿婧愬け璐?', error)
+    ElMessage.error('鍒犻櫎淇″彿婧愬け璐?)
+  }
+}
+
+// 鎻愪氦鏂颁俊鍙锋簮琛ㄥ崟
+const handleSubmitNewSource = async (formData) => {
+  console.log('[TeacherWindow] 鎻愪氦鏂颁俊鍙锋簮琛ㄥ崟:', formData)
+
+  try {
+    // 鐢熸垚鍞竴ID
+    const sourceId = 'source_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+
+    // 鏍规嵁绫诲瀷鍒涘缓婧愬璞?
+    let newSource = {
+      id: sourceId,
+      name: formData.name || `鏂颁俊鍙锋簮_${sourceId.slice(-6)}`,
+      type: formData.type,
+      status: 'online',
+      addedToPreview: true,  // 馃幆 鏍囪涓鸿嚜鍔ㄦ坊鍔犲埌棰勮鍖哄煙
+      createdAt: new Date().toISOString()
+    }
+
+    // 鏍规嵁涓嶅悓绫诲瀷璁剧疆鐗瑰畾灞炴€?
+    if (formData.type === 'localCamera') {
+      newSource.deviceId = formData.deviceId
+      newSource.resolution = '1920x1080'
+      newSource.fps = 30
+
+      // 馃幆 鍏抽敭淇锛氱珛鍗宠幏鍙栨憚鍍忓ご鐨?MediaStream
+      try {
+        console.log('[TeacherWindow] 姝ｅ湪鑾峰彇鎽勫儚澶存祦:', formData.deviceId)
+        const constraints = {
+          video: formData.deviceId ? { deviceId: formData.deviceId } : true,
+          audio: true
+        }
+        const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        newSource.stream = stream
+        console.log('[TeacherWindow] 鎽勫儚澶存祦鑾峰彇鎴愬姛:', stream.id)
+      } catch (error) {
+        console.error('[TeacherWindow] 鑾峰彇鎽勫儚澶存祦澶辫触:', error)
+        ElMessage.error('鏃犳硶璁块棶鎽勫儚澶? ' + error.message)
+        return // 缁堟娣诲姞娴佺▼
+      }
+    } else if (formData.type === 'captureCard') {
+      newSource.deviceId = formData.deviceId
+      newSource.resolution = formData.resolution
+      newSource.interfaceType = formData.inputInterface
+      newSource.fps = 30
+    } else if (formData.type === 'documentScanner') {
+      newSource.deviceId = formData.deviceId
+      newSource.scanMode = formData.scanMode
+      newSource.autoEnhance = formData.autoEnhance
+      newSource.autoCrop = formData.autoCrop
+      newSource.resolution = '1920x1080'
+    } else if (formData.type === 'networkCamera') {
+      newSource.protocol = formData.protocol
+      newSource.streamUrl = formData.streamUrl
+      // ONVIF鐩稿叧瀛楁
+      if (formData.protocol === 'onvif') {
+        newSource.onvifUrl = formData.onvifUrl
+      }
+      newSource.needAuth = formData.needAuth
+      newSource.username = formData.username
+      newSource.password = formData.password
+      newSource.resolution = '1920x1080'
+    } else if (formData.type === 'networkStream') {
+      newSource.protocol = formData.protocol
+      newSource.streamUrl = formData.streamUrl
+      newSource.bufferTime = formData.bufferTime
+      newSource.needAuth = formData.needAuth
+      newSource.authToken = formData.authToken
+    }
+
+    console.log('[TeacherWindow] 鍒涘缓鏂颁俊鍙锋簮:', newSource)
+
+    // 馃幆 淇濆瓨鍒?sourceStore
+    sourceStore.addSource(newSource)
+
+    // 馃幆 绔嬪嵆娣诲姞鍒伴瑙堝尯鍩?
+    await nextTick()
+    handleAddToPreview(newSource)
+
+    showAddSourceDialog.value = false
+
+  } catch (error) {
+    console.error('[TeacherWindow] 娣诲姞淇″彿婧愬け璐?', error)
+    ElMessage.error('娣诲姞淇″彿婧愬け璐? ' + error.message)
+  }
+}
+
+// 鎻愪氦閲嶅懡鍚?
+const handleRenameSource = (sourceId, newName) => {
+  console.log('[TeacherWindow] 閲嶅懡鍚嶄俊鍙锋簮:', { sourceId, newName })
+
+  try {
+    if (!newName || newName.trim() === '') {
+      ElMessage.warning('淇″彿婧愬悕绉颁笉鑳戒负绌?)
+      return
+    }
+
+    const sourceIndex = videoPreviews.value.findIndex(s => s.id === sourceId)
+    if (sourceIndex !== -1) {
+      const oldName = videoPreviews.value[sourceIndex].name
+      videoPreviews.value[sourceIndex].name = newName.trim()
+      console.log(`[TeacherWindow] 淇″彿婧愬凡閲嶅懡鍚? "${oldName}" -> "${newName}"`)
+
+      ElMessage.success(`淇″彿婧?"${newName}" 閲嶅懡鍚嶆垚鍔焋)
+
+      showRenameSourceDialog.value = false
+      renameSourceTarget.value = null
+    } else {
+      ElMessage.error('鏈壘鍒拌閲嶅懡鍚嶇殑淇″彿婧?)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 閲嶅懡鍚嶄俊鍙锋簮澶辫触:', error)
+    ElMessage.error('閲嶅懡鍚嶄俊鍙锋簮澶辫触')
+  }
+}
+
+// ============================================
+// SourcePreviewBar 浜嬩欢澶勭悊鍑芥暟
+// ============================================
+
+// 鍒犻櫎淇″彿婧?
+const handleRemoveSource = (source) => {
+  console.log('[TeacherWindow] 鍒犻櫎淇″彿婧?', source.name, source.id)
+  try {
+    const sourceIndex = videoPreviews.value.findIndex(s => s.id === source.id)
+    if (sourceIndex !== -1) {
+      // 馃幆 鍏堜粠 canvasSourceMap 涓Щ闄ゆ槧灏勫叧绯?
+      Object.keys(canvasSourceMap.value).forEach(key => {
+        if (canvasSourceMap.value[key] === source.id) {
+          delete canvasSourceMap.value[key]
+          console.log('[TeacherWindow] 宸蹭粠 canvasSourceMap 绉婚櫎鏄犲皠:', key, '->', source.id)
+        }
+      })
+
+      // 鉁?鐩存帴浣跨敤瑙ｆ瀯鐨?removeVideoSource 鍑芥暟
+      if (typeof removeVideoSource === 'function') {
+        removeVideoSource(source.id)
+        console.log('[TeacherWindow] 宸查€氳繃 removeVideoSource 娓呯悊婧?', source.id)
+      } else {
+        // 闄嶇骇鏂规锛氭墜鍔ㄧЩ闄?
+        videoPreviews.value.splice(sourceIndex, 1)
+      }
+
+      ElMessage.success(`宸插垹闄や俊鍙锋簮 "${source.name}"`)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 鍒犻櫎淇″彿婧愬け璐?', error)
+    ElMessage.error('鍒犻櫎淇″彿婧愬け璐?)
+  }
+}
+
+// 棰勮瑙嗛鏃堕棿鏇存柊
+const handlePreviewTimeUpdate = ({ event, source }) => {
+  console.log(`[TeacherWindow] 棰勮瑙嗛鏃堕棿鏇存柊: ${source.name}`, event.target.currentTime)
+}
+
+// 棰勮瑙嗛鍏冩暟鎹姞杞藉畬鎴?
+const handlePreviewLoadedMetadata = ({ event, source }) => {
+  console.log(`[TeacherWindow] 棰勮瑙嗛鍏冩暟鎹姞杞藉畬鎴? ${source.name}`, event.target.duration)
+}
+
+// 棰勮瑙嗛鎾斁
+const handlePreviewPlay = ({ event, source }) => {
+  console.log(`[TeacherWindow] 棰勮瑙嗛鎾斁: ${source.name}`)
+}
+
+// 棰勮瑙嗛鏆傚仠
+const handlePreviewPause = ({ event, source }) => {
+  console.log(`[TeacherWindow] 棰勮瑙嗛鏆傚仠: ${source.name}`)
+}
+
+// 棰勮瑙嗛璺宠浆
+const handlePreviewSeeked = ({ event, source }) => {
+  console.log(`[TeacherWindow] 棰勮瑙嗛璺宠浆: ${source.name}`, event.target.currentTime)
+}
+
+// ============================================
+// 鐢熷懡鍛ㄦ湡閽╁瓙
+// ============================================
+
+// 馃幆 鍏ㄥ眬璋冭瘯锛氭毚闇插瓧骞曠浉鍏冲彉閲忓拰鏂规硶鍒?window锛屾柟渚挎帶鍒跺彴璋冭瘯
+const exposeDebugTools = () => {
+  window.generatedSubtitles = generatedSubtitles
+  window.currentSubtitleText = currentSubtitleText
+  window.videoPreviews = videoPreviews
+  window.canvasSourceMap = canvasSourceMap
+  window.pipVisible = pipVisible
+
+  window.debugSubtitle = () => {
+    console.log('=== 瀛楀箷璋冭瘯淇℃伅 ===')
+    console.log('瀛楀箷鏁版嵁:', generatedSubtitles.value)
+    console.log('videoPreviews:', videoPreviews.value)
+    console.log('褰撳墠瀛楀箷鏂囨湰:', currentSubtitleText.value)
+    console.log('=== 璋冭瘯淇℃伅缁撴潫 ===')
+  }
+
+  window.debugLayout = () => {
+    console.log('=== 甯冨眬璋冭瘯淇℃伅 ===')
+    console.log('褰撳墠甯冨眬:', currentLayout.value)
+    console.log('鐢诲竷婧愭槧灏?', canvasSourceMap.value)
+    console.log('layoutStates:', window.__layoutStates)
+    console.log('=== 璋冭瘯淇℃伅缁撴潫 ===')
+  }
+
+  console.log('鉁?璋冭瘯宸ュ叿宸插氨缁?')
+  console.log('  - window.debugSubtitle() - 瀛楀箷璋冭瘯')
+  console.log('  - window.debugLayout() - 甯冨眬璋冭瘯')
+}
+
+onMounted(() => {
+  console.log('[TeacherWindow] 缁勪欢宸叉寕杞?)
+  // 鍒濆鍖栬缃?
+  loadSettings()
+  // 鍔犺浇褰曞埗妯℃澘
+  loadRecordingTemplates()
+  // 鍔犺浇褰曞埗鍒楄〃
+  loadRecordings()
+
+  // 馃幆 鍔犺浇璁惧鍒楄〃锛堝紓姝ワ級
+  loadCaptureDevices()
+  loadLocalCameraDevices()
+
+  // 馃幆 鍒濆鍖栭粯璁よ棰戞簮 - 宸茬鐢紝涓嶅啀鑷姩娣诲姞浠讳綍婧?
+  // initializeDefaultVideoSources()
+
+  // 馃幆 鍒濆鍖栫ず渚嬫暟鎹?- 鐢ㄤ簬婕旂ず
+  initializeSampleData()
+
+  // 馃幆 鏆撮湶璋冭瘯宸ュ叿鍒?window
+  exposeDebugTools()
+
+  // 馃幆 鏆撮湶闊抽璁剧疆鍒板叏灞€锛屼緵瑙嗛浼氳绐楀彛浣跨敤
+  window.teacherWindowAudioSettings = {
+    enableAudioMonitor: enableAudioMonitor,
+    enableTerminalMute: enableTerminalMute,
+    enableAudioNoiseReduction: enableAudioNoiseReduction,
+    participantMuted: null
+  }
+
+  console.log('[TeacherWindow] 闊抽璁剧疆宸叉毚闇插埌鍏ㄥ眬')
+
+  // 馃幆 鐩戝惉娣诲姞淇″彿婧愪簨浠?
+  window.addEventListener('show-add-source-dialog', handleShowAddSourceDialog)
+
+  // 馃幆 鐩戝惉鍒囨崲闈㈡澘浜嬩欢
+  window.addEventListener('switch-panel', handleSwitchPanel)
+
+  // 馃幆 鐩戝惉鎵撳紑瑙嗛浼氳绐楀彛浜嬩欢
+  window.addEventListener('open-video-meeting-window', () => {
+    console.log('[TeacherWindow] 鎵撳紑瑙嗛浼氳绐楀彛')
+    showVideoMeetingWindow.value = true
+  })
+
+  // 馃幆 鐩戝惉鍏抽棴瑙嗛浼氳绐楀彛浜嬩欢
+  window.addEventListener('close-video-meeting', () => {
+    console.log('[TeacherWindow] 鍏抽棴瑙嗛浼氳绐楀彛')
+    showVideoMeetingWindow.value = false
+  })
+
+  // 馃幆 鐩戝惉鎵撳紑 YOLO 鍏ㄥ睆绐楀彛浜嬩欢
+  window.addEventListener('open-yolo-window', () => {
+    console.log('[TeacherWindow] 鎵撳紑 YOLO 鍏ㄥ睆绐楀彛')
+    showYoloWindow.value = true
+  })
+
+  // 馃幆 鐩戝惉鎵撳紑 Analysis 鍏ㄥ睆绐楀彛浜嬩欢
+  window.addEventListener('open-analysis-window', () => {
+    console.log('[TeacherWindow] 鎵撳紑 Analysis 鍏ㄥ睆绐楀彛')
+    showAnalysisWindow.value = true
+  })
+
+  // 馃幆 鐩戝惉鎵撳紑 Web 鍏ㄥ睆绐楀彛浜嬩欢
+  window.addEventListener('open-web-window', () => {
+    console.log('[TeacherWindow] 鎵撳紑 Web 鍏ㄥ睆绐楀彛')
+    showWebWindow.value = true
+  })
+
+  // 馃幆 鐩戝惉鎵撳紑鏅鸿兘瑙嗚鍒嗘瀽绐楀彛浜嬩欢
+  window.addEventListener('open-vision-analysis', () => {
+    console.log('[TeacherWindow] 鎵撳紑鏅鸿兘瑙嗚鍒嗘瀽绐楀彛')
+    showVisionAnalysis.value = true
+  })
+
+  // 馃幆 鐩戝惉鎵撳紑鑰冭瘯璇勫垽绐楀彛浜嬩欢锛堝吋瀹规棫鎺ュ彛锛?
+  window.addEventListener('open-exam-evaluator', () => {
+    console.log('[TeacherWindow] 鎵撳紑鑰冭瘯璇勫垽绐楀彛')
+    showVisionAnalysis.value = true
+  })
+
+  // 馃幆 鐩戝惉瑙嗛浼氳闊抽鐘舵€佸彉鍖栵紙鍏宠仈鍒伴煶棰戦€夐」锛?
+  window.addEventListener('video-meeting-audio-state', (event) => {
+    const { participantId, muted } = event.detail
+    console.log('[TeacherWindow] 鏀跺埌瑙嗛浼氳闊抽鐘舵€佸彉鍖?', participantId, muted)
+
+    // 鏇存柊闊抽璁剧疆
+    if (window.teacherWindowAudioSettings) {
+      window.teacherWindowAudioSettings.participantMuted = {
+        participantId,
+        muted
+      }
+
+      // 鏍规嵁鍏ㄥ眬闊抽璁剧疆澶勭悊
+      if (enableTerminalMute.value && muted) {
+        console.log('[TeacherWindow] 缁堢闈欓煶宸插惎鐢紝搴旂敤闈欓煶璁剧疆')
+      }
+
+      if (enableAudioNoiseReduction.value) {
+        console.log('[TeacherWindow] 闊抽闄嶅櫔宸插惎鐢?)
+      }
+    }
+  })
+
+  // 馃幆 鐩戝惉璇煶鍔╂墜浜嬩欢锛堜粠AI璇煶闈㈡澘瑙﹀彂锛?
+  window.addEventListener('voice-start-stream', () => handleStartStream())
+  window.addEventListener('voice-stop-stream', () => handleStopStream())
+  window.addEventListener('voice-start-recording', () => handleStartAllCanvasRecording())
+  window.addEventListener('voice-pause-recording', () => handlePauseAllCanvasRecording())
+  window.addEventListener('voice-stop-recording', () => handleStopAllCanvasRecording())
+  window.addEventListener('voice-next-layout', () => {
+    // 鏂板竷灞€绱㈠紩: 1-1鍒嗗睆, 2-2鍒嗗睆, 3-3鍒嗗睆, 4-4鍒嗗睆, 5-6鍒嗗睆, 7-9鍒嗗睆, 10-16鍒嗗睆, 11-25鍒嗗睆, 12-36鍒嗗睆, 13-49鍒嗗睆
+    const layouts = [1, 2, 3, 4, 5, 7, 10, 11, 12, 13]
+    const currentIndex = layouts.indexOf(currentLayout.value)
+    const nextIndex = (currentIndex + 1) % layouts.length
+    handleLayoutChange(layouts[nextIndex])
+  })
+  window.addEventListener('voice-show-desktop', () => {
+    showScreenShareDialog.value = true
+  })
+  window.addEventListener('voice-return-teaching', () => {
+    handleLayoutChange(1)
+  })
+  window.addEventListener('voice-quick-record', () => {
+    if (!isRecording.value) {
+      handleStartAllCanvasRecording()
+    }
+  })
+})
+
+// 馃幆 鐩戝惉sourceStore鐨勫彉鍖栵紝鍚屾鍒皏ideoPreviews
+watch(() => sourceStore.sources, (newSources, oldSources) => {
+  // 妫€鏌ユ槸鍚︽湁鏂版坊鍔犵殑婧?
+  if (newSources.length > oldSources.length) {
+    const newSource = newSources[newSources.length - 1]
+    // 馃幆 淇″彿婧愭坊鍔犲悗鑷姩娣诲姞鍒伴瑙堝尯鍩燂紙addedToPreview = true锛?
+    if (newSource.addedToPreview) {
+      // 妫€鏌ユ槸鍚﹀凡缁忓瓨鍦ㄤ簬 videoPreviews 涓?
+      const existsInPreviews = videoPreviews.value.find(s => s.id === newSource.id)
+      if (!existsInPreviews) {
+        addVideoSource(newSource)
+        console.log('[TeacherWindow] 宸插皢鏂版簮鑷姩娣诲姞鍒伴瑙堝尯鍩?', newSource)
+      }
+      // 馃幆 涓嶅啀鑷姩鏄犲皠鍒扮敾甯冩牸瀛愶紝闇€瑕佺敤鎴锋墜鍔ㄦ嫋鏇?
+    } else {
+      console.log('[TeacherWindow] 鏂颁俊鍙锋簮鏈爣璁颁负娣诲姞鍒伴瑙?', newSource.name)
+    }
+  } else if (newSources.length < oldSources.length) {
+    // 妫€鏌ユ槸鍚︽湁绉婚櫎鐨勬簮
+    const removedSource = oldSources.find(old => !newSources.find(n => n.id === old.id))
+    if (removedSource) {
+      removeVideoSource(removedSource.id)
+      // 馃幆 浠巆anvasSourceMap涓Щ闄ゅ搴旂殑鏄犲皠
+      Object.keys(canvasSourceMap.value).forEach(key => {
+        if (canvasSourceMap.value[key] === removedSource.id) {
+          delete canvasSourceMap.value[key]
+          console.log('[TeacherWindow] 宸蹭粠canvasSourceMap绉婚櫎鏄犲皠:', key)
+        }
+      })
+      console.log('[TeacherWindow] 宸蹭粠videoPreviews绉婚櫎婧?', removedSource)
+    }
+  } else {
+    // 馃幆 妫€鏌ヤ俊鍙锋簮鐨?addedToPreview 鐘舵€佸彉鍖?
+    if (newSources.length === oldSources.length) {
+      newSources.forEach((newSource, index) => {
+        const oldSource = oldSources[index]
+        if (oldSource && oldSource.addedToPreview !== newSource.addedToPreview) {
+          if (newSource.addedToPreview) {
+            // 鐘舵€佷粠 false 鍙樹负 true锛氭坊鍔犲埌棰勮鍖哄煙
+            const existsInPreviews = videoPreviews.value.find(s => s.id === newSource.id)
+            if (!existsInPreviews) {
+              addVideoSource(newSource)
+              console.log('[TeacherWindow] 婧愮姸鎬佸彉鍖栵紝娣诲姞鍒伴瑙堝尯鍩?', newSource.name)
+            }
+          } else {
+            // 鐘舵€佷粠 true 鍙樹负 false锛氫粠棰勮鍖哄煙绉婚櫎
+            removeVideoSource(newSource.id)
+            // 浠?canvasSourceMap 涓Щ闄?
+            Object.keys(canvasSourceMap.value).forEach(key => {
+              if (canvasSourceMap.value[key] === newSource.id) {
+                delete canvasSourceMap.value[key]
+                console.log('[TeacherWindow] 婧愮姸鎬佸彉鍖栵紝浠庣敾甯冪Щ闄?', key)
+              }
+            })
+            console.log('[TeacherWindow] 婧愮姸鎬佸彉鍖栵紝浠庨瑙堝尯鍩熺Щ闄?', newSource.name)
+          }
+        }
+      })
+    }
+  }
+}, { deep: true })
+
+onUnmounted(() => {
+  console.log('[TeacherWindow] 缁勪欢鍗冲皢鍗歌浇')
+  // 娓呯悊璧勬簮
+  if (speechRecognition && speechRecognition.stop) {
+    speechRecognition.stop()
+  }
+  if (screenShareStream.value) {
+    stopScreenShare()
+  }
+
+  // 馃幆 娓呯悊浜嬩欢鐩戝惉鍣?
+  window.removeEventListener('show-add-source-dialog', handleShowAddSourceDialog)
+  window.removeEventListener('switch-panel', handleSwitchPanel)
+  window.removeEventListener('voice-start-stream', () => handleStartStream())
+  window.removeEventListener('voice-stop-stream', () => handleStopStream())
+  window.removeEventListener('voice-start-recording', () => handleStartAllCanvasRecording())
+  window.removeEventListener('voice-pause-recording', () => handlePauseAllCanvasRecording())
+  window.removeEventListener('voice-stop-recording', () => handleStopAllCanvasRecording())
+  window.removeEventListener('voice-next-layout', () => {})
+  window.removeEventListener('voice-show-desktop', () => {})
+  window.removeEventListener('voice-return-teaching', () => {})
+  window.removeEventListener('voice-quick-record', () => {})
+  window.removeEventListener('open-video-meeting-window', () => {})
+  window.removeEventListener('close-video-meeting', () => {})
+  window.removeEventListener('open-yolo-window', () => {})
+  window.removeEventListener('open-analysis-window', () => {})
+  window.removeEventListener('open-web-window', () => {})
+  window.removeEventListener('video-meeting-audio-state', () => {})
+})
+
+// 馃幆 浠呭湪鏈夎棰戞簮鏃舵墠璁剧疆 canvasSourceMap
+if (videoPreviews.value.length > 0 && Object.keys(canvasSourceMap.value).length === 0) {
+  // 灏嗙涓€涓簮鏄犲皠鍒扮涓€涓敾甯冩牸瀛?
+  canvasSourceMap.value[1] = videoPreviews.value[0]?.id
+  console.log('[TeacherWindow] 宸茶缃粯璁ょ敾甯冩簮鏄犲皠:', canvasSourceMap.value[1])
+}
+
+// 鏆撮湶鏂规硶缁欑埗缁勪欢鎴栧叾浠栫粍浠惰皟鐢?
+defineExpose({
+  minimize,
+  maximize,
+  close,
+  refreshAllCameras,
+  enableAnnotationForAll,
+  startASRForAll,
+  openVideoToSubtitleDialog,
+  handleStartAllCanvasRecording,
+  handlePauseAllCanvasRecording,
+  handleStopAllCanvasRecording,
+  showPlaybackDialog: handleOpenPlayback,
+  showNetworkDetailDialog: handleShowNetworkDetail,
+  showRenameSourceDialog: handleOpenRenameSource,
+  // 澶氳矾闊宠棰戠紪瑙ｇ爜
+  openMediaCodecDialog: () => { showMediaCodecDialog.value = true; },
+  getVideoPreviewRef: (index) => videoPreviews.value[index],
+  restoreLayoutState,
+  clearAllVideoPreviews,
+  getVisibleCanvasIndices,
+  getCanvasSourceId,
+  getCanvasVideoSource,
+  exportSubtitles,
+  importSubtitles,
+  clearAllSubtitles,
+  showSubtitleManager,
+  startLive,
+  stopLive,
+  addStudent,
+  addTask,
+  startTraining,
+  startAnalysis,
+  stopAnalysis,
+  preloadYolo,
+  isAnalyzing,
+  detectionMode,
+  networkStatus,
+  updateDetectionMode,
+  getDetectionModeText,
+  getNetworkStatusText
+})
+</script>
+
+<style lang="scss" scoped>
+// 瀵煎叆鍏ㄥ眬鏍峰紡
+@import '../styles/variables.scss';
+@import '../styles/layout.scss';
+@import '../styles/animations.scss';
+@import '../styles/teacher-window.scss';
+
+.teacher-window {
+  width: 100%;
+  min-height: 100vh;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0A101A;
+  color: #FFFFFF;
+  overflow: hidden;
+}
+
+.app-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+// 涓诲唴瀹瑰尯鍖呰鍣紙姘村钩甯冨眬锛氬乏渚у唴瀹瑰尯 + 鍙充晶杈规爮锛?
+.main-content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+}
+
+// 宸︿晶鍐呭鍖猴紙瑙嗛 + 棰勮鏍忥級
+// 宸︿晶鍐呭鍖猴紙瑙嗛 + 棰勮鏍忥級
+.left-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  min-height: 0;
+}
+
+// 宸︿晶鍐呭鍖猴紙瑙嗛 + 棰勮鏍忥級
+.content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  min-height: 0;  /* 鍏佽 flex 瀛愬厓绱犳敹缂?*/
+}
+.video-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  /* 鍚戝彸涓嬫墿灞曪紝娑堥櫎闂撮殭 */
+  margin: 0 -8px -8px 0;
+  padding: 0;
+}
+
+// 馃啎 鍏ㄥ眬棰勮鏍忥紙鍥哄畾鍦ㄥ唴瀹瑰尯搴曢儴锛?
+.global-preview-bar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  height: 140px;  // 馃幆 淇锛氫娇鐢ㄥ浐瀹氶珮搴﹁€屼笉鏄?min/max锛岀‘淇濈敾甯冨缁堝叏灞?
+  background: #0D1B2A;
+  border: 1px solid #2D3A4F;
+  border-radius: 8px;
+  margin: 0 8px 8px 8px;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+
+  // 馃幆 纭繚棰勮鏍忓簳閮ㄦ湁瓒冲鐨勫畨鍏ㄨ窛绂伙紝閬垮厤琚换鍔℃爮閬尅
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+// 馃啎 娓叉煋寮曟搸瑕嗙洊灞傛牱寮?
+.render-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #0D1B2A;
+  z-index: 50;
+}
+
+.render-floating-toolbar {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  z-index: 100;
+}
+
+.tool-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(52, 152, 219, 0.8);
+  border: none;
+  border-radius: 8px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: #3498DB;
+    transform: translateY(-2px);
+  }
+
+  &.active {
+    background: #E74C3C;
+  }
+}
+
+// YOLO 妫€娴嬫ā寮忕姸鎬佹寚绀哄櫒
+.yolo-status-indicator {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 10px;
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  min-width: 160px;
+
+  .status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+
+    .status-label {
+      font-size: 13px;
+      color: #909399;
+      font-weight: 500;
+    }
+
+    .status-value {
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+  }
+}
+
+// 宸ュ叿鏍忔牱寮?
+.video-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  align-items: center;
+
+  .action-btn {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 5px 8px;
+    border: none;
+    background: #0F2035;
+    color: #E0E1DD;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 12px;
+    font-family: inherit;
+    white-space: nowrap;
+
+    &:hover {
+      background: #415A77;
+      transform: translateY(-2px);
+    }
+
+    &.active {
+      background: #4CC9F0;
+      color: #0D1B2A;
+      font-weight: 600;
+    }
+
+    .el-icon {
+      font-size: 16px;
+    }
+
+    .dropdown-icon {
+      font-size: 12px;
+      margin-left: 2px;
+    }
+  }
+}
+
+// 甯冨眬闈㈡澘鏍峰紡
+.layout-panel {
+  padding: 15px;
+}
+
+.layout-section {
+  margin-bottom: 20px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #E0E1DD;
+  margin-bottom: 10px;
+  padding-left: 5px;
+  border-left: 3px solid #4CC9F0;
+}
+
+.layout-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+
+  .el-button {
+    width: 100%;
+  }
+}
+
+.custom-grid-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 瑙嗛浼氳绐楀彛杩囨浮鍔ㄧ敾 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

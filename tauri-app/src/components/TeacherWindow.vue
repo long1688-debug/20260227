@@ -110,6 +110,7 @@
                 @clear-subtitles="handleClearSubtitles"
                 @toggle-maximize="handleToggleMaximize"
                 @show-network-detail="handleShowNetworkDetail"
+                @drop-source="handleDropSource"
               />
             </div>
 
@@ -486,6 +487,7 @@ const {
   handleMouseMove,
   handleMouseUp,
   handleDrop,
+  onTouchStart,
   setCurrentSelectedSource,
   setVideoPreviews
 } = useSourceDrag({
@@ -533,6 +535,16 @@ const onDrop = (event, index) => {
       name: event?.dataTransfer?.getData('sourceName') || 'Dropped Source'
     }
     handleDrop(event, index)
+  }
+}
+
+// 🎯 处理 VideoSection 发出的放置事件
+const handleDropSource = ({ source, slotIndex, position }) => {
+  console.log('[TeacherWindow] 从VideoSection接收放置事件:', { source, slotIndex, position })
+  if (typeof handleDrop === 'function') {
+    // 创建一个模拟事件对象
+    const mockEvent = { preventDefault: () => {} }
+    handleDrop(mockEvent, slotIndex)
   }
 }
 
@@ -607,7 +619,7 @@ const selectedCameraId = ref('') // 当前选中的摄像头ID
 const activeSources = ref([]) // 活跃的视频源列表
 const renderLayoutType = ref('single') // 当前渲染布局类型
 const isDrawingMode = ref(false) // 是否处于绘制模式
- const useRenderEngine = ref(true) // 是否启用渲染引擎覆盖模式，默认为true
+const useRenderEngine = ref(false) // 是否启用渲染引擎覆盖模式，默认为false（使用传统VideoSection）
 
 // 将源类型映射到渲染引擎支持的类型
 const mapSourceType = (sourceType) => {
@@ -3513,11 +3525,11 @@ const processMouseDown = (event, source) => {
 const processTouchStart = (event, source) => {
   console.log('[TeacherWindow] 触摸开始预览源:', source.name)
 
-  // 🎯 调用 useSourceDrag 的 handleMouseDown 方法处理触摸拖拽（统一使用鼠标事件处理）
-  if (typeof handleMouseDown === 'function') {
-    handleMouseDown({ touches: [{ clientX: event.touches[0].clientX, clientY: event.touches[0].clientY }] }, source)
+  // 🎯 调用 useSourceDrag 的 onTouchStart 方法处理触摸拖拽
+  if (typeof onTouchStart === 'function') {
+    onTouchStart(event, source)
   } else {
-    console.error('[TeacherWindow] handleMouseDown 方法不存在')
+    console.error('[TeacherWindow] onTouchStart 方法不存在')
   }
 }
 
@@ -4234,8 +4246,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  min-height: 100px;
-  max-height: 140px;
+  min-height: 140px;
+  max-height: 200px;
   background: #0D1B2A;
   border: 1px solid #2D3A4F;
   border-radius: 8px;

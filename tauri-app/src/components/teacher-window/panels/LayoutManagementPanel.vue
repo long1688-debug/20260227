@@ -9,7 +9,6 @@
           :key="layout.value"
           :type="currentLayout === layout.value ? 'primary' : ''"
           size="small"
-          :class="{ 'pip-button': layout.isPip }"
           @click="handleLayoutChange(layout.value)"
         >
           {{ layout.label }}
@@ -69,8 +68,6 @@ import { ref, watch, computed } from 'vue'
 interface LayoutOption {
   value: number
   label: string
-  isPip?: boolean
-  pipPosition?: string
 }
 
 interface Props {
@@ -178,17 +175,5 @@ const handleCustomCountChange = (value: number) => {
 .custom-grid-controls {
   display: flex;
   justify-content: center;
-}
-
-// 画中画按钮特殊样式
-.pip-button {
-  background-color: #67C23A !important;
-  border-color: #67C23A !important;
-  color: #fff !important;
-
-  &:hover {
-    background-color: #85CE61 !important;
-    border-color: #85CE61 !important;
-  }
 }
 </style>
