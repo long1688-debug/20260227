@@ -5,7 +5,7 @@
   "identifier": "com.training.teaching.teacher",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://127.0.0.1:5174",
+    "devUrl": "http://127.0.0.1:5181",
     "beforeBuildCommand": "npm run build",
     "beforeDevCommand": "npm run dev"
   },
@@ -42,7 +42,7 @@
       "rpm"
     ],
     "resources": {
-      "resources/*": "resources/"
+      "../rtsp-proxy/*": "rtsp-proxy/"
     },
     "icon": [
       "icons/32x32.png",

@@ -147,7 +147,7 @@ export function getDeviceDisplayName(device) {
   const typeIcon = device.device_type === CaptureDeviceType.CAPTURE_CARD ? '🎥' : '📷'
   const interfaceInfo = device.interface_type ? ` (${device.interface_type})` : ''
   const resolutionInfo = device.resolution ? ` - ${device.resolution}` : ''
-  
+
   return `${typeIcon} ${device.name}${interfaceInfo}${resolutionInfo}`
 }
 
@@ -257,36 +257,5 @@ export async function registerOnvifDevice(device) {
   }
 }
 
-// 🎯 GB/T 28181 国标协议发现
-/**
- * 发现GB/T 28181国标协议摄像机
- * @param {number} timeoutSecs - 超时时间(秒)
- * @returns {Promise<Array>} 发现的设备列表
- */
-export async function discoverGb28181Devices(timeoutSecs = 5) {
-  try {
-    const devices = await invoke('discover_gb28181_devices', { timeoutSecs })
-    console.log('[GB28181发现] 共发现', devices.length, '个设备')
-    return devices
-  } catch (error) {
-    console.error('[GB28181发现] 失败:', error)
-    throw error
-  }
-}
-
-// 🎯 厂商私有协议发现
-/**
- * 发现厂商私有协议摄像机(海康SADP + 大华P2P)
- * @param {number} timeoutSecs - 超时时间(秒)
- * @returns {Promise<Array>} 发现的设备列表
- */
-export async function discoverVendorCameras(timeoutSecs = 5) {
-  try {
-    const devices = await invoke('discover_vendor_cameras', { timeoutSecs })
-    console.log('[厂商协议发现] 共发现', devices.length, '个设备')
-    return devices
-  } catch (error) {
-    console.error('[厂商协议发现] 失败:', error)
-    throw error
-  }
-}
+// 🎯 删除：GB/T 28181和厂商私有协议发现
+// 现在只使用ONVIF标准协议

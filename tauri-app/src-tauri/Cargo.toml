@@ -18,7 +18,7 @@ tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 bcrypt = "0.15"
 dirs = "5"
 uuid = { version = "1", features = ["v4"] }
@@ -80,6 +80,9 @@ if-addrs = "0.9"        # 获取本机网卡信息
 ipnet = "2.9"           # IP 子网计算
 futures = "0.3"         # 异步流控制
 
+# 🎯 SQLite数据库（用于持久化存储网络摄像机配置）
+rusqlite = { version = "0.31", features = ["bundled"] }
+
 # Unix 信号处理（仅 Unix 平台）
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.27", features = ["signal"] }
@@ -103,6 +106,12 @@ lto = true
 opt-level = "s"
 strip = true
 
-# 允许使用 wasm32 目标
+[profile.dev]
+opt-level = 0
+debug = false
+
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+[build]
+target-dir = "D:/cargo_target"

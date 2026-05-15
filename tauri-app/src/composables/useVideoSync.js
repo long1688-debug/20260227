@@ -75,7 +75,7 @@ class SyncStateReplicator {
 
     // 🎯 新增：同步状态追踪
     this.syncStatus = new Map(); // sourceId -> { isSyncing, lastSyncTime, avgLatency }
-    
+
     // 🎯 新增：定时清理过期的同步状态
     this.cleanupInterval = setInterval(() => {
       this.cleanupStaleSyncStates();
@@ -220,7 +220,7 @@ class SyncStateReplicator {
     const master = this.masters.get(sourceId);
     if (!master) {
       console.warn(`[严格同步器] ⚠️ Master不存在，延迟同步 (尝试 1/5): ${sourceId}`);
-      
+
       // 🎯 尝试延迟注册
       let attempts = 1;
       const maxAttempts = 5;
@@ -230,16 +230,16 @@ class SyncStateReplicator {
         if (currentMaster) {
           console.log(`[严格同步器] ✅ Master已存在，完成从属注册: ${canvasId} -> ${sourceId}`);
           clearInterval(retryInterval);
-          
+
           // 执行注册
           this.performSlaveRegistration(videoElement, canvasId, sourceId);
-          
+
           // 立即同步状态
           this.syncSlaveToMaster(canvasId, sourceId);
         } else if (attempts >= maxAttempts) {
           console.error(`[严格同步器] ❌ Master不存在，放弃同步: ${sourceId}`);
           clearInterval(retryInterval);
-          
+
           // 尝试检查是否为实时流（摄像头等），如果是则直接播放
           if (videoElement.srcObject && videoElement.srcObject instanceof MediaStream) {
             console.log(`[严格同步器] 🎯 检测到实时流 (摄像头)，从属直接播放: ${canvasId}`);
@@ -448,7 +448,7 @@ class SyncStateReplicator {
    */
   removeSlave(canvasId, sourceId) {
     console.log(`[状态复制器] 准备移除从属: ${canvasId} -> ${sourceId}`);
-    
+
     const slaves = this.slaveGroups.get(sourceId);
     if (!slaves) {
       console.warn(`[状态复制器] ⚠️ 未找到要移除的从属: ${canvasId}`);
@@ -505,9 +505,9 @@ class SyncStateReplicator {
     this.slaveGroups.clear();
     this.errorCount.clear();
     this.syncStatus.clear();
-    
+
     // 清除清理定时器
-if (this.cleanupInterval) {
+    if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
     }
   }
@@ -1687,7 +1687,7 @@ export function useVideoSync() {
    * 移除从属视频 - 🎯 需要指定 sourceId
    */
   const unregisterSlaveVideo = (canvasId, sourceId) => {
-    stateReplicator.unregisterSlave(canvasId, sourceId);
+    stateReplicator.removeSlave(canvasId, sourceId);
   };
 
   /**
@@ -2081,6 +2081,12 @@ export function useVideoSync() {
 
   const addVideoSource = (source) => {
     if (source && source.id) {
+      // 🎯 去重检查：防止同一信号源重复添加到预览列表
+      const exists = videoPreviews.value.find(s => s.id === source.id);
+      if (exists) {
+        console.warn(`[useVideoSync] 信号源已存在，跳过重复添加: ${source.id}`);
+        return;
+      }
       videoPreviews.value.push(source);
       console.log(`[useVideoSync] 添加视频源: ${source.id}`);
     }

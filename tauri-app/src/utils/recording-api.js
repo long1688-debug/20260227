@@ -60,7 +60,7 @@ export async function startPreviewRecording(params) {
 export async function pauseRecording(sessionId) {
   try {
     console.log('[Tauri API] pauseRecording 调用, sessionId:', sessionId);
-    const result = await invoke('pause_recording', { session_id: sessionId });
+    const result = await invoke('pause_recording', { sessionId });
     console.log('[Tauri API] pauseRecording 成功');
     return result;
   } catch (error) {
@@ -75,7 +75,7 @@ export async function pauseRecording(sessionId) {
 export async function resumeRecording(sessionId) {
   try {
     console.log('[Tauri API] resumeRecording 调用, sessionId:', sessionId);
-    const result = await invoke('resume_recording', { session_id: sessionId });
+    const result = await invoke('resume_recording', { sessionId });
     console.log('[Tauri API] resumeRecording 成功');
     return result;
   } catch (error) {
@@ -90,7 +90,7 @@ export async function resumeRecording(sessionId) {
 export async function stopRecording(sessionId) {
   try {
     console.log('[Tauri API] stopRecording 调用, sessionId:', sessionId);
-    const result = await invoke('stop_recording', { session_id: sessionId });
+    const result = await invoke('stop_recording', { sessionId });
     console.log('[Tauri API] stopRecording 成功, 文件路径:', result);
     return result;
   } catch (error) {
@@ -150,7 +150,7 @@ export async function loadRecordingTemplates() {
 export async function deleteRecordingTemplate(templateId) {
   try {
     console.log('[Tauri API] deleteRecordingTemplate 调用, ID:', templateId);
-    const result = await invoke('delete_recording_template', { template_id: templateId });
+    const result = await invoke('delete_recording_template', { templateId });
     console.log('[Tauri API] deleteRecordingTemplate 成功');
     return result;
   } catch (error) {
@@ -164,7 +164,7 @@ export async function deleteRecordingTemplate(templateId) {
  */
 export async function getLatestPreviewFrame(sessionId) {
   try {
-    const result = await invoke('get_latest_preview_frame', { session_id: sessionId });
+    const result = await invoke('get_latest_preview_frame', { sessionId });
     return result;
   } catch (error) {
     console.error('[Tauri API] getLatestPreviewFrame 失败:', error);
@@ -177,7 +177,7 @@ export async function getLatestPreviewFrame(sessionId) {
  */
 export async function cleanupPreviewFrames(sessionId) {
   try {
-    await invoke('cleanup_preview_frames', { session_id: sessionId });
+    await invoke('cleanup_preview_frames', { sessionId });
   } catch (error) {
     console.error('[Tauri API] cleanupPreviewFrames 失败:', error);
   }
@@ -190,8 +190,8 @@ export async function switchActiveCamera(sessionId, cameraIndex) {
   try {
     console.log('[Tauri API] switchActiveCamera 调用');
     const result = await invoke('switch_active_camera', { 
-      session_id: sessionId,
-      camera_index: cameraIndex 
+      sessionId,
+      cameraIndex 
     });
     console.log('[Tauri API] switchActiveCamera 成功');
     return result;
@@ -208,9 +208,9 @@ export async function startMulticamRecording(sessionId, cameraConfig, recordingC
   try {
     console.log('[Tauri API] startMulticamRecording 调用');
     const result = await invoke('start_multicam_recording', { 
-      session_id: sessionId,
+      sessionId,
       config: cameraConfig,
-      recording_config: recordingConfig
+      recordingConfig: recordingConfig
     });
     console.log('[Tauri API] startMulticamRecording 成功');
     return result;
@@ -227,11 +227,11 @@ export async function startRtmpStreaming(sessionId, sourceX, sourceY, sourceWidt
   try {
     console.log('[Tauri API] startRtmpStreaming 调用');
     const result = await invoke('start_rtmp_streaming', { 
-      session_id: sessionId,
-      source_x: sourceX,
-      source_y: sourceY,
-      source_width: sourceWidth,
-      source_height: sourceHeight,
+      sessionId,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
       config
     });
     console.log('[Tauri API] startRtmpStreaming 成功');
@@ -248,7 +248,7 @@ export async function startRtmpStreaming(sessionId, sourceX, sourceY, sourceWidt
 export async function stopRtmpStreaming(sessionId) {
   try {
     console.log('[Tauri API] stopRtmpStreaming 调用');
-    const result = await invoke('stop_rtmp_streaming', { session_id: sessionId });
+    const result = await invoke('stop_rtmp_streaming', { sessionId });
     console.log('[Tauri API] stopRtmpStreaming 成功');
     return result;
   } catch (error) {
@@ -264,8 +264,8 @@ export async function startVrRecording(sessionId, cameraDevice, config) {
   try {
     console.log('[Tauri API] startVrRecording 调用');
     const result = await invoke('start_vr_recording', { 
-      session_id: sessionId,
-      camera_device: cameraDevice,
+      sessionId,
+      cameraDevice,
       config
     });
     console.log('[Tauri API] startVrRecording 成功');

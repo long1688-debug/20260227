@@ -58,14 +58,14 @@ pub async fn start_zlmediakit(app_handle: AppHandle) -> Result<String, String> {
         .spawn()
         .map_err(|e| format!("启动 ZLMediaKit 失败: {}", e))?;
 
-    // 等待服务启动完成（检查端口是否可用）
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    // 等待服务启动完成（检查端口是否被监听）
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
     // 验证服务是否启动成功
-    if is_port_available(state.port) {
-        // 端口仍可用，说明服务未成功启动
+    if !is_port_listening(state.port) {
+        // 端口未被监听，说明服务未成功启动
         child.kill().ok();
-        return Err("ZLMediaKit 启动失败：端口未监听".to_string());
+        return Err("ZLMediaKit 启动失败：端口未被监听".to_string());
     }
 
     *state.process.lock().await = Some(child);
@@ -145,7 +145,20 @@ fn find_zlmediakit_binary() -> Result<String, String> {
     Err("未找到 ZLMediaKit 可执行文件，请检查安装路径".to_string())
 }
 
-/// 检查端口是否可用（未被占用）
+/// 检查端口是否正在被监听（服务已启动）
+fn is_port_listening(port: u16) -> bool {
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    // 尝试连接端口，如果能连接说明服务正在监听
+    TcpStream::connect_timeout(
+        &format!("127.0.0.1:{}", port).parse().unwrap(),
+        Duration::from_millis(500)
+    ).is_ok()
+}
+
+/// 检查端口是否可用（未被占用）- 保留用于其他场景
+#[allow(dead_code)]
 fn is_port_available(port: u16) -> bool {
     use std::net::TcpListener;
     TcpListener::bind(("127.0.0.1", port)).is_ok()

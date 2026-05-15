@@ -1,0 +1,19 @@
+{
+  "name": "rtsp-proxy-server",
+  "version": "1.0.0",
+  "description": "RTSP to HTTP-FLV proxy server for camera streaming",
+  "main": "rtsp-proxy.js",
+  "scripts": {
+    "start": "node rtsp-proxy.js",
+    "monitor": "node monitor-performance.js",
+    "test-concurrent": "node test-concurrent-streams.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "fluent-ffmpeg": "^2.1.2",
+    "ws": "^8.16.0",
+    "uuid": "^9.0.0",
+    "axios": "^1.6.0",
+    "chalk": "^4.1.2"
+  }
+}

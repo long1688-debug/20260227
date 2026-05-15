@@ -180,6 +180,16 @@ export const useSourceStore = defineStore('source', {
 
     // 添加信号源
     addSource(source) {
+      // 🎯 去重检查：根据 deviceId 检查是否已存在（针对摄像头类设备）
+      const hasDeviceId = source.deviceId || source.device?.deviceId;
+      if (hasDeviceId) {
+        const existingDevice = this.sources.find(s => s.deviceId === hasDeviceId);
+        if (existingDevice) {
+          console.warn(`[SourceStore] 设备已存在，跳过重复添加: ${source.name} (deviceId: ${hasDeviceId})`);
+          return existingDevice;
+        }
+      }
+
       // 确保信号源有唯一ID
       const newSource = {
         ...source,

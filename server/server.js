@@ -14,7 +14,7 @@ const serverMonitor = require('./services/server-monitor');
 // ==================== 配置 ====================
 const CONFIG = {
     httpPort: process.env.HTTP_PORT || 8080,
-    wsPort: process.env.WS_PORT || 8081,
+    wsPort: process.env.WS_PORT || 8082,  // 🎯 修改为8082，避免与RTSP-Proxy(8081)冲突
     dataDir: path.join(__dirname, 'data'),
     sessionTimeout: 3600000, // 1 小时
     secretKey: 'training_system_secret_key_2024'
@@ -702,40 +702,13 @@ async function handleRequest(req, res, pathname, url) {
         }
         // ========== Whisper 语音识别相关 ==========
         else if (pathname === '/api/whisper/status' && req.method === 'GET') {
-            // 检查 Whisper 模型是否可用
-            console.log('[Whisper API] 检查状态...');
-            subtitleGenerator.checkWhisperAvailable().then(async whisperStatus => {
-                console.log('[Whisper API] 检查结果:', whisperStatus);
-
-                // 获取更多信息
-                const ffmpegAvailable = await checkFfmpegAvailable();
-                const tempDir = subtitleGenerator.tempDir;
-                const tempDirStats = fs.existsSync(tempDir) ?
-                    (fs.readdirSync(tempDir).length + ' 个文件') : '不存在';
-
-                sendJSON(res, {
-                    available: whisperStatus.available,
-                    ffmpeg: ffmpegAvailable,
-                    model: CONFIG.subtitle.model,
-                    modelPath: CONFIG.subtitle.modelPath || '默认',
-                    whisperPath: CONFIG.subtitle.whisperPath || 'whisper',
-                    detectedCommand: whisperStatus.command,
-                    tempDir: tempDir,
-                    tempDirStats: tempDirStats,
-                    languages: ['zh', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'ru'],
-                    version: '1.0.0',
-                    message: whisperStatus.available ? 'Whisper 可用' : 'Whisper 未安装或未配置到 PATH，建议安装 openai-whisper 或检查 Python/py 命令。'
-                });
-            }).catch(err => {
-                console.error('[Whisper API] 检查失败:', err);
-                sendJSON(res, {
-                    available: false,
-                    ffmpeg: false,
-                    model: CONFIG.subtitle.model,
-                    languages: ['zh', 'en', 'ja', 'ko'],
-                    error: err.message,
-                    message: '状态检查失败'
-                });
+            // 检查 Whisper 模型是否可用（暂时返回未实现）
+            console.log('[Whisper API] 功能待实现');
+            sendJSON(res, {
+                available: false,
+                ffmpeg: await checkFfmpegAvailable(),
+                model: CONFIG.subtitle?.model || 'N/A',
+                message: 'Whisper 功能尚未在后端实现，请使用 Tauri 应用的 Whisper 功能'
             });
         }
         // 视频上传
@@ -1420,9 +1393,10 @@ if (!fs.existsSync(CONFIG.dataDir)) {
     const ffmpegAvailable = await checkFfmpegAvailable();
     console.log(ffmpegAvailable ? '  ✓ FFmpeg 可用' : '  ✗ FFmpeg 不可用');
 
-    // 检查 Whisper
-    const whisperAvailable = await checkWhisperAvailableEnhanced();
-    console.log(whisperAvailable ? '  ✓ Whisper 可用' : '  ✗ Whisper 不可用');
+    // 检查 Whisper（暂时禁用，等待 subtitleGenerator 模块实现）
+    // const whisperAvailable = await subtitleGenerator.checkWhisperAvailable();
+    // console.log(whisperAvailable.available ? '  ✓ Whisper 可用' : '  ✗ Whisper 不可用');
+    console.log('  ⚠️  Whisper 功能待实现');
 
     console.log();
 })();

@@ -54,6 +54,7 @@ async function initTauriFeatures() {
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       const { primaryMonitor } = await import('@tauri-apps/api/window');
+      const { LogicalSize, LogicalPosition } = await import('@tauri-apps/api/dpi');
 
       const appWindow = getCurrentWindow();
 
@@ -61,22 +62,37 @@ async function initTauriFeatures() {
       const monitor = await primaryMonitor();
 
       if (monitor) {
-        // 获取工作区域（排除任务栏）和屏幕尺寸
-        const workArea = monitor.workArea || monitor.size;
+        // Tauri v2: monitor.workArea 和 monitor.size 都是 { width, height } 对象
+        // workArea 可能包含 position: { x, y }
         const screenSize = monitor.size;
+        const workArea = monitor.workArea || monitor.size;
 
-        console.log(`[App] 屏幕尺寸: ${screenSize.width}x${screenSize.height}`);
-        console.log(`[App] 工作区域: ${workArea.width}x${workArea.height}`);
+        // 安全获取尺寸值（兼容不同返回格式）
+        const screenW = screenSize?.width ?? 0;
+        const screenH = screenSize?.height ?? 0;
+        const workW = workArea?.width ?? screenW;
+        const workH = workArea?.height ?? screenH;
+        const workX = workArea?.position?.x ?? 0;
+        const workY = workArea?.position?.y ?? 0;
+
+        console.log(`[App] 屏幕尺寸: ${screenW}x${screenH}`);
+        console.log(`[App] 工作区域: ${workW}x${workH}`);
 
         // 计算任务栏高度
-        const taskbarHeight = screenSize.height - workArea.height;
+        const taskbarHeight = screenH - workH;
         console.log(`[App] 任务栏高度: ${taskbarHeight}px`);
 
-        // 设置 CSS 变量供组件使用
-        document.documentElement.style.setProperty('--taskbar-height', `${taskbarHeight}px`);
-        document.documentElement.style.setProperty('--safe-viewport-height', `${workArea.height}px`);
+        // 设置 CSS 变量供组件使用（仅在有效值时设置）
+        if (taskbarHeight > 0 && !isNaN(taskbarHeight)) {
+          document.documentElement.style.setProperty('--taskbar-height', `${taskbarHeight}px`);
+        } else {
+          document.documentElement.style.setProperty('--taskbar-height', '0px');
+        }
+        if (workH > 0 && !isNaN(workH)) {
+          document.documentElement.style.setProperty('--safe-viewport-height', `${workH}px`);
+        }
 
-        console.log(`[App] 已设置CSS变量: --taskbar-height=${taskbarHeight}px, --safe-viewport-height=${workArea.height}px`);
+        console.log(`[App] 已设置CSS变量: --taskbar-height=${taskbarHeight}px, --safe-viewport-height=${workH}px`);
 
         // 🎯 关键：强制调整窗口大小以匹配工作区域
         try {
@@ -85,35 +101,18 @@ async function initTauriFeatures() {
 
           console.log(`[App] 当前窗口: ${currentSize.width}x${currentSize.height} @ (${currentPosition.x}, ${currentPosition.y})`);
 
-          // 🎯 修复：Tauri v2 setSize API 需要正确的 LogicalSize 对象格式
-          // 方法1：使用 LogicalSize 构造函数（如果可用）
-          let sizeObj;
-          if (typeof window.__TAURI__.window.LogicalSize === 'function') {
-            sizeObj = new window.__TAURI__.window.LogicalSize(workArea.width, workArea.height);
+          // 🎯 修复：Tauri v2 使用 LogicalSize 和 LogicalPosition（从 @tauri-apps/api/dpi 导入）
+          if (workW > 0 && workH > 0) {
+            const sizeObj = new LogicalSize(workW, workH);
+            await appWindow.setSize(sizeObj);
+
+            const positionObj = new LogicalPosition(workX, workY);
+            await appWindow.setPosition(positionObj);
+
+            console.log(`[App] 已调整窗口到工作区域: ${workW}x${workH} @ (${workX}, ${workY})`);
           } else {
-            // 方法2：直接传递对象（Tauri v2 新 API）
-            sizeObj = { width: workArea.width, height: workArea.height };
+            console.warn('[App] 工作区域尺寸无效，跳过窗口调整');
           }
-
-          await appWindow.setSize(sizeObj);
-
-          // 设置窗口位置
-          let positionObj;
-          if (typeof window.__TAURI__.window.LogicalPosition === 'function') {
-            positionObj = new window.__TAURI__.window.LogicalPosition(
-              workArea.position ? workArea.position.x : 0,
-              workArea.position ? workArea.position.y : 0
-            );
-          } else {
-            positionObj = {
-              x: workArea.position ? workArea.position.x : 0,
-              y: workArea.position ? workArea.position.y : 0
-            };
-          }
-
-          await appWindow.setPosition(positionObj);
-
-          console.log(`[App] 已调整窗口到工作区域: ${workArea.width}x${workArea.height}`);
         } catch (resizeError) {
           console.warn('[App] 调整窗口尺寸失败:', resizeError);
         }

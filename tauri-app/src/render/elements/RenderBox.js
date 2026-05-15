@@ -2,6 +2,12 @@
  * RenderBox - 视频盒子
  * 用于渲染视频流和图像内容
  */
+
+// 🎯 帧去重：WeakMap<HTMLVideoElement, number> — 缓存每个 videoElement
+// 上次画布绘制时所使用的 video.currentTime，避免同一帧重复绘制。
+// WeakMap 确保 videoElement 被回收后条目自动释放，无内存泄漏风险。
+const _lastDrawnVideoTimes = new WeakMap();
+
 import { RenderElement } from '../RenderElement.js';
 
 export class RenderBox extends RenderElement {
@@ -42,6 +48,8 @@ export class RenderBox extends RenderElement {
     this._isPlaying = false;
     this._isMuted = true; // 默认静音，需要用户在音频管理中手动开启
     this._volume = 1;
+
+    // 帧去重 keyed by videoElement → lastDrawnTime（模块级 WeakMap，不创建耦合）
 
     console.log(`[RenderBox] 创建视频盒子: ${this._id}`);
   }
@@ -396,14 +404,35 @@ export class RenderBox extends RenderElement {
 
   /**
    * 绘制视频
+   * 🎯 修复：当 video.currentTime 没有变化时跳过 drawImage，避免
+   * 渲染循环与视频刷新不同步导致的时序滞后和无效 GPU 上传
    */
   _drawVideo(context) {
     if (!this._videoElement) return;
+
+    // video 元素至少要 HAVE_CURRENT_DATA(2) 才能渲染
+    if (this._videoElement.readyState < 2) return;
+
+    const isPaused = this._videoElement.paused;
+    const currentTime = this._videoElement.currentTime;
+
+    // 不可见/透明时直接跳过
+    if (!this._visible || this._opacity <= 0) return;
+
+    // 帧去重：正常工作（非暂停）时，若 currentTime 未前进则跳过绘制
+    if (!isPaused) {
+      const lastDrawn = _lastDrawnVideoTimes.get(this._videoElement);
+      if (lastDrawn !== undefined && currentTime <= lastDrawn) return;
+    }
 
     const { drawX, drawY, drawWidth, drawHeight } = this._calculateDrawArea();
 
     try {
       context.drawImage(this._videoElement, drawX, drawY, drawWidth, drawHeight);
+
+      if (!isPaused) {
+        _lastDrawnVideoTimes.set(this._videoElement, currentTime);
+      }
     } catch (error) {
       console.warn(`[RenderBox] 绘制视频失败:`, error);
     }

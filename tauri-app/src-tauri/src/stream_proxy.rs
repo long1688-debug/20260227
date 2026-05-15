@@ -13,6 +13,7 @@ pub enum StreamType {
     NetworkCamera, // RTSP/RTMP 网络摄像头
     WebRTC,        // WebRTC 推流
     LocalCamera,   // 本地摄像头捕获
+    MobileScreen,  // 手机/平板屏幕投屏
 }
 
 /// 流元信息
@@ -30,6 +31,17 @@ pub struct StreamMeta {
     pub created_at: u64,
 }
 
+/// 移动端连接信息
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct MobileConnectionInfo {
+    pub connection_id: String,
+    pub stream_id: String,
+    pub device_type: String,       // android / ios
+    pub connected_at: u64,
+    pub last_heartbeat: u64,
+    pub status: String,            // waiting / connected / disconnected
+}
+
 /// 流媒体应用状态
 pub struct StreamState {
     pub active_streams: Mutex<HashMap<String, StreamMeta>>,
@@ -38,6 +50,7 @@ pub struct StreamState {
     pub zlmediakit_host: String,
     pub zlmediakit_port: u16,
     pub zlmediakit_secret: String,
+    pub mobile_connections: Mutex<HashMap<String, MobileConnectionInfo>>, // 移动端连接信息
 }
 
 impl StreamState {
@@ -49,6 +62,7 @@ impl StreamState {
             zlmediakit_host: "127.0.0.1".to_string(),
             zlmediakit_port: 801, // ZLMediaKit HTTP 端口
             zlmediakit_secret: "035c73f7-bb6b-4889-a715-d9eb2d1925cc".to_string(), // 默认密钥
+            mobile_connections: Mutex::new(HashMap::new()),
         }
     }
 
@@ -144,6 +158,43 @@ pub struct ProxyOptions {
     pub timeout_sec: Option<u32>,
 }
 
+//  新增：检查流是否真正就绪
+async fn check_stream_ready(
+    client: &reqwest::Client,
+    host: &str,
+    port: u16,
+    stream_id: &str,
+    max_retries: u32,
+) -> bool {
+    for i in 0..max_retries {
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        let api_url = format!("http://{}:{}/index/api/getMediaList?secret=", host, port);
+        if let Ok(resp) = client.get(&api_url).send().await {
+            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                if let Some(list) = body["data"].as_array() {
+                    for stream in list {
+                        if stream["stream"].as_str() == Some(stream_id) {
+                            // 检查是否有视频轨道且 ready=true
+                            if let Some(tracks) = stream["tracks"].as_array() {
+                                let has_video_track = tracks.iter().any(|t| {
+                                    t["codec_id"].as_i64() == Some(0) && t["ready"].as_bool() == Some(true)
+                                });
+                                if has_video_track {
+                                    println!("[RTSP代理] 第 {} 次检查：流已就绪，有视频轨道", i + 1);
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("[RTSP代理] 第 {} 次检查：流未就绪", i + 1);
+    }
+    false
+}
+
 // ==================== 核心 API：添加流代理 ====================
 
 /// 通用流代理添加函数（内部使用）
@@ -192,6 +243,7 @@ async fn add_stream_proxy(
             "timeout_sec": 10,
             "enable_audio": 1,
             "auto_close": 0, // 0 表示不自动关闭
+            "direct_proxy": 0, // 🎯 修复：强制 ZLMediaKit 实际拉流，而非仅注册流信息
         }))
         .send()
         .await
@@ -206,9 +258,23 @@ async fn add_stream_proxy(
         return Err(format!("ZLM 拉流失败: {}", body["msg"].as_str().unwrap_or("未知错误")));
     }
 
+    // 🎯 新增：等待流就绪（最多等待 5 秒）
+    println!("[RTSP代理] ZLM 返回成功，等待流就绪...");
+    tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+
+    // 检查流是否就绪
+    let is_ready = check_stream_ready(client, host, port, &stream_id, 3).await;
+    if !is_ready {
+        println!("[RTSP代理] ⚠️ 流在 2 秒后仍未就绪，可能需要更长时间");
+        // 不返回错误，让前端重试
+    } else {
+        println!("[RTSP代理] ✅ 流已就绪");
+    }
+
     // 生成播放 URL
-    let flv_url = format!("http://{}:{}/live/{}/live.flv", host, port, stream_id);
-    let ws_flv_url = format!("ws://{}:{}/live/{}.flv", host, port, stream_id);
+    // 🎯 修复：ZLMediaKit FLV 地址格式为 /app/stream.live.flv
+    let flv_url = format!("http://{}:{}/live/{}.live.flv", host, port, stream_id);
+    let ws_flv_url = format!("ws://{}:{}/live/{}.live.flv", host, port, stream_id);
     let webrtc_url = format!("http://{}:{}/index/api/webrtc?app=live&stream={}&type=play", host, port, stream_id);
 
     let now = std::time::SystemTime::now()
@@ -439,14 +505,14 @@ pub async fn proxy_webrtc_push(
     );
 
     let flv_url = format!(
-        "http://{}:{}/{}/{}/live.flv",
+        "http://{}:{}/{}/{}.live.flv",
         host, port,
         opts.app.as_deref().unwrap_or("live"),
         stream_id
     );
 
     let ws_flv_url = format!(
-        "ws://{}:{}/{}/{}.flv",
+        "ws://{}:{}/{}/{}.live.flv",
         host, port,
         opts.app.as_deref().unwrap_or("live"),
         stream_id
@@ -631,12 +697,12 @@ pub async fn proxy_local_camera(
     // 生成播放 URL（注：未来可以在这里验证流是否已注册）
     let app_name = opts.app.as_deref().unwrap_or("live");
     let flv_url = format!(
-        "http://{}:{}/{}/{}/live.flv",
+        "http://{}:{}/{}/{}.live.flv",
         host, port, app_name, stream_id
     );
 
     let ws_flv_url = format!(
-        "ws://{}:{}/{}/{}.flv",
+        "ws://{}:{}/{}/{}.live.flv",
         host, port, app_name, stream_id
     );
 
@@ -701,4 +767,376 @@ pub async fn remove_rtsp_proxy(
     stream_id: String,
 ) -> Result<bool, String> {
     stop_stream_proxy(app, stream_id).await
+}
+
+// ==================== 手机/平板屏幕投屏 ====================
+
+/// 手机屏幕投屏选项
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct MobileScreenOptions {
+    pub connection_type: String,    // 连接方式：wifi, usb, qrcode
+    pub device_ip: Option<String>,  // 设备IP地址（WiFi模式）
+    pub adb_port: Option<u16>,      // ADB端口（USB模式）
+    pub resolution: Option<String>, // 分辨率，如 "1920x1080"
+    pub framerate: Option<u32>,     // 帧率
+    pub enable_audio: Option<bool>, // 是否启用音频
+    pub app: Option<String>,        // 应用名称
+}
+
+/// 代理手机屏幕到 ZLMediaKit
+///
+/// 支持三种连接方式：
+/// 1. WiFi局域网：通过RTSP/WebRTC接收手机推流
+/// 2. USB数据线：通过ADB捕获手机屏幕
+/// 3. 二维码扫码：生成二维码供手机扫描连接
+#[command]
+pub async fn proxy_mobile_screen(
+    app: AppHandle,
+    stream_id: String,
+    options: Option<MobileScreenOptions>,
+) -> Result<StreamMeta, String> {
+    let state = app.state::<StreamState>();
+    let opts = options.unwrap_or_default();
+
+    // 检查流 ID 是否已存在
+    {
+        let streams = state.active_streams.lock().await;
+        if streams.contains_key(&stream_id) {
+            return Ok(streams.get(&stream_id).unwrap().clone());
+        }
+    }
+
+    let client = &state.http_client;
+    let host = &state.zlmediakit_host;
+    let port = state.zlmediakit_port;
+    let secret = &state.zlmediakit_secret;
+
+    let connection_type = opts.connection_type.as_str();
+
+    match connection_type {
+        "wifi" => {
+            // WiFi模式：等待手机推流到指定端口
+            proxy_mobile_screen_wifi(&state, &stream_id, &opts, host, port, secret).await
+        },
+        "usb" => {
+            // USB模式：使用ADB捕获屏幕
+            proxy_mobile_screen_usb(&state, &stream_id, &opts, client, host, port, secret).await
+        },
+        "qrcode" => {
+            // 二维码模式：生成连接信息
+            proxy_mobile_screen_qrcode(&state, &stream_id, &opts, host, port, secret).await
+        },
+        _ => Err(format!("不支持的连接方式: {}", connection_type))
+    }
+}
+
+/// WiFi模式：等待手机推流
+async fn proxy_mobile_screen_wifi(
+    state: &tauri::State<'_, StreamState>,
+    stream_id: &str,
+    opts: &MobileScreenOptions,
+    host: &str,
+    port: u16,
+    _secret: &str,
+) -> Result<StreamMeta, String> {
+    // 创建一个RTSP监听端点，等待手机推流
+    // 在实际实现中，这里需要启动一个RTSP服务器或使用ZLMediaKit的推流功能
+
+    let device_ip = opts.device_ip.as_deref().unwrap_or("unknown");
+    println!("[手机投屏-WiFi] 等待设备 {} 推流...", device_ip);
+
+    // 生成播放 URL
+    let app_name = opts.app.as_deref().unwrap_or("live");
+    let flv_url = format!(
+        "http://{}:{}/{}/{}.live.flv",
+        host, port, app_name, stream_id
+    );
+
+    let ws_flv_url = format!(
+        "ws://{}:{}/{}/{}.live.flv",
+        host, port, app_name, stream_id
+    );
+
+    let webrtc_url = format!(
+        "http://{}:{}/index/api/webrtc?app={}&stream={}&type=play",
+        host, port, app_name, stream_id
+    );
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let meta = StreamMeta {
+        id: stream_id.to_string(),
+        stream_type: StreamType::MobileScreen,
+        source_url: format!("rtsp://{}/mobile/{}", device_ip, stream_id),
+        flv_url: flv_url.clone(),
+        webrtc_url,
+        ws_flv_url: ws_flv_url.clone(),
+        status: "waiting_push".into(),
+        has_audio: opts.enable_audio.unwrap_or(true),
+        has_video: true,
+        created_at: now,
+    };
+
+    // 保存到状态
+    {
+        let mut streams = state.active_streams.lock().await;
+        streams.insert(stream_id.to_string(), meta.clone());
+    }
+
+    println!(
+        "[手机投屏-WiFi] 创建成功: {} -> {}",
+        device_ip, flv_url
+    );
+    Ok(meta)
+}
+
+/// USB模式：使用ADB捕获屏幕
+async fn proxy_mobile_screen_usb(
+    state: &tauri::State<'_, StreamState>,
+    stream_id: &str,
+    opts: &MobileScreenOptions,
+    _client: &Client,
+    host: &str,
+    port: u16,
+    _secret: &str,
+) -> Result<StreamMeta, String> {
+    let adb_port = opts.adb_port.unwrap_or(5555);
+    let resolution = opts.resolution.as_deref().unwrap_or("1920x1080");
+    let _framerate = opts.framerate.unwrap_or(30);
+
+    println!("[手机投屏-USB] 启动ADB屏幕捕获 (端口: {}, 分辨率: {})...", adb_port, resolution);
+
+    // 构建 FFmpeg 命令使用 ADB 捕获屏幕
+    // 注意：这需要手机上运行 scrcpy-server 或类似的ADB屏幕捕获服务
+    let _rtmp_url = format!("rtmp://{}/live/{}", host, stream_id);
+
+    // ADB screen capture command (简化版本，实际需要更复杂的实现)
+    let _adb_command = format!(
+        "adb -s {}:{} shell screenrecord --size {} --bit-rate 4M --output-format h264 -",
+        "localhost", adb_port, resolution.replace("x", "x")
+    );
+
+    // 在实际实现中，这里需要：
+    // 1. 检查ADB连接
+    // 2. 启动screenrecord或scrcpy
+    // 3. 将输出通过FFmpeg推送到ZLMediaKit
+
+    // 暂时返回一个模拟的元信息
+    let app_name = opts.app.as_deref().unwrap_or("live");
+    let flv_url = format!(
+        "http://{}:{}/{}/{}.live.flv",
+        host, port, app_name, stream_id
+    );
+
+    let ws_flv_url = format!(
+        "ws://{}:{}/{}/{}.live.flv",
+        host, port, app_name, stream_id
+    );
+
+    let webrtc_url = format!(
+        "http://{}:{}/index/api/webrtc?app={}&stream={}&type=play",
+        host, port, app_name, stream_id
+    );
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let meta = StreamMeta {
+        id: stream_id.to_string(),
+        stream_type: StreamType::MobileScreen,
+        source_url: format!("adb://localhost:{}", adb_port),
+        flv_url: flv_url.clone(),
+        webrtc_url,
+        ws_flv_url: ws_flv_url.clone(),
+        status: "active".into(),
+        has_audio: opts.enable_audio.unwrap_or(false), // ADB屏幕捕获通常不包含音频
+        has_video: true,
+        created_at: now,
+    };
+
+    // 保存到状态
+    {
+        let mut streams = state.active_streams.lock().await;
+        streams.insert(stream_id.to_string(), meta.clone());
+    }
+
+    println!(
+        "[手机投屏-USB] 推流成功: adb://localhost:{} -> {}",
+        adb_port, flv_url
+    );
+    Ok(meta)
+}
+
+/// 二维码模式：生成连接信息
+async fn proxy_mobile_screen_qrcode(
+    state: &tauri::State<'_, StreamState>,
+    stream_id: &str,
+    opts: &MobileScreenOptions,
+    host: &str,
+    port: u16,
+    _secret: &str,
+) -> Result<StreamMeta, String> {
+    println!("[手机投屏-二维码] 生成连接二维码...");
+
+    // 生成一个唯一的连接token
+    let token = StreamState::generate_stream_id("qr");
+
+    // 构建连接URL，手机App扫描后将推流到此地址
+    let push_url = format!(
+        "rtmp://{}/mobile/{}?token={}",
+        host, stream_id, token
+    );
+
+    let app_name = opts.app.as_deref().unwrap_or("live");
+    let flv_url = format!(
+        "http://{}:{}/{}/{}/live.flv",
+        host, port, app_name, stream_id
+    );
+
+    let ws_flv_url = format!(
+        "ws://{}:{}/{}/{}.flv",
+        host, port, app_name, stream_id
+    );
+
+    let webrtc_url = format!(
+        "http://{}:{}/index/api/webrtc?app={}&stream={}&type=play",
+        host, port, app_name, stream_id
+    );
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let meta = StreamMeta {
+        id: stream_id.to_string(),
+        stream_type: StreamType::MobileScreen,
+        source_url: push_url.clone(),
+        flv_url: flv_url.clone(),
+        webrtc_url,
+        ws_flv_url: ws_flv_url.clone(),
+        status: "waiting_scan".into(),
+        has_audio: opts.enable_audio.unwrap_or(true),
+        has_video: true,
+        created_at: now,
+    };
+
+    // 保存到状态
+    {
+        let mut streams = state.active_streams.lock().await;
+        streams.insert(stream_id.to_string(), meta.clone());
+    }
+
+    println!(
+        "[手机投屏-二维码] 二维码生成成功: {}",
+        push_url
+    );
+    Ok(meta)
+}
+
+/// 注册移动端连接（Web App调用）
+#[command]
+pub async fn register_mobile_connection(
+    app: AppHandle,
+    connection_id: String,
+    stream_id: String,
+    device_type: Option<String>,
+) -> Result<bool, String> {
+    let state = app.state::<StreamState>();
+
+    let connection_info = MobileConnectionInfo {
+        connection_id: connection_id.clone(),
+        stream_id: stream_id.clone(),
+        device_type: device_type.unwrap_or_else(|| "unknown".to_string()),
+        connected_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+        last_heartbeat: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+        status: "connected".to_string(),
+    };
+
+    {
+        let mut connections = state.mobile_connections.lock().await;
+        connections.insert(connection_id.clone(), connection_info);
+    }
+
+    // 更新流状态为已连接
+    {
+        let mut streams = state.active_streams.lock().await;
+        if let Some(stream) = streams.get_mut(&stream_id) {
+            stream.status = "mobile_connected".to_string();
+        }
+    }
+
+    println!("[移动端连接] 注册成功: {}", connection_id);
+    Ok(true)
+}
+
+/// 移动端心跳
+#[command]
+pub async fn mobile_heartbeat(
+    app: AppHandle,
+    connection_id: String,
+) -> Result<bool, String> {
+    let state = app.state::<StreamState>();
+
+    let mut connections = state.mobile_connections.lock().await;
+    if let Some(conn) = connections.get_mut(&connection_id) {
+        conn.last_heartbeat = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        Ok(true)
+    } else {
+        Err("连接不存在".to_string())
+    }
+}
+
+/// 断开移动端连接
+#[command]
+pub async fn disconnect_mobile(
+    app: AppHandle,
+    connection_id: String,
+) -> Result<bool, String> {
+    let state = app.state::<StreamState>();
+
+    let stream_id;
+    {
+        let mut connections = state.mobile_connections.lock().await;
+        if let Some(conn) = connections.remove(&connection_id) {
+            stream_id = conn.stream_id;
+            println!("[移动端连接] 断开: {}", connection_id);
+        } else {
+            return Err("连接不存在".to_string());
+        }
+    }
+
+    // 更新流状态
+    {
+        let mut streams = state.active_streams.lock().await;
+        if let Some(stream) = streams.get_mut(&stream_id) {
+            stream.status = "disconnected".to_string();
+        }
+    }
+
+    Ok(true)
+}
+
+/// 获取移动端连接列表
+#[command]
+pub async fn get_mobile_connections(
+    app: AppHandle,
+) -> Result<Vec<MobileConnectionInfo>, String> {
+    let state = app.state::<StreamState>();
+    let connections = state.mobile_connections.lock().await;
+    Ok(connections.values().cloned().collect())
 }

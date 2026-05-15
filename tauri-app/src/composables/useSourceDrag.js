@@ -110,6 +110,9 @@ export function useSourceDrag(options = {}) {
       return null;
     }
 
+    // 🎯 关键修复：保留原始streamId，让预览和画布共享同一个RTSP代理流
+    const originalStreamId = source.streamId || (source.id ? `camera_${source.id.split('_').pop()}` : null);
+
     // 创建克隆
     const newId = `${source.id}_canvas_${Date.now()}`;
     const clonedSource = {
@@ -118,6 +121,7 @@ export function useSourceDrag(options = {}) {
       canvasIndex, // 标记属于哪个画布
       isClone: true, // 标记为克隆
       addedToPreview: false, // 🎯 关键修复:克隆源不应显示在预览区域
+      originalStreamId: originalStreamId, // 🎯 保留原始streamId，用于复用RTSP代理
     };
 
     // 如果是摄像头流,需要特殊处理

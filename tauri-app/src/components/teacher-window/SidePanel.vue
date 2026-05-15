@@ -156,7 +156,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Grid, VideoCamera, Notebook, Monitor, Document, Film, Microphone, VideoPause, VideoPlay, VideoMeeting } from '@/components/icons';
+import { Grid, VideoCamera, Notebook, Monitor, Document, Film, Microphone, VideoPause, VideoPlay, VideoMeeting, Search } from '@/components/icons';
 import SubtitlePanel from './panels/SubtitlePanel.vue';
 import WebPanel from './panels/WebPanel.vue';
 import LayoutPanel from './panels/LayoutPanel.vue';
@@ -282,7 +282,7 @@ const handleTabClick = (tab) => {
       // 打开智能分析弹窗
       showVisionDialog.value = true
     } else {
-      // 只触发弹窗，不切换 tab
+      // 触发添加信号源对话框（包含网络摄像机扫描功能）
       console.log('[SidePanel] 触发 show-add-source-dialog 事件')
       window.dispatchEvent(new CustomEvent('show-add-source-dialog'))
     }

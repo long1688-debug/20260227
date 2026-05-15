@@ -26,6 +26,9 @@ mod video_layout;
 mod fire_detection;
 mod camera_discovery;
 mod rtsp_stream;
+mod rtsp_validator;
+mod rtsp_proxy_manager;
+mod camera_database;  // 🎯 网络摄像机数据库管理
 
 use tauri::Manager;
 use commands::*;
@@ -59,6 +62,9 @@ use utils::video_policy::{
 use document_converter::*;
 use video_layout::*;
 use fire_detection::*;
+use rtsp_validator::*;
+use rtsp_proxy_manager::*;
+use camera_database::*;  // 🎯 网络摄像机数据库管理
 
 fn main() {
     tauri::Builder::default()
@@ -66,6 +72,7 @@ fn main() {
         .manage(ServerState::default())
         .manage(StreamState::new())
         .manage(ZLMediaKitState::new())
+        .manage(RtspProxyState::new())
         .manage(AudioCaptureState::new())
         .manage(SpeechRecognitionState::new())
         .manage(WhisperState::new())
@@ -140,6 +147,25 @@ fn main() {
             stop_zlmediakit,
             check_zlmediakit_status,
 
+            // 🆕 RTSP Proxy 服务管理（Node.js）
+            start_rtsp_proxy,
+            stop_rtsp_proxy,
+            check_rtsp_proxy_status,
+            start_rtsp_stream_proxy,
+            stop_rtsp_stream_proxy,
+            get_rtsp_streams,
+
+            // 🎯 网络摄像机数据库管理
+            init_camera_database,
+            save_camera_config,
+            get_all_cameras,
+            get_camera_by_id,
+            delete_camera_config,
+            update_camera_status,
+            get_online_camera_count,
+            get_offline_camera_count,
+            start_camera_status_monitor,  // 🎯 启动状态监控服务
+
             // 流媒体代理（ZLMediaKit）
             add_rtsp_proxy,
             remove_rtsp_proxy,
@@ -156,6 +182,9 @@ fn main() {
             // 本地摄像头代理
             proxy_local_camera,
 
+            // 手机/平板屏幕投屏
+            proxy_mobile_screen,
+
             // ONVIF 云台控制（旧版兼容）
             onvif_ptz,
             onvif_ptz_stop,
@@ -171,6 +200,14 @@ fn main() {
             onvif_discover_devices,
             ptz_register_device,
             ptz_list_devices,
+            get_camera_details,
+            update_camera_config,
+            remove_camera_device,
+            get_onvif_stream_uri,
+            try_common_rtsp_templates,  // 🎯 新增：通用RTSP模板备选方案
+            detect_onvif_services,  // 🎯 新增：ONVIF服务路径检测
+            test_onvif_connection,
+            test_tcp_connection,  // 🎯 新增：TCP连接测试
 
             // 音频捕获
             start_audio_capture,
@@ -274,19 +311,37 @@ fn main() {
             scan_local_subnet,
             scan_local_subnet_with_progress,
             scan_all_network_interfaces,
+            scan_specific_subnets,
             discover_all_cameras,
             get_local_ip,
             get_network_interfaces_info,
-            
-            // 🎯 GB/T 28181 和厂商协议发现
-            discover_gb28181_devices,
-            discover_vendor_cameras,
 
             // 🎯 RTSP 流管理
             start_rtsp_stream,
             stop_rtsp_stream,
             get_active_rtsp_sessions,
+
+            // 📱 移动端连接管理
+            register_mobile_connection,
+            mobile_heartbeat,
+            disconnect_mobile,
+            get_mobile_connections,
+
+            // 🔍 RTSP 地址验证
+            validate_rtsp_address,
+            try_multiple_rtsp_templates_cmd,
         ])
+        .setup(|app| {
+            // 🎯 初始化摄像机数据库
+            println!("[Main] 初始化网络摄像机数据库...");
+            let db = CameraDatabase::new(None).map_err(|e| {
+                eprintln!("[Main] ❌ 数据库初始化失败: {}", e);
+                e.to_string()
+            })?;
+            app.manage(db);
+            println!("[Main] ✅ 网络摄像机数据库初始化成功");
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

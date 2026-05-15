@@ -21,8 +21,8 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',  // 允许外部访问
-    port: 5174,
-    strictPort: true,
+    port: 5181,  // 修改为5181避免端口冲突（5180已被占用）
+    strictPort: false,  // 允许自动切换到下一个可用端口
     historyApiFallback: true,
     proxy: {
       '/api': {

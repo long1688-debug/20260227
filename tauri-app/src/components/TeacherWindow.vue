@@ -2023,6 +2023,17 @@ const getVisibleCanvasIndices = (layout) => {
   return [1];
 }
 
+// 🎯 查找第一个可用的画布格子（没有被映射的格子）
+const findFirstAvailableCanvasSlot = () => {
+  const visibleIndices = getVisibleCanvasIndices(currentLayout.value);
+  for (const index of visibleIndices) {
+    if (!canvasSourceMap.value[index]) {
+      return index;
+    }
+  }
+  return -1; // 没有可用格子
+}
+
 // ============================================
 // 布局切换处理
 // ============================================
@@ -3320,25 +3331,25 @@ const loadLocalCameraDevices = async () => {
   try {
     console.log('[本地摄像头] 开始加载设备列表...')
 
-    // 先尝试获取设备列表（即使没有权限也能获取设备数量，只是名称会被隐藏）
-    let devices
+    // 🎯 必须先请求摄像头权限，否则enumerateDevices返回的设备没有label
     try {
-      devices = await navigator.mediaDevices.enumerateDevices()
-      console.log('[本地摄像头] 设备列表获取成功')
-    } catch (enumError) {
-      console.error('[本地摄像头] 设备列表获取失败:', enumError)
-      // 如果 enumerateDevices 失败，尝试先请求权限
-      try {
-        await navigator.mediaDevices.getUserMedia({ video: true })
-        console.log('[本地摄像头] 摄像头权限已获取')
-        devices = await navigator.mediaDevices.enumerateDevices()
-      } catch (permError) {
-        console.error('[本地摄像头] 权限请求也失败:', permError)
-        ElMessage.warning('无法获取摄像头权限，部分功能可能受限')
-        localDevices.value = []
-        return
-      }
+      console.log('[本地摄像头] 请求摄像头权限...')
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      console.log('[本地摄像头] 摄像头权限已获取')
+
+      // 立即停止测试流，释放设备
+      stream.getTracks().forEach(track => track.stop())
+      console.log('[本地摄像头] 测试流已停止')
+    } catch (permError) {
+      console.error('[本地摄像头] 权限请求失败:', permError)
+      ElMessage.error('无法获取摄像头权限，请检查：\n1. 浏览器是否允许摄像头访问\n2. 系统设置中是否授予摄像头权限\n3. 是否有其他程序占用摄像头')
+      localDevices.value = []
+      return
     }
+
+    // 获取设备列表（有权限后能获取到完整的label）
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    console.log('[本地摄像头] 设备列表获取成功')
 
     // 获取所有视频输入设备
     const videoDevices = devices.filter(device => device.kind === 'videoinput')
@@ -3346,11 +3357,10 @@ const loadLocalCameraDevices = async () => {
     localDevices.value = videoDevices
 
     console.log('[本地摄像头] 加载完成:', videoDevices.length, '个设备')
-    console.log('[本地摄像头] 设备列表:', videoDevices)
+    console.log('[本地摄像头] 设备列表:', videoDevices.map(d => ({ label: d.label, deviceId: d.deviceId })))
 
     if (videoDevices.length === 0) {
       console.warn('[本地摄像头] 未检测到摄像头设备')
-      // 提供更详细的排查建议
       ElMessage.warning('未检测到USB摄像头设备，请检查：\n1. 摄像头是否正确连接\n2. 摄像头驱动是否已安装\n3. 是否有其他程序正在使用摄像头')
     } else {
       ElMessage.success(`成功加载 ${videoDevices.length} 个摄像头设备`)
@@ -3682,9 +3692,27 @@ const handleShowNetworkDetail = (detail) => {
 
 // 🎯 切换最大化状态（处理来自 VideoSection 的事件）
 const handleToggleMaximize = (index) => {
-  console.log('[TeacherWindow] 切换最大化状态, index:', index)
-  // TODO: 实现具体的最大化逻辑
-  // 这里可以根据需求实现全屏、画中画等功能
+  console.log('[TeacherWindow] 切换最大化状态, index:', index, '当前:', isMaximized.value, maximizedIndex.value)
+
+  // 状态机逻辑：切换最大化状态
+  if (isMaximized.value) {
+    // 当前已最大化
+    if (maximizedIndex.value === index) {
+      // 双击同一个格子：退出最大化
+      console.log('[TeacherWindow] 退出全屏模式')
+      isMaximized.value = false
+      maximizedIndex.value = null
+    } else {
+      // 双击不同格子：切换到新的格子最大化
+      console.log('[TeacherWindow] 切换到格子', index, '全屏')
+      maximizedIndex.value = index
+    }
+  } else {
+    // 当前没有最大化：进入最大化模式
+    console.log('[TeacherWindow] 进入全屏模式，格子:', index)
+    isMaximized.value = true
+    maximizedIndex.value = index
+  }
 }
 
 // 打开重命名对话框
@@ -3703,6 +3731,179 @@ const handleRefreshSources = async () => {
   } catch (error) {
     console.error('[TeacherWindow] 刷新信号源失败:', error)
     ElMessage.error('刷新失败: ' + error.message)
+  }
+}
+
+// 🎯 手机屏幕捕获功能
+async function startMobileScreenCapture(source) {
+  console.log('[TeacherWindow] 开始手机屏幕捕获:', source)
+
+  try {
+    // 根据连接方式选择不同的捕获方法
+    if (source.connectionType === 'wifi') {
+      // WiFi局域网连接 - 使用WebRTC或RTSP流
+      return await captureMobileScreenViaWiFi(source)
+    } else if (source.connectionType === 'usb') {
+      // USB数据线连接 - 使用ADB或WebUSB
+      return await captureMobileScreenViaUSB(source)
+    } else if (source.connectionType === 'qrcode') {
+      // 二维码扫码连接 - 通常也是基于WiFi的WebRTC
+      return await captureMobileScreenViaQRCode(source)
+    } else {
+      throw new Error('不支持的连接方式: ' + source.connectionType)
+    }
+  } catch (error) {
+    console.error('[TeacherWindow] 手机屏幕捕获失败:', error)
+    throw error
+  }
+}
+
+// WiFi方式捕获手机屏幕
+async function captureMobileScreenViaWiFi(source) {
+  console.log('[TeacherWindow] 通过WiFi捕获手机屏幕:', source.deviceIp)
+
+  try {
+    // 调用后端API创建手机投屏流
+    const { createMobileScreenStream } = await import('@/services/webRTCService')
+
+    const streamMeta = await createMobileScreenStream(source.id, {
+      connectionType: 'wifi',
+      deviceIp: source.deviceIp,
+      resolution: source.resolution || '1920x1080',
+      framerate: source.fps || 30,
+      enableAudio: true
+    })
+
+    console.log('[TeacherWindow] 手机投屏流创建成功:', streamMeta)
+
+    // 创建一个video元素来播放流
+    const videoElement = document.createElement('video')
+    videoElement.src = streamMeta.ws_flv_url || streamMeta.flv_url
+    videoElement.autoplay = true
+    videoElement.muted = false
+    videoElement.playsInline = true
+
+    // 等待视频加载
+    await new Promise((resolve, reject) => {
+      videoElement.onloadeddata = resolve
+      videoElement.onerror = reject
+      setTimeout(resolve, 3000) // 超时保护
+    })
+
+    // 从video元素创建MediaStream
+    if (videoElement.captureStream) {
+      const mediaStream = videoElement.captureStream()
+      console.log('[TeacherWindow] 成功获取WiFi屏幕流')
+      return mediaStream
+    } else if (videoElement.mozCaptureStream) {
+      const mediaStream = videoElement.mozCaptureStream()
+      console.log('[TeacherWindow] 成功获取WiFi屏幕流 (Firefox)')
+      return mediaStream
+    } else {
+      throw new Error('浏览器不支持captureStream API')
+    }
+  } catch (err) {
+    console.error('[TeacherWindow] WiFi屏幕捕获失败:', err)
+    throw new Error('WiFi投屏失败: ' + err.message)
+  }
+}
+
+// USB方式捕获手机屏幕
+async function captureMobileScreenViaUSB(source) {
+  console.log('[TeacherWindow] 通过USB捕获手机屏幕:', source.adbPort)
+
+  try {
+    // 调用后端API创建手机投屏流
+    const { createMobileScreenStream } = await import('@/services/webRTCService')
+
+    const streamMeta = await createMobileScreenStream(source.id, {
+      connectionType: 'usb',
+      adbPort: parseInt(source.adbPort) || 5555,
+      resolution: source.resolution || '1920x1080',
+      framerate: source.fps || 30,
+      enableAudio: false // ADB屏幕捕获通常不包含音频
+    })
+
+    console.log('[TeacherWindow] USB手机投屏流创建成功:', streamMeta)
+
+    // 创建一个video元素来播放流
+    const videoElement = document.createElement('video')
+    videoElement.src = streamMeta.ws_flv_url || streamMeta.flv_url
+    videoElement.autoplay = true
+    videoElement.muted = true // USB模式可能没有音频
+    videoElement.playsInline = true
+
+    // 等待视频加载
+    await new Promise((resolve, reject) => {
+      videoElement.onloadeddata = resolve
+      videoElement.onerror = reject
+      setTimeout(resolve, 3000) // 超时保护
+    })
+
+    // 从 video元素创建MediaStream
+    if (videoElement.captureStream) {
+      const mediaStream = videoElement.captureStream()
+      console.log('[TeacherWindow] 成功获取USB屏幕流')
+      return mediaStream
+    } else if (videoElement.mozCaptureStream) {
+      const mediaStream = videoElement.mozCaptureStream()
+      console.log('[TeacherWindow] 成功获取USB屏幕流 (Firefox)')
+      return mediaStream
+    } else {
+      throw new Error('浏览器不支持captureStream API')
+    }
+  } catch (err) {
+    console.error('[TeacherWindow] USB屏幕捕获失败:', err)
+    throw new Error('USB投屏失败，请确认ADB连接正常: ' + err.message)
+  }
+}
+
+// 二维码方式捕获手机屏幕
+async function captureMobileScreenViaQRCode(source) {
+  console.log('[TeacherWindow] 通过二维码捕获手机屏幕')
+
+  try {
+    // 调用后端API创建手机投屏流
+    const { createMobileScreenStream } = await import('@/services/webRTCService')
+
+    const streamMeta = await createMobileScreenStream(source.id, {
+      connectionType: 'qrcode',
+      resolution: source.resolution || '1920x1080',
+      framerate: source.fps || 30,
+      enableAudio: true
+    })
+
+    console.log('[TeacherWindow] 二维码手机投屏流创建成功:', streamMeta)
+
+    // 创建一个video元素来播放流
+    const videoElement = document.createElement('video')
+    videoElement.src = streamMeta.ws_flv_url || streamMeta.flv_url
+    videoElement.autoplay = true
+    videoElement.muted = false
+    videoElement.playsInline = true
+
+    // 等待视频加载
+    await new Promise((resolve, reject) => {
+      videoElement.onloadeddata = resolve
+      videoElement.onerror = reject
+      setTimeout(resolve, 5000) // 二维码模式可能需要更长时间等待连接
+    })
+
+    // 从 video元素创建MediaStream
+    if (videoElement.captureStream) {
+      const mediaStream = videoElement.captureStream()
+      console.log('[TeacherWindow] 成功获取二维码屏幕流')
+      return mediaStream
+    } else if (videoElement.mozCaptureStream) {
+      const mediaStream = videoElement.mozCaptureStream()
+      console.log('[TeacherWindow] 成功获取二维码屏幕流 (Firefox)')
+      return mediaStream
+    } else {
+      throw new Error('浏览器不支持captureStream API')
+    }
+  } catch (err) {
+    console.error('[TeacherWindow] 二维码屏幕捕获失败:', err)
+    throw new Error('二维码投屏失败，请确认手机已扫描并连接: ' + err.message)
   }
 }
 
@@ -3870,7 +4071,117 @@ const handleSubmitNewSource = async (formData) => {
       newSource.resolution = '1920x1080'
     } else if (formData.type === 'networkCamera') {
       newSource.protocol = formData.protocol
-      newSource.streamUrl = formData.streamUrl
+
+      // 🎯 修复：ONVIF 协议下，若 streamUrl 为空或是 ONVIF 服务端点，通过 Tauri 后端 ONVIF GetStreamUri
+      // 将设备服务地址解析为真实 RTSP 流地址，防止 ffmpeg 把 ONVIF 服务端点当成视频流打开
+      const isOnvifEndpoint = formData.protocol === 'onvif' &&
+        (formData.streamUrl || formData.onvifUrl) &&
+        /https?:\/\/[^/]+\/onvif\//i.test(formData.streamUrl || formData.onvifUrl)
+
+      if (isOnvifEndpoint) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          const onvifAddrMatch = (formData.onvifUrl || formData.streamUrl).match(/^https?:\/\/([^:/]+)(?::(\d+))?/)
+
+          console.log('[TeacherWindow] 📍 ONVIF地址解析信息:')
+          console.log('  - onvifUrl:', formData.onvifUrl)
+          console.log('  - streamUrl:', formData.streamUrl)
+          console.log('  - 匹配结果:', onvifAddrMatch)
+
+          if (onvifAddrMatch) {
+            const ip = onvifAddrMatch[1]
+            const port = parseInt(onvifAddrMatch[2] || '80', 10)
+
+            console.log('[TeacherWindow] 🔧 调用 Tauri API get_onvif_stream_uri:')
+            console.log('  - IP:', ip)
+            console.log('  - 端口:', port)
+            console.log('  - 用户名:', formData.username || 'admin')
+            console.log('  - 密码:', formData.password ? '***' : 'admin')
+
+            const streamUriResult = await invoke('get_onvif_stream_uri', {
+              ip,
+              port,
+              username: formData.username || 'admin',
+              password: formData.password || 'admin'
+            })
+
+            console.log('[TeacherWindow] ✅ Tauri API 返回结果:', streamUriResult)
+
+            if (streamUriResult?.uri) {
+              newSource.streamUrl = streamUriResult.uri
+              newSource.protocol = 'rtsp' // 🎯 关键：修改协议为 RTSP 以使用正确的初始化路径
+              console.log('[TeacherWindow] ONVIF→RTSP解析成功:', streamUriResult.uri)
+            } else {
+              newSource.streamUrl = formData.streamUrl || formData.onvifUrl
+              console.warn('[TeacherWindow] ONVIF GetStreamUri 未返回uri，保留原地址')
+            }
+          } else {
+            console.error('[TeacherWindow] ❌ 无法从 ONVIF 地址中提取 IP 和端口')
+            newSource.streamUrl = formData.streamUrl || formData.onvifUrl
+          }
+        } catch (err) {
+          console.error('[TeacherWindow] ❌ ONVIF RTSP地址解析失败:')
+          console.error('  - 错误类型:', err.constructor.name)
+          console.error('  - 错误消息:', err.message)
+          console.error('  - 完整错误:', err)
+
+          // 🎯 提供更详细的错误信息和备选方案
+          // 🎯 修复：扩展错误检测范围，不仅仅检测 GetProfiles 错误
+          const isOnvifError = err.message && (
+            err.message.includes('GetProfiles') ||
+            err.message.includes('GetStreamUri') ||
+            err.message.includes('ONVIF') ||
+            err.message.includes('设备返回错误') ||
+            err.message.includes('标准流程和降级方案均失败') ||
+            err.message.includes('HTTP 404')
+          )
+
+          if (isOnvifError) {
+            console.warn('[TeacherWindow] ⚠️ ONVIF协议获取流地址失败，可能原因:')
+            console.warn('   1. 设备不支持标准ONVIF协议')
+            console.warn('   2. 认证信息不正确')
+            console.warn('   3. 设备防火墙阻止了请求')
+            console.warn('   4. ONVIF服务未启用')
+            console.warn('   5. 设备需要特定的路径或端口')
+            console.warn('   6. 设备ONVIF服务返回HTTP 404')
+
+            // 🎯 尝试使用备选方案获取RTSP地址
+            try {
+              const { invoke } = await import('@tauri-apps/api/core')
+              console.log('[TeacherWindow] 🔄 尝试使用通用RTSP模板作为备选方案...')
+
+              const ip = onvifAddrMatch ? onvifAddrMatch[1] : ''
+              const port = parseInt(onvifAddrMatch?.[2] || '80', 10)
+
+              const fallbackResult = await invoke('try_common_rtsp_templates', {
+                ip,
+                port,
+                username: formData.username || 'admin',
+                password: formData.password || 'admin',
+                brand: formData.brand || null
+              })
+
+              if (fallbackResult) {
+                console.log('[TeacherWindow] ✅ 备选方案成功，使用RTSP地址:', fallbackResult)
+                newSource.streamUrl = fallbackResult
+                newSource.protocol = 'rtsp'
+              } else {
+                console.warn('[TeacherWindow] ⚠️ 备选方案也失败了，回退到原地址')
+                newSource.streamUrl = formData.streamUrl || formData.onvifUrl
+              }
+            } catch (fallbackErr) {
+              console.error('[TeacherWindow] ❌ 备选方案也失败:', fallbackErr)
+              newSource.streamUrl = formData.streamUrl || formData.onvifUrl
+            }
+          } else {
+            console.warn('[TeacherWindow] 回退到原地址:', formData.streamUrl || formData.onvifUrl)
+            newSource.streamUrl = formData.streamUrl || formData.onvifUrl
+          }
+        }
+      } else {
+        newSource.streamUrl = formData.streamUrl || formData.onvifUrl || ''
+      }
+      newSource.onvifUrl = formData.onvifUrl || ''
       newSource.needAuth = formData.needAuth
       newSource.username = formData.username
       newSource.password = formData.password
@@ -3881,16 +4192,45 @@ const handleSubmitNewSource = async (formData) => {
       newSource.bufferTime = formData.bufferTime
       newSource.needAuth = formData.needAuth
       newSource.authToken = formData.authToken
+    } else if (formData.type === 'mobileCamera') {
+      // 手机/平板摄像头
+      newSource.connectionType = formData.mobileConnection
+      newSource.deviceIp = formData.mobileIp
+      newSource.adbPort = formData.adbPort
+      newSource.cameraDirection = formData.cameraDirection
+      newSource.resolution = '1920x1080'
+      newSource.fps = 30
+    } else if (formData.type === 'mobileScreen') {
+      // 手机/平板屏幕投屏
+      newSource.connectionType = formData.mobileConnection
+      newSource.deviceIp = formData.mobileIp
+      newSource.adbPort = formData.adbPort
+      newSource.resolution = '1920x1080'
+      newSource.fps = 30
+
+      // 根据连接方式启动不同的屏幕捕获
+      try {
+        console.log('[TeacherWindow] 正在启动手机屏幕捕获:', newSource)
+
+        // 创建屏幕捕获流
+        const mediaStream = await startMobileScreenCapture(newSource)
+        newSource.stream = mediaStream
+        console.log('[TeacherWindow] 手机屏幕流获取成功:', mediaStream.id)
+      } catch (error) {
+        console.error('[TeacherWindow] 获取手机屏幕流失败:', error)
+        ElMessage.error('无法获取手机屏幕: ' + error.message)
+        return // 终止添加流程
+      }
     }
 
     console.log('[TeacherWindow] 创建新信号源:', newSource)
 
-    // 🎯 保存到 sourceStore
+    // 🎯 保存到 sourceStore（会自动触发 watch 监听器添加到预览区域）
     sourceStore.addSource(newSource)
 
-    // 🎯 立即添加到预览区域
-    await nextTick()
-    handleAddToPreview(newSource)
+    // 🎯 关键修复：不自动映射到画布格子，让用户手动拖拽
+    // 网络摄像机先添加到预览区域显示画面，用户再手动拖到画布
+    console.log('[TeacherWindow] 信号源已添加到预览区域，等待用户手动拖拽到画布')
 
     showAddSourceDialog.value = false
 
@@ -3955,6 +4295,10 @@ const handleRemoveSource = (source) => {
         // 降级方案：手动移除
         videoPreviews.value.splice(sourceIndex, 1)
       }
+
+      //  同步更新 store，从预览中移除信号源
+      sourceStore.removeSourceFromPreview(source.id)
+      console.log('[TeacherWindow] 已从 store 移除预览信号源:', source.id)
 
       ElMessage.success(`已删除信号源 "${source.name}"`)
     }
@@ -4296,6 +4640,18 @@ defineExpose({
   updateDetectionMode,
   getDetectionModeText,
   getNetworkStatusText
+})
+
+// 🎯 组件挂载时注册事件监听器
+onMounted(() => {
+  console.log('[TeacherWindow] 组件已挂载')
+
+  console.log('[TeacherWindow] ✅ 事件监听器已注册')
+})
+
+// 🎯 组件卸载时清理事件监听器
+onUnmounted(() => {
+  console.log('[TeacherWindow] 组件卸载，清理事件监听器')
 })
 </script>
 

@@ -49,9 +49,14 @@ export async function sendNativeCommand(command, data = {}) {
     case 'tauri': {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        // 将 snake_case 命令转为 kebab-case（Tauri 风格）
-        const tauriCommand = command.replace(/_([a-z])/g, (_, c) => '-' + c);
-        return await invoke(tauriCommand, data);
+        // 🎯 修复：Tauri v2 命令名保持 snake_case 注册时的原名，无需转换
+        // 🎯 修复：Tauri v2 invoke 参数名必须使用 camelCase（自动映射到 Rust 的 snake_case）
+        const camelCaseData = {};
+        for (const [key, value] of Object.entries(data)) {
+          const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+          camelCaseData[camelKey] = value;
+        }
+        return await invoke(command, camelCaseData);
       } catch (e) {
         console.warn(`[native-bridge] Tauri 调用失败 (${command}):`, e);
         return { success: false, error: e.message };

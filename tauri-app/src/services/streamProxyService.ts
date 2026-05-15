@@ -30,12 +30,12 @@ export async function addRtspProxy(
 ): Promise<StreamMeta> {
   try {
     console.log(`[RTSP代理] 添加流代理: ${streamId} -> ${rtspUrl}`)
-    
+
     const result = await invoke<StreamMeta>('add_rtsp_proxy', {
       streamId,
       rtspUrl
     })
-    
+
     console.log(`[RTSP代理] 流代理添加成功: ${result.flv_url}`)
     return result
   } catch (error) {
@@ -52,15 +52,36 @@ export async function addRtspProxy(
 export async function removeRtspProxy(streamId: string): Promise<boolean> {
   try {
     console.log(`[RTSP代理] 移除流代理: ${streamId}`)
-    
+
     const result = await invoke<boolean>('remove_rtsp_proxy', {
       streamId
     })
-    
+
     console.log(`[RTSP代理] 流代理已移除: ${streamId}`)
     return result
   } catch (error) {
     console.error('[RTSP代理] 移除流代理失败:', error)
+    throw error
+  }
+}
+
+/**
+ * 停止流代理（通用接口）
+ * @param streamId 流 ID
+ * @returns 是否成功
+ */
+export async function stopStreamProxy(streamId: string): Promise<boolean> {
+  try {
+    console.log(`[流代理] 停止流: ${streamId}`)
+
+    const result = await invoke<boolean>('stop_stream_proxy', {
+      streamId
+    })
+
+    console.log(`[流代理] 流已停止: ${streamId}`)
+    return result
+  } catch (error) {
+    console.error('[流代理] 停止流失败:', error)
     throw error
   }
 }
@@ -114,7 +135,7 @@ export async function onvifPtz(
 ): Promise<string> {
   try {
     console.log(`[PTZ控制] ${action} (速度: ${speed})`)
-    
+
     const result = await invoke<string>('onvif_ptz', {
       deviceUrl: config.deviceUrl,
       username: config.username,
@@ -122,7 +143,7 @@ export async function onvifPtz(
       action,
       speed
     })
-    
+
     console.log(`[PTZ控制] 指令已下发: ${result}`)
     return result
   } catch (error) {
@@ -139,13 +160,13 @@ export async function onvifPtz(
 export async function onvifPtzStop(config: PtzConfig): Promise<string> {
   try {
     console.log('[PTZ控制] 停止移动')
-    
+
     const result = await invoke<string>('onvif_ptz_stop', {
       deviceUrl: config.deviceUrl,
       username: config.username,
       password: config.password
     })
-    
+
     console.log(`[PTZ控制] 已停止: ${result}`)
     return result
   } catch (error) {
@@ -162,13 +183,13 @@ export async function onvifPtzStop(config: PtzConfig): Promise<string> {
 export async function onvifGetPresets(config: PtzConfig): Promise<string[]> {
   try {
     console.log('[PTZ控制] 获取预设位')
-    
+
     const presets = await invoke<string[]>('onvif_get_presets', {
       deviceUrl: config.deviceUrl,
       username: config.username,
       password: config.password
     })
-    
+
     console.log(`[PTZ控制] 获取到 ${presets.length} 个预设位`)
     return presets
   } catch (error) {
@@ -189,14 +210,14 @@ export async function onvifGotoPreset(
 ): Promise<string> {
   try {
     console.log(`[PTZ控制] 跳转到预设位: ${presetToken}`)
-    
+
     const result = await invoke<string>('onvif_goto_preset', {
       deviceUrl: config.deviceUrl,
       username: config.username,
       password: config.password,
       presetToken
     })
-    
+
     console.log(`[PTZ控制] 已跳转: ${result}`)
     return result
   } catch (error) {

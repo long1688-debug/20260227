@@ -47,10 +47,11 @@ import { createBlobUrl } from '@/utils/videoSource'
 const sourceStore = useSourceStore()
 const { addVideoSource, removeVideoSource } = useVideoSync()
 
-// 过滤媒体文件类型的信号源
+// 过滤媒体文件类型的信号源（仅显示已添加到预览的）
 const mediaSources = computed(() => {
   return sourceStore.sources.filter(s =>
-    s.type === 'video' || s.type === 'localVideo' || s.type === 'networkStream'
+    (s.type === 'video' || s.type === 'localVideo' || s.type === 'networkStream') &&
+    s.addedToPreview === true
   )
 })
 
@@ -106,9 +107,11 @@ const handlePlay = (source) => {
 }
 
 const handleRemove = (source) => {
-  sourceStore.removeSource(source.id)
+  // 从预览中移除信号源
+  sourceStore.removeSourceFromPreview(source.id)
+  // 同时从渲染引擎中移除
   removeVideoSource(source.id)
-  ElMessage.success(`已移除: ${source.name}`)
+  ElMessage.success(`已从预览移除: ${source.name}`)
 }
 </script>
 

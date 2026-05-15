@@ -14,7 +14,8 @@ export class RenderEngine {
     this._renderHeight = options.height || 1080;
     this._fps = options.fps || 60;
     this._interval = Math.floor(1000 / this._fps);
-    
+    this._rafId = null;
+
     // 渲染上下文
     this._mainCanvas = null;
     this._mainContext = null;
@@ -31,7 +32,7 @@ export class RenderEngine {
       beforeDraw: [],
       afterDraw: []
     };
-    
+
     // 锁机制
     this._isLocked = false;
     
@@ -79,13 +80,17 @@ export class RenderEngine {
   
   /**
    * 渲染主循环
+   * 🎯 修复：使用 requestAnimationFrame 替代 setTimeout，
+   * 仅在视频帧实际更新时才绘制，消除渲染循环与视频刷新节拍不同步造成的时序滞后
    */
   _renderLoop() {
     if (!this._keepRunning) return;
-    
+
+    // 先泵入本帧的绘制信号
     this._onDraw();
-    
-    setTimeout(() => this._renderLoop(), this._interval);
+
+    // 用 rAF 驱动下一帧，浏览器会根据 display refresh rate 调度
+    this._rafId = requestAnimationFrame(() => this._renderLoop());
   }
   
   /**
@@ -93,28 +98,28 @@ export class RenderEngine {
    */
   _onDraw() {
     this.lock();
-    
+
     // 清空画布
     this.clear();
-    
+
     // 触发渲染信号
     this._emitSignal('beforeDraw');
     this._emitSignal('render', this._offscreenContext);
     this._emitSignal('drawOverlay', this._offscreenContext, this._renderWidth, this._renderHeight);
-    
+
     // 将离屏画布内容绘制到主画布
     this._mainContext.drawImage(this._offscreenCanvas, 0, 0);
-    
+
     // 如果有订阅者，复制纹理并发出数据
     if (this.hasOutputSubscribers) {
       this._copyToReadTexture();
       this._mapTextureAndEmit();
     }
-    
+
     this._emitSignal('afterDraw');
     this.unlock();
   }
-  
+
   /**
    * 清空画布
    */
