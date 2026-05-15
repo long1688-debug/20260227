@@ -82,6 +82,11 @@ const props = defineProps({
     type: Number,
     default: -1
   },
+  // 🎯 新增：是否正在进行自定义鼠标拖拽
+  isDragging: {
+    type: Boolean,
+    default: false
+  },
   networkQuality: {
     type: Object,
     default: () => ({})
@@ -295,6 +300,13 @@ const onDrop = (event) => {
   event.preventDefault()
   isDragOver.value = false
 
+  // 🎯 关键修复：如果正在进行自定义鼠标拖拽，忽略 HTML5 原生拖拽事件
+  // 避免重复处理导致信号源被添加两次
+  if (props.isDragging) {
+    console.log('[VideoSection] 跳过 HTML5 原生拖拽，正在进行自定义鼠标拖拽')
+    return
+  }
+
   console.log('[VideoSection] 拖拽放置')
 
   try {
@@ -335,14 +347,30 @@ const onDrop = (event) => {
 
     // 🎯 计算放置位置对应的元素索引
     // 通过鼠标位置判断应该放置到哪个槽位
+    if (!videoContainerRef.value) {
+      console.error('[VideoSection] 视频容器引用不存在')
+      return
+    }
+
     const rect = videoContainerRef.value.getBoundingClientRect()
+    
+    // 🎯 修复：使用更精确的坐标计算，考虑可能的滚动和偏移
     const x = event.clientX - rect.left
     const y = event.clientY - rect.top
+    
+    console.log(`[VideoSection] 容器边界: left=${rect.left}, top=${rect.top}, width=${rect.width}, height=${rect.height}`)
+    console.log(`[VideoSection] 鼠标坐标: clientX=${event.clientX}, clientY=${event.clientY}`)
+    console.log(`[VideoSection] 相对坐标: x=${x.toFixed(2)}, y=${y.toFixed(2)}`)
+
+    // 验证坐标是否在有效范围内
+    if (x < 0 || x > rect.width || y < 0 || y > rect.height) {
+      console.warn(`[VideoSection] 坐标超出容器范围: (${x}, ${y}) / (${rect.width}, ${rect.height})`)
+    }
 
     // 根据当前布局和坐标计算目标槽位
     const targetSlotIndex = calculateTargetSlot(x, y, rect.width, rect.height)
 
-    console.log(`[VideoSection] 计算得到目标槽位: ${targetSlotIndex}`)
+    console.log(`[VideoSection] 当前布局: ${props.currentLayout}, 计算得到目标槽位: ${targetSlotIndex}`)
 
     // 发出事件给父组件处理
     emit('drop-source', {

@@ -1,13 +1,13 @@
 /**
  * 布局配置常量
  * 定义视频网格的18种分屏布局模式
- * 
+ *
  * 更新时间: 2026-04-20 - 统一使用新布局索引方案
  */
 
 /**
  * 布局索引常量 - 与 useLayoutConfig.ts 保持一致
- * 
+ *
  * 布局索引对应关系:
  * 1-1分屏、2-2分屏、3-3分屏、4-4分屏、5-6分屏、7-9分屏、10-16分屏、
  * 11-25分屏、12-36分屏、13-49分屏、14-特殊布局1、15-特殊布局2、
@@ -70,12 +70,11 @@ export function getGridStyle(layoutIndex, isMaximized = false) {
     [LAYOUT_INDICES.LAYOUT_49]: { cols: 7, rows: 7 },
   };
 
-  // 特殊布局：返回固定样式
+  // 特殊布局（14-17）：使用 CSS 中定义的 grid-template-areas
   if (layoutIndex >= LAYOUT_INDICES.LAYOUT_SPECIAL_1 && layoutIndex <= LAYOUT_INDICES.LAYOUT_SPECIAL_4) {
-    return {
-      gridTemplateColumns: 'repeat(4, 1fr)',
-      gridTemplateRows: 'repeat(4, 1fr)'
-    };
+    // 特殊布局的样式已在 VideoGrid.vue 的 CSS 中定义
+    // 这里返回空对象，让 CSS 完全控制布局
+    return {}
   }
 
   // 自由布局：动态计算行列

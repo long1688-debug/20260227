@@ -12,11 +12,11 @@
             'selected': selectedSourceId === source.id
           }"
           draggable="true"
-          @dragstart="onDragStart($event, source)"
-          @dragend="onDragEnd"
           @mousedown="onMouseDown($event, source)"
           @touchstart="onTouchStart($event, source)"
           @click="selectSource(source)"
+          @dragstart="onDragStart($event, source)"
+          @dragend="onDragEnd($event, source)"
         >
           <!-- 视频预览 -->
           <div class="preview-video">
@@ -236,10 +236,10 @@ const onMouseDown = (event, source) => {
   // 只处理左键
   if (event.button !== 0) return
 
-  console.log('[SourcePreviewBar] 鼠标按下:', source.name)
+  console.log('[SourcePreviewBar] 鼠标按下，开始拖拽:', source.name, source.type)
 
-  // 🎯 发出事件给父组件，让 useSourceDrag 处理
-  emit('mouse-down', event, source)
+  // 🎯 发出 mouse-down 事件，isFromPreview 设为 true 表示从预览区域拖拽
+  emit('mouse-down', event, source, true)
 }
 
 // 🎯 触摸开始（用于移动端/触摸屏拖拽）
@@ -255,21 +255,8 @@ const onTouchStart = (event, source) => {
 
 // 从预览移除信号源
 const removeFromPreview = (source) => {
-  // 🎯 修复：通过 store 的 updateSource 方法更新，确保响应式更新
-  sourceStore.updateSource(source.id, { addedToPreview: false })
-
-  // 如果是摄像头，停止视频流（支持多种摄像头类型）
-  if (['localCamera', 'localDevice', 'camera', 'usb'].includes(source.type) && cameraStreams.value[source.id]) {
-    cameraStreams.value[source.id].getTracks().forEach(track => track.stop())
-    delete cameraStreams.value[source.id]
-    // 🎯 同时清理 source 中的 stream，以便下次添加时重新初始化
-    sourceStore.updateSource(source.id, { stream: null })
-  }
-
-  // 如果是屏幕共享，停止流
-  if (source.type === 'screen' && source.stream) {
-    source.stream.getTracks().forEach(track => track.stop())
-  }
+  // 🎯 发出 remove-source 事件给父组件处理
+  emit('remove-source', source)
 
   ElMessage.success(`已从预览移除 "${source.name}"`)
 }

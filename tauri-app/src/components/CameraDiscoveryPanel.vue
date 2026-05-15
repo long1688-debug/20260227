@@ -146,28 +146,89 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="address" label="IP 地址" width="140" />
-        <el-table-column prop="port" label="端口" width="80" />
+        <el-table-column prop="address" label="IP 地址" width="140">
+          <template #default="{ row }">
+            <el-input 
+              v-if="row.editing" 
+              v-model="row.address" 
+              size="small"
+              placeholder="IP地址"
+            />
+            <span v-else>{{ row.address }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="port" label="端口" width="100">
+          <template #default="{ row }">
+            <el-input-number 
+              v-if="row.editing" 
+              v-model="row.port" 
+              :min="1"
+              :max="65535"
+              size="small"
+              controls-position="right"
+              style="width: 100%"
+            />
+            <span v-else>{{ row.port }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="name" label="设备名称" min-width="150">
           <template #default="{ row }">
-            {{ row.name || `摄像机_${row.address.split('.').pop()}` }}
+            <el-input 
+              v-if="row.editing" 
+              v-model="row.name" 
+              size="small"
+              placeholder="设备名称"
+            />
+            <span v-else>{{ row.name || `摄像机_${row.address.split('.').pop()}` }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="protocol" label="协议" width="100" />
+        <el-table-column label="认证信息" width="200">
+          <template #default="{ row }">
+            <div v-if="row.editing" class="auth-fields">
+              <el-input 
+                v-model="row.username" 
+                size="small"
+                placeholder="用户名"
+                style="margin-bottom: 4px"
+              />
+              <el-input 
+                v-model="row.password" 
+                size="small"
+                type="password"
+                show-password
+                placeholder="密码"
+              />
+            </div>
+            <span v-else class="auth-display">
+              {{ row.username || 'admin' }} / ***
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="registerDevice(row)">
-              注册
-            </el-button>
-            <el-button size="small" @click="previewDevice(row)">
-              预览
-            </el-button>
-            <el-button size="small" type="warning" @click="editConfig(row)">
-              配置
-            </el-button>
-            <el-button size="small" type="danger" @click="removeDevice(row)">
-              删除
-            </el-button>
+            <template v-if="!row.editing">
+              <el-button size="small" type="primary" @click="registerDevice(row)">
+                注册
+              </el-button>
+              <el-button size="small" @click="previewDevice(row)">
+                预览
+              </el-button>
+              <el-button size="small" type="warning" @click="startEdit(row)">
+                ✏️ 编辑
+              </el-button>
+              <el-button size="small" type="danger" @click="removeDevice(row)">
+                删除
+              </el-button>
+            </template>
+            <template v-else>
+              <el-button size="small" type="success" @click="saveEdit(row)" :loading="row.saving">
+                💾 保存
+              </el-button>
+              <el-button size="small" @click="cancelEdit(row)">
+                ❌ 取消
+              </el-button>
+            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -691,6 +752,15 @@ const startScan = async () => {
       cameras.value = result;
     }
 
+    // 🎯 为每个设备添加编辑状态字段和默认认证信息
+    cameras.value = cameras.value.map(device => ({
+      ...device,
+      editing: false,
+      saving: false,
+      username: device.username || 'admin',
+      password: device.password || ''
+    }));
+
     foundCount.value = cameras.value.length;
     scanProgress.value = 100;
     scanStatus.value = 'success';
@@ -795,6 +865,103 @@ const confirmRegister = async () => {
 const previewDevice = (camera) => {
   ElMessage.info(`预览功能开发中: ${camera.address}:${camera.port}`);
   // TODO: 打开预览窗口
+};
+
+// 🎯 开始行内编辑
+const startEdit = (row) => {
+  // 保存原始数据用于取消时恢复
+  row._originalData = {
+    address: row.address,
+    port: row.port,
+    name: row.name,
+    username: row.username || 'admin',
+    password: row.password || ''
+  };
+  row.editing = true;
+};
+
+// 🎯 保存行内编辑
+const saveEdit = async (row) => {
+  row.saving = true;
+  
+  try {
+    // 验证IP地址格式
+    if (!isValidIp(row.address)) {
+      ElMessage.error('IP地址格式不正确');
+      row.saving = false;
+      return;
+    }
+    
+    // 验证端口范围
+    if (row.port < 1 || row.port > 65535) {
+      ElMessage.error('端口号必须在1-65535之间');
+      row.saving = false;
+      return;
+    }
+    
+    // 如果设备已注册,则更新配置
+    const deviceId = row.name || `摄像机_${row.address.split('.').pop()}`;
+    const originalId = row._originalData?.name || `摄像机_${row._originalData?.address.split('.').pop()}`;
+    
+    // 检查是否是已注册设备
+    const isRegistered = await checkDeviceRegistered(originalId);
+    
+    if (isRegistered) {
+      // 更新已注册设备的配置
+      await invoke('update_camera_config', {
+        deviceId: originalId,
+        name: row.name || null,
+        username: row.username || null,
+        password: row.password || null,
+        ip: row.address !== row._originalData?.address ? row.address : null,
+        port: row.port !== row._originalData?.port ? row.port : null
+      });
+      
+      ElMessage.success('设备配置已更新');
+    } else {
+      // 未注册设备,只更新本地列表
+      ElMessage.success('配置已保存到本地(设备未注册)');
+    }
+    
+    // 清除编辑状态
+    row.editing = false;
+    row.saving = false;
+    delete row._originalData;
+    
+  } catch (error) {
+    ElMessage.error('保存失败: ' + error);
+    row.saving = false;
+  }
+};
+
+// 🎯 取消行内编辑
+const cancelEdit = (row) => {
+  // 恢复原始数据
+  if (row._originalData) {
+    row.address = row._originalData.address;
+    row.port = row._originalData.port;
+    row.name = row._originalData.name;
+    row.username = row._originalData.username;
+    row.password = row._originalData.password;
+    delete row._originalData;
+  }
+  row.editing = false;
+};
+
+// 🎯 验证IP地址格式
+const isValidIp = (ip) => {
+  const pattern = /^(\d{1,2}|1\d\d|2[0-4]\d|25[0-5])\.(\d{1,2}|1\d\d|2[0-4]\d|25[0-5])\.(\d{1,2}|1\d\d|2[0-4]\d|25[0-5])\.(\d{1,2}|1\d\d|2[0-4]\d|25[0-5])$/;
+  return pattern.test(ip);
+};
+
+// 🎯 检查设备是否已注册
+const checkDeviceRegistered = async (deviceId) => {
+  try {
+    await invoke('get_camera_details', { deviceId });
+    return true;
+  } catch (error) {
+    return false;
+  }
 };
 
 // 🎯 编辑设备配置
@@ -1312,6 +1479,28 @@ onUnmounted(() => {
       display: flex;
       gap: 8px;
     }
+  }
+}
+
+// 🎯 行内编辑相关样式
+.auth-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.auth-display {
+  font-size: 12px;
+  color: #909399;
+  font-family: 'Courier New', monospace;
+}
+
+// 编辑状态的高亮效果
+:deep(.el-table__row) {
+  transition: background-color 0.3s;
+  
+  &:hover {
+    background-color: #f5f7fa;
   }
 }
 

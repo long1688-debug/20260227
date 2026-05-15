@@ -35,10 +35,12 @@ export function useSourceDrag(options = {}) {
   const {
     videoPreviews,           // 预览区域的视频源数组
     canvasSourceMap,         // 画布源映射
-    // ... 其他依赖
+    currentLayout,           // 当前布局索引
+    removeFromPreview,       // 从预览区域移除源的函数
+    // 🎯 其他依赖
     getPipVideoPreview,      // 懒加载函数：获取画中画视频预览组件
     getPipVisible,           // 懒加载函数：获取画中画可见状态
-    // ... 其他依赖
+    // 🎯 其他依赖
   } = options
 
   const getCurrentLayoutValue = () => {
@@ -100,8 +102,8 @@ export function useSourceDrag(options = {}) {
     return null;
   };
 
-  // 🎯 方案A：统一的信号源克隆函数
-  // 确保每次拖拽都创建克隆，不影响预览区域
+  // 🎯 方案A:统一的信号源克隆函数
+  // 确保每次拖拽都创建克隆,不影响预览区域
   const cloneSourceForCanvas = (source, canvasIndex, addToGlobalSources = true) => {
     if (!source) {
       console.error('[cloneSourceForCanvas] 源信号源为空');
@@ -115,9 +117,10 @@ export function useSourceDrag(options = {}) {
       id: newId,
       canvasIndex, // 标记属于哪个画布
       isClone: true, // 标记为克隆
+      addedToPreview: false, // 🎯 关键修复:克隆源不应显示在预览区域
     };
 
-    // 如果是摄像头流，需要特殊处理
+    // 如果是摄像头流,需要特殊处理
     if (source.hasStream && source.stream) {
       // 检查缓存中是否有对应的克隆流
       if (clonedStreamsCache.has(source.id)) {
@@ -148,25 +151,29 @@ export function useSourceDrag(options = {}) {
   // 🎯 性能优化：暂停/恢复视频渲染
   const pauseVideoRendering = () => {
     console.log('[性能优化] 暂停所有视频渲染');
-    if (videoPreviews.value && Array.isArray(videoPreviews.value)) {
+    if (videoPreviews && videoPreviews.value && Array.isArray(videoPreviews.value)) {
       videoPreviews.value.forEach((previewRef, index) => {
         if (previewRef && typeof previewRef.pauseVideo === 'function') {
           console.log(`[性能优化] 暂停画布 ${index} 的视频`);
           previewRef.pauseVideo();
         }
       });
+    } else {
+      console.warn('[性能优化] videoPreviews 未定义或无效，跳过暂停操作');
     }
   };
 
   const resumeVideoRendering = () => {
     console.log('[性能优化] 恢复所有视频渲染');
-    if (videoPreviews.value && Array.isArray(videoPreviews.value)) {
+    if (videoPreviews && videoPreviews.value && Array.isArray(videoPreviews.value)) {
       videoPreviews.value.forEach((previewRef, index) => {
         if (previewRef && typeof previewRef.resumeVideo === 'function') {
           console.log(`[性能优化] 恢复画布 ${index} 的视频`);
           previewRef.resumeVideo();
         }
       });
+    } else {
+      console.warn('[性能优化] videoPreviews 未定义或无效，跳过恢复操作');
     }
   };
 
@@ -254,6 +261,10 @@ export function useSourceDrag(options = {}) {
   // 🎯 处理鼠标拖拽开始
   const handleMouseDown = (source, event, isFromPreview = false) => {
     console.log(`[鼠标拖拽] 开始拖拽: ${source.name} ${source.type}`);
+
+    // 🎯 更新 isDraggingSource 状态，通知 VideoSection 忽略 HTML5 原生拖拽事件
+    isDraggingSource.value = source.id;
+
     mouseDragState = {
       isDragging: true,
       source: { ...source }, // 创建副本防止意外修改
@@ -291,7 +302,7 @@ export function useSourceDrag(options = {}) {
   };
 
   /**
-   * 鼠标移动 - 拖拽中
+   * 鼠标移动 - 拖拽中（合并了 handleMouseMove 的功能）
    */
   const onMouseMove = (event) => {
     if (!mouseDragState.isDragging) return;
@@ -300,8 +311,8 @@ export function useSourceDrag(options = {}) {
 
     // 更新幽灵元素位置
     if (mouseDragState.ghostElement) {
-      mouseDragState.ghostElement.style.left = `${event.clientX}px`;
-      mouseDragState.ghostElement.style.top = `${event.clientY}px`;
+      mouseDragState.ghostElement.style.left = `${event.clientX + 10}px`;
+      mouseDragState.ghostElement.style.top = `${event.clientY + 10}px`;
       // 🎯 临时隐藏幽灵元素，避免遮挡检测
       mouseDragState.ghostElement.style.pointerEvents = 'none';
     }
@@ -338,6 +349,31 @@ export function useSourceDrag(options = {}) {
       }
     }
 
+    // 🎯 如果没有找到 .video-item，尝试检测渲染引擎容器（Canvas）
+    if (foundIndex === null) {
+      for (const el of elements) {
+        // 检测 .render-engine-wrapper 或 .video-display-container
+        const renderContainer = el.closest ? (el.closest('.render-engine-wrapper') || el.closest('.video-display-container')) : null;
+        if (renderContainer) {
+          console.log('[鼠标拖拽] 检测到渲染引擎容器');
+
+          // 获取容器的尺寸和位置
+          const rect = renderContainer.getBoundingClientRect();
+          const relativeX = event.clientX - rect.left;
+          const relativeY = event.clientY - rect.top;
+
+          // 根据位置计算槽位（使用简单的网格计算）
+          // 🎯 注意：这里使用默认的 1-based 索引，与 .video-item 保持一致
+          foundIndex = calculateSlotFromPosition(relativeX, relativeY, rect.width, rect.height);
+
+          if (foundIndex !== null) {
+            console.log(`[鼠标拖拽] 从 Canvas 容器计算得到槽位: ${foundIndex}`);
+            break;
+          }
+        }
+      }
+    }
+
     if (foundIndex !== null) {
       dragOverIndex.value = foundIndex;
       console.log(`[鼠标拖拽] 检测到画布 ${foundIndex}`);
@@ -346,16 +382,70 @@ export function useSourceDrag(options = {}) {
     }
   };
 
-  // 处理鼠标移动
-  const handleMouseMove = (event) => {
-    if (!mouseDragState.isDragging) return;
+  /**
+   * 🎯 根据鼠标在容器中的位置计算目标槽位
+   * 这是一个简化的实现，实际应该根据当前布局来计算
+   */
+  const calculateSlotFromPosition = (x, y, width, height) => {
+    // 获取当前布局（使用统一的函数）
+    const layout = getCurrentLayoutValue() || 1;
 
-    // 更新ghost元素位置
-    if (mouseDragState.ghostElement) {
-      mouseDragState.ghostElement.style.left = `${event.clientX + 10}px`;
-      mouseDragState.ghostElement.style.top = `${event.clientY + 10}px`;
+    // 🎯 使用与 TeacherWindow.vue 一致的布局配置
+    const layoutCellMap = {
+      1: { cols: 1, rows: 1 },
+      2: { cols: 2, rows: 1 },
+      3: { cols: 2, rows: 2, custom: true }, // 3分屏特殊
+      4: { cols: 2, rows: 2 },
+      5: { cols: 3, rows: 2 }, // 6分屏
+      7: { cols: 3, rows: 3 }, // 9分屏
+      10: { cols: 4, rows: 4 }, // 16分屏
+      11: { cols: 5, rows: 5 }, // 25分屏
+      12: { cols: 6, rows: 6 }, // 36分屏
+      13: { cols: 7, rows: 7 }, // 49分屏
+      14: { cols: 4, rows: 4, special: true }, // 特殊布局1
+      15: { cols: 4, rows: 4, special: true }, // 特殊布局2
+      16: { cols: 4, rows: 4, special: true }, // 特殊布局3
+      17: { cols: 4, rows: 4, special: true }, // 特殊布局4
+    };
+
+    // special 布局 (14-17) - 简化处理，返回 1
+    if (layout >= 14 && layout <= 17) {
+      return 1;
     }
+    // pip 布局
+    if (layout === 'pip' || layout === 'PIP') {
+      return 1;
+    }
+    // 自由布局
+    if (layout === 18 || layout === 'free') {
+      return 1;
+    }
+
+    const config = layoutCellMap[layout];
+    if (!config) {
+      return 1;
+    }
+
+    const { cols, rows } = config;
+
+    // 计算鼠标所在的网格单元
+    const cellWidth = width / cols;
+    const cellHeight = height / rows;
+    const col = Math.floor(x / cellWidth);
+    const row = Math.floor(y / cellHeight);
+    const index = row * cols + col + 1; // 1-based index
+
+    // 🎯 确保返回的索引在有效范围内
+    const totalCells = cols * rows;
+    const validIndex = Math.min(index, totalCells);
+
+    console.log(`[鼠标拖拽] 布局 ${layout}: ${cols}x${rows}, 鼠标位置 (${x.toFixed(0)},${y.toFixed(0)}) -> 槽位 ${validIndex}`);
+
+    return validIndex;
   };
+
+  // 处理鼠标移动（别名，兼容其他地方可能调用）
+  const handleMouseMove = onMouseMove;
 
   // 处理鼠标释放
   const handleMouseUp = () => {
@@ -382,14 +472,15 @@ export function useSourceDrag(options = {}) {
     if (draggedSource && dragOverIndex.value !== null) {
       console.log(`[鼠标拖拽] 放置到索引 ${dragOverIndex.value}，源:`, draggedSource.name);
 
-      // 只有从预览区域拖拽时才创建克隆
-      let sourceToDrop = draggedSource;
-      if (mouseDragState.isFromPreview) {
-        sourceToDrop = cloneSourceForCanvas(draggedSource);
-        console.log('[鼠标拖拽] 从预览区域拖拽，创建克隆:', sourceToDrop.id);
-      }
+      // 🎯 无论从哪里拖拽，都创建克隆（不从预览区域移除原始源）
+      const sourceToDrop = cloneSourceForCanvas(draggedSource, dragOverIndex.value, true);
 
-      handleDropToCanvas(sourceToDrop, dragOverIndex.value);
+      if (sourceToDrop) {
+        console.log('[鼠标拖拽] 创建克隆源:', sourceToDrop.id, '保留预览区域原始源');
+        handleDropToCanvas(sourceToDrop, dragOverIndex.value);
+      } else {
+        console.error('[鼠标拖拽] 克隆源失败');
+      }
     } else if (!draggedSource) {
       console.warn('[鼠标拖拽] 未找到有效的信号源数据');
     } else if (dragOverIndex.value === null) {
@@ -398,8 +489,12 @@ export function useSourceDrag(options = {}) {
 
     // 结束拖拽状态
     mouseDragState.isDragging = false;
-    mouseDragState.source = null;
+    mouseDragState.source = null;  // 🎯 关键修复：清除源引用，防止重复使用
+
+    // 🎯 重置 isDraggingSource 状态，允许 VideoSection 处理 HTML5 原生拖拽事件
+    isDraggingSource.value = null;
     dragOverIndex.value = null;
+    currentSelectedSource.value = null;  // 🎯 清除当前选中源
   };
 
   /**
@@ -523,14 +618,16 @@ export function useSourceDrag(options = {}) {
     if (dragOverIndex.value !== null) {
       console.log(`[触摸拖拽] 放置到索引 ${dragOverIndex.value}，源:`, draggedSource.name);
 
-      // 只有从预览区域拖拽时才创建克隆
-      let sourceToDrop = draggedSource;
-      if (mouseDragState.isFromPreview) {
-        sourceToDrop = cloneSourceForCanvas(draggedSource);
-        console.log('[触摸拖拽] 从预览区域拖拽，创建克隆:', sourceToDrop.id);
-      }
+      // 🎯 关键修复：无论从哪里拖拽，都创建克隆（不从预览区域移除原始源）
+      const sourceToDrop = cloneSourceForCanvas(draggedSource, dragOverIndex.value, true);
 
-      handleDropToCanvas(sourceToDrop, dragOverIndex.value);
+      if (sourceToDrop) {
+        console.log('[触摸拖拽] 创建克隆源:', sourceToDrop.id, '保留预览区域原始源');
+        handleDropToCanvas(sourceToDrop, dragOverIndex.value);
+      } else {
+        console.error('[触摸拖拽] 克隆源失败');
+        ElMessage.error('克隆信号源失败');
+      }
     } else {
       console.warn('[触摸拖拽] 未放置到有效区域', { dragOverIndex: dragOverIndex.value });
       ElMessage.warning('未放置到有效区域');
@@ -543,6 +640,7 @@ export function useSourceDrag(options = {}) {
     dragOverIndex.value = null;
     isDraggingSource.value = null;
     draggedSourceType.value = null;
+    currentSelectedSource.value = null;  // 🎯 清除当前选中源
   };
 
   /**
@@ -639,18 +737,21 @@ export function useSourceDrag(options = {}) {
         return;
       }
 
-      // 创建克隆
-      const clonedSource = cloneSourceForCanvas(draggedSource, currentSelectedSource.value);
+      // 🎯 关键修复：无论从哪里拖拽，都创建克隆（不从预览区域移除原始源）
+      const clonedSource = cloneSourceForCanvas(draggedSource, 2, true);
+
       if (!clonedSource) {
         ElMessage.error('克隆信号源失败');
         return;
       }
 
-      console.log('[HTML5拖拽] 放置克隆源到画中画:', clonedSource.name, 'type:', clonedSource.type);
+      console.log('[HTML5拖拽] 放置克隆源到画中画:', clonedSource.name, 'type:', clonedSource.type, '保留预览区域原始源');
       handleDropToCanvas(clonedSource, 2);
 
       dragOverIndex.value = null;
       isDraggingSource.value = null;
+      currentSelectedSource.value = null;  // 🎯 清除当前选中源
+      mouseDragState.source = null;  // 🎯 清除鼠标拖拽状态中的源
     } catch (error) {
       console.error('[HTML5拖拽] 放置失败:', error);
       ElMessage.error('放置失败');
@@ -659,8 +760,11 @@ export function useSourceDrag(options = {}) {
 
   // 🎯 处理放置事件
   const handleDrop = (event, targetCanvasIndex) => {
-    event.preventDefault();
-    
+    // 🎯 兼容标准 DOM 事件和自定义对象
+    if (event && typeof event.preventDefault === 'function') {
+      event.preventDefault();
+    }
+
     console.log(`[鼠标拖拽] 放置，目标索引: ${targetCanvasIndex}`);
     console.log(`[鼠标拖拽] currentSelectedSource:`, currentSelectedSource.value);
     console.log(`[鼠标拖拽] mouseDragState.source:`, mouseDragState.source);
@@ -673,16 +777,19 @@ export function useSourceDrag(options = {}) {
     }
 
     console.log(`[鼠标拖拽] 放置到索引 ${targetCanvasIndex}，源: ${source.name}`);
-    
-    // 克隆源以适配画布 - 现在传递画布索引并添加到全局源列表
+
+    // 🎯 关键修复：无论从哪里拖拽，都创建克隆（不从预览区域移除原始源）
     const clonedSource = cloneSourceForCanvas(source, targetCanvasIndex, true);
+
     if (!clonedSource) {
       console.error('[鼠标拖拽] 克隆源失败');
       return;
     }
 
-    // 更新画布源映射
-    canvasSourceMap.value[targetCanvasIndex] = clonedSource;
+    console.log(`[鼠标拖拽] 创建克隆源: ${clonedSource.id}，保留预览区域原始源`);
+
+    // 🎯 关键修复：更新画布源映射，只存储 ID 字符串
+    canvasSourceMap.value[targetCanvasIndex] = clonedSource.id;
 
     // 保存到布局状态
     const layout = getCurrentLayoutValue();
@@ -701,7 +808,9 @@ export function useSourceDrag(options = {}) {
     dragOverIndex.value = null;
     isDraggingSource.value = false;
     mouseDragState.isDragging = false;
-    
+    mouseDragState.source = null;  // 🎯 关键修复：清除源引用，防止重复使用
+    currentSelectedSource.value = null;  // 🎯 清除当前选中源
+
     // 隐藏ghost元素
     if (mouseDragState.ghostElement) {
       document.body.removeChild(mouseDragState.ghostElement);
@@ -798,18 +907,21 @@ export function useSourceDrag(options = {}) {
         return;
       }
 
-      // 创建克隆（从预览区域拖拽时）
-      const clonedSource = cloneSourceForCanvas(draggedSource, currentSelectedSource.value);
+      // 🎯 关键修复：无论从哪里拖拽，都创建克隆（不从预览区域移除原始源）
+      const clonedSource = cloneSourceForCanvas(draggedSource, index, true);
+
       if (!clonedSource) {
         ElMessage.error('克隆信号源失败');
         return;
       }
 
-      console.log('[HTML5拖拽] 放置克隆源到画布:', clonedSource.name, 'type:', clonedSource.type);
+      console.log('[HTML5拖拽] 放置克隆源到画布:', clonedSource.name, 'type:', clonedSource.type, '保留预览区域原始源');
       handleDropToCanvas(clonedSource, index);
 
       dragOverIndex.value = null;
       isDraggingSource.value = null;
+      currentSelectedSource.value = null;  // 🎯 清除当前选中源
+      mouseDragState.source = null;  // 🎯 清除鼠标拖拽状态中的源
     } catch (error) {
       console.error('[HTML5拖拽] 放置失败:', error);
       ElMessage.error('放置失败');
@@ -921,14 +1033,14 @@ export function useSourceDrag(options = {}) {
    */
   const getRenderBoxByIndex = (index) => {
     if (!currentLayout || !layoutStates) return null;
-    
-    const layoutValue = typeof currentLayout === 'object' && 'value' in currentLayout 
-      ? currentLayout.value 
+
+    const layoutValue = typeof currentLayout === 'object' && 'value' in currentLayout
+      ? currentLayout.value
       : currentLayout;
-    
+
     const layoutState = layoutStates[layoutValue];
     if (!layoutState || !layoutState.boxes) return null;
-    
+
     return layoutState.boxes[index] || null;
   };
 
@@ -943,12 +1055,12 @@ export function useSourceDrag(options = {}) {
     currentSelectedSource,
     canvasSourceMap,
     videoPreviews,
-    
+
     // 鼠标拖拽方法
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,
-    
+
     // HTML5 拖拽方法
     onSourceDragStart,
     onSourceDrag,
@@ -956,19 +1068,19 @@ export function useSourceDrag(options = {}) {
     onDragOver,
     onDragLeave,
     onDrop,
-    
+
     // 画中画拖拽方法
     onDragOverPip,
     onDragLeavePip,
     onDropPip,
-    
+
     // 触摸拖拽方法
     onTouchStart,
-    
+
     // 放置处理方法
     handleDrop,
     handleDropToCanvas,
-    
+
     // 辅助方法
     setCurrentSelectedSource: (source) => {
       currentSelectedSource.value = source;
@@ -980,7 +1092,7 @@ export function useSourceDrag(options = {}) {
     removeFromCanvas,
     cleanupDragState,
     getRenderBoxByIndex,
-    
+
     // 性能优化方法
     pauseVideoRendering,
     resumeVideoRendering

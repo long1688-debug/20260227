@@ -85,12 +85,13 @@
               </div>
 
               <!-- 🆕 标准视频网格（传统模式） -->
-              <VideoSection
+              <VideoGrid
                 v-if="!useRenderEngine"
                 :current-layout="currentLayout"
                 :canvas-sources="mappedCanvasSources"
                 :canvas-source-map="canvasSourceMap"
                 :drag-over-index="dragOverIndex"
+                :is-dragging="!!isDraggingSource"
                 :network-quality="networkQuality"
                 :custom-grid-count="customGridCount"
                 :is-maximized="isMaximized"
@@ -98,6 +99,7 @@
                 :global-subtitle="globalSubtitle"
                 :subtitle-visible="subtitleVisible"
                 :current-subtitle-text="currentSubtitleText"
+                :all-sources="allSources"
                 @show-recording-dialog="showRecordingDialog = true"
                 @show-settings-dialog="showSettingsDialog = true"
                 @show-multicam-dialog="showMulticamDialog = true"
@@ -111,6 +113,7 @@
                 @toggle-maximize="handleToggleMaximize"
                 @show-network-detail="handleShowNetworkDetail"
                 @drop-source="handleDropSource"
+                @drop="handleVideoGridDrop"
               />
             </div>
 
@@ -265,7 +268,7 @@ import DropOverlay from './teacher-window/common/DropOverlay.vue'
 import SourceManagementShortcut from './teacher-window/common/SourceManagementShortcut.vue'
 import GlobalNotifications from './teacher-window/common/GlobalNotifications.vue'
 import TeleportedWindows from './teacher-window/common/TeleportedWindows.vue'
-import VideoSection from './teacher-window/layout/VideoSection.vue'
+import VideoGrid from './teacher-window/video/VideoGrid.vue'
 import SourcePreviewBar from './teacher-window/layout/SourcePreviewBar.vue'
 import SidePanel from './teacher-window/SidePanel.vue'
 import RecordingManagerDialog from './teacher-window/dialogs/RecordingManagerDialog.vue'
@@ -493,6 +496,7 @@ const {
 } = useSourceDrag({
   // 🎯 关键修复：传递 canvasSourceMap，确保拖拽更新的是正确的映射
   canvasSourceMap,
+  videoPreviews,  // 🎯 传递 videoPreviews 用于性能优化（暂停/恢复视频渲染）
   saveLayoutMap: saveToStorage,
   assignSource,
   currentLayout,
@@ -509,6 +513,24 @@ const {
       addSourceToVideoSync(source);
       console.log(`[TeacherWindow] 已将克隆源添加到VideoSync列表: ${source.name} (${source.id})`);
     }
+  },
+  removeFromPreview: (source) => {
+    console.log('[TeacherWindow] 从预览区域移除源:', source.name);
+
+    // 从 videoPreviews 中移除
+    const sourceIndex = videoPreviews.value.findIndex(s => s.id === source.id);
+    if (sourceIndex !== -1) {
+      if (typeof removeVideoSource === 'function') {
+        removeVideoSource(source.id);
+        console.log('[TeacherWindow] 已从 videoPreviews 移除:', source.name);
+      } else {
+        videoPreviews.value.splice(sourceIndex, 1);
+      }
+    }
+
+    // 更新 addedToPreview 状态
+    sourceStore.updateSource(source.id, { addedToPreview: false });
+    console.log('[TeacherWindow] 已更新 addedToPreview 为 false:', source.name);
   }
 })
 
@@ -541,10 +563,99 @@ const onDrop = (event, index) => {
 // 🎯 处理 VideoSection 发出的放置事件
 const handleDropSource = ({ source, slotIndex, position }) => {
   console.log('[TeacherWindow] 从VideoSection接收放置事件:', { source, slotIndex, position })
-  if (typeof handleDrop === 'function') {
-    // 创建一个模拟事件对象
-    const mockEvent = { preventDefault: () => {} }
-    handleDrop(mockEvent, slotIndex)
+
+  if (!source || !slotIndex) {
+    console.error('[TeacherWindow] 无效的放置数据')
+    return
+  }
+
+  // 🎯 直接使用克隆和分配逻辑
+  const clonedSource = cloneSourceForCanvas(source, slotIndex, true)
+  if (!clonedSource) {
+    console.error('[TeacherWindow] 克隆源失败')
+    ElMessage.error('添加信号源失败')
+    return
+  }
+
+  // 🎯 关键修复：canvasSourceMap 只存储 ID 字符串，不存储整个对象
+  canvasSourceMap.value[slotIndex] = clonedSource.id
+
+  const layout = typeof currentLayout === 'object' && 'value' in currentLayout ? currentLayout.value : currentLayout
+  if (typeof assignSource === 'function') {
+    assignSource(slotIndex, clonedSource.id)
+  }
+
+  if (typeof saveToStorage === 'function') {
+    saveToStorage()
+  }
+
+  ElMessage.success(`已将 "${source.name}" 添加到画布 ${slotIndex}`)
+}
+
+// 🎯 处理 VideoGrid 的 HTML5 拖拽放置事件
+const handleVideoGridDrop = (event, index) => {
+  console.log('[TeacherWindow] 从VideoGrid接收HTML5拖拽放置事件:', { index })
+
+  try {
+    // 获取拖拽的数据
+    const sourceId = event.dataTransfer?.getData('sourceId')
+    const sourceType = event.dataTransfer?.getData('sourceType')
+    const sourceName = event.dataTransfer?.getData('sourceName')
+    const jsonData = event.dataTransfer?.getData('application/json')
+
+    console.log('[TeacherWindow] VideoGrid拖拽数据:', { sourceId, sourceType, sourceName })
+
+    let source = null
+
+    // 优先从 JSON 数据解析
+    if (jsonData) {
+      try {
+        source = JSON.parse(jsonData)
+        console.log('[TeacherWindow] 从 JSON 解析信号源:', source.name)
+      } catch (e) {
+        console.error('[TeacherWindow] JSON 解析失败:', e)
+      }
+    }
+
+    // 如果没有 JSON 数据，构造基本对象
+    if (!source && sourceId) {
+      source = {
+        id: sourceId,
+        type: sourceType,
+        name: sourceName
+      }
+      console.log('[TeacherWindow] 构造基本信号源对象')
+    }
+
+    if (!source) {
+      console.warn('[TeacherWindow] 未找到有效的信号源数据')
+      return
+    }
+
+    // 🎯 使用与 handleDropSource 相同的逻辑
+    const clonedSource = cloneSourceForCanvas(source, index, true)
+    if (!clonedSource) {
+      console.error('[TeacherWindow] 克隆源失败')
+      ElMessage.error('添加信号源失败')
+      return
+    }
+
+    // 🎯 关键修复：canvasSourceMap 只存储 ID 字符串，不存储整个对象
+    canvasSourceMap.value[index] = clonedSource.id
+
+    const layout = typeof currentLayout === 'object' && 'value' in currentLayout ? currentLayout.value : currentLayout
+    if (typeof assignSource === 'function') {
+      assignSource(index, clonedSource.id)
+    }
+
+    if (typeof saveToStorage === 'function') {
+      saveToStorage()
+    }
+
+    ElMessage.success(`已将 "${source.name}" 添加到画布 ${index}`)
+  } catch (error) {
+    console.error('[TeacherWindow] 处理VideoGrid拖拽放置失败:', error)
+    ElMessage.error('拖拽失败: ' + error.message)
   }
 }
 
@@ -1901,7 +2012,7 @@ const getVisibleCanvasIndices = (layout) => {
   };
 
   // 特殊布局和自由布局返回空数组（使用不同渲染方式）
-  if (layout === 18 || layout === 'free') {
+  if (layout === 18) {
     return [];
   }
 
@@ -1937,8 +2048,8 @@ const handleLayoutChange = async (newLayout) => {
     console.log(`[布局切换] oldLayout=${oldLayout}, currentLayout.value=${currentLayout?.value}`)
 
     //  统一状态管理：区分标准布局和自由布局（必须在if块外声明）
-    const isOldFreeLayout = oldLayout === 18 || oldLayout === 'free'
-    const isNewFreeLayout = newLayout === 18 || newLayout === 'free'
+    const isOldFreeLayout = oldLayout === 18
+    const isNewFreeLayout = newLayout === 18
 
     // 🎯 统一状态管理：使用 window.__layoutStates 保存旧布局状态
     if (oldLayout !== newLayout) {
@@ -2795,7 +2906,7 @@ const gridStyle = computed(() => {
   const layout = currentLayout.value
 
   // 自由布局
-  if (layout === 18 || layout === 'free') {
+  if (layout === 18) {
     return {
       display: 'block',
       position: 'relative'
@@ -2811,12 +2922,11 @@ const gridStyle = computed(() => {
     }
   }
 
-  // 特殊布局
+  // 特殊布局（14-17）：使用 CSS 中定义的 grid-template-areas
   if (config.special) {
-    return {
-      'grid-template-columns': 'repeat(4, 1fr)',
-      'grid-template-rows': 'repeat(4, 1fr)'
-    }
+    // 特殊布局的样式已在 VideoGrid.vue 的 CSS 中定义
+    // 这里返回空对象，让 CSS 完全控制布局
+    return {}
   }
 
   // 3分屏特殊处理
@@ -3485,7 +3595,20 @@ const handleVideoDrop = (event, index) => {
 
     // 🎯 关键修复：直接调用 handleDrop 处理放置
     if (typeof handleDrop === 'function') {
-      handleDrop({ ...source, dataTransfer: {} }, index)
+      // 创建一个模拟的拖拽事件对象，包含必要的 dataTransfer 信息
+      const mockEvent = {
+        preventDefault: () => {},
+        dataTransfer: {
+          getData: (key) => {
+            if (key === 'sourceId') return sourceId;
+            if (key === 'sourceType') return sourceType;
+            if (key === 'sourceName') return sourceName;
+            if (key === 'application/json') return JSON.stringify(source);
+            return '';
+          }
+        }
+      };
+      handleDrop(mockEvent, index)
     } else {
       console.error('[TeacherWindow] handleDrop 方法不存在')
       ElMessage.error('拖拽功能不可用')
@@ -3510,12 +3633,12 @@ const handleDragEnd = () => {
 }
 
 // 🎯 处理鼠标按下事件（用于自定义拖拽）
-const processMouseDown = (event, source) => {
-  console.log('[TeacherWindow] 鼠标按下预览源:', source.name)
+const processMouseDown = (event, source, isFromPreview = true) => {
+  console.log('[TeacherWindow] 鼠标按下预览源:', source.name, 'fromPreview:', isFromPreview)
 
   // 🎯 调用 useSourceDrag 的 handleMouseDown 方法处理实际拖拽
   if (typeof handleMouseDown === 'function') {
-    handleMouseDown(source, event)  // 修复参数顺序：source在前，event在后
+    handleMouseDown(source, event, isFromPreview)
   } else {
     console.error('[TeacherWindow] handleMouseDown 方法不存在')
   }
@@ -3555,6 +3678,13 @@ const handleOpenPlayback = (videoUrl) => {
 const handleShowNetworkDetail = (detail) => {
   currentNetworkDetail.value = detail
   showNetworkDetailDialog.value = true
+}
+
+// 🎯 切换最大化状态（处理来自 VideoSection 的事件）
+const handleToggleMaximize = (index) => {
+  console.log('[TeacherWindow] 切换最大化状态, index:', index)
+  // TODO: 实现具体的最大化逻辑
+  // 这里可以根据需求实现全屏、画中画等功能
 }
 
 // 打开重命名对话框
@@ -4026,6 +4156,11 @@ watch(() => sourceStore.sources, (newSources, oldSources) => {
   // 检查是否有新添加的源
   if (newSources.length > oldSources.length) {
     const newSource = newSources[newSources.length - 1]
+    // 🎯 修复：忽略克隆源（isClone: true），克隆源不应自动添加到预览区域
+    if (newSource.isClone) {
+      console.log('[TeacherWindow] 跳过克隆源的自动预览添加:', newSource.name)
+      return
+    }
     // 🎯 信号源添加后自动添加到预览区域（addedToPreview = true）
     if (newSource.addedToPreview) {
       // 检查是否已经存在于 videoPreviews 中
@@ -4034,7 +4169,7 @@ watch(() => sourceStore.sources, (newSources, oldSources) => {
         addVideoSource(newSource)
         console.log('[TeacherWindow] 已将新源自动添加到预览区域:', newSource)
       }
-      // 🎯 不再自动映射到画布格子，需要用户手动拖曳
+      //  不再自动映射到画布格子，需要用户手动拖曳
     } else {
       console.log('[TeacherWindow] 新信号源未标记为添加到预览:', newSource.name)
     }
