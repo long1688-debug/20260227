@@ -164,10 +164,20 @@
               请通过"信号源"按钮弹出管理对话框
             </div>
           </template>
+
+          <!-- 🎯 媒体文件面板 -->
+          <template #mediaFiles>
+            <div style="padding: 20px; text-align: center; color: #778DA9;">
+              媒体文件功能已整合到右侧面板
+            </div>
+          </template>
         </SidePanel>
 
         <!--  AI语音助手组件 -->
         <VoiceAssistant />
+
+        <!-- 🎤 Whisper 语音输入和实时字幕 -->
+
       </div>
 
       <!-- 全局对话框和组件 -->
@@ -194,6 +204,7 @@
         @remove-from-preview="handleRemoveFromPreview"
         @rename-source="handleRenameSource"
         @delete-source="handleDeleteSource"
+        @update-network-camera="handleUpdateNetworkCamera"
       />
       <ScreenShareDialog v-model="showScreenShareDialog" />
 
@@ -248,6 +259,26 @@
         @close-analysis-window="showAnalysisWindow = false"
         @close-web-window="showWebWindow = false"
       />
+
+      <!-- 📥 Whisper 模型管理对话框 -->
+      <el-dialog
+        v-model="showModelManager"
+        title="Whisper 模型管理"
+        width="600px"
+        :close-on-click-modal="false"
+      >
+        <WhisperModelManager />
+      </el-dialog>
+
+      <!-- 📥 模型管理浮动按钮 -->
+      <el-button
+        @click="showModelManager = true"
+        circle
+        title="Whisper 模型管理"
+        class="model-manager-float-btn"
+      >
+        <el-icon><Download /></el-icon>
+      </el-button>
     </div>
   </div>
 </template>
@@ -258,6 +289,8 @@ import { ElMessage } from 'element-plus'
 import { UploadFilled, Refresh } from '@element-plus/icons-vue'
 import TitleBar from './TitleBar.vue'
 import { audioMixer } from '@/utils/audioMixer'
+// 🎯 RTSP 地址解析器（新增）
+import { resolveRtsp } from '@/utils/rtsp-resolver'
 // 🆕 重构新增组件
 import VideoOperationToolbar from './teacher-window/toolbar/VideoOperationToolbar.vue'
 import LayoutManagementPanel from './teacher-window/panels/LayoutManagementPanel.vue'
@@ -293,6 +326,8 @@ import RenderEngineWrapper from './render/RenderEngineWrapper.vue'
 import CameraPreview from './render/CameraPreview.vue'
 // 🆕 AI语音助手组件
 import VoiceAssistant from './VoiceAssistant.vue'
+// 📥 Whisper 模型管理组件
+import WhisperModelManager from './WhisperModelManager.vue'
 import {
   EditPen,
   VideoCamera,
@@ -302,7 +337,8 @@ import {
   Connection,
   FolderOpened,
   Setting,
-  ArrowDown
+  ArrowDown,
+  Download
 } from './icons'
 // ============================================
 // 核心 Composables - 必须导入才能正常工作
@@ -972,6 +1008,9 @@ const showScreenShareDialog = ref(false)
 
 // 多路音视频编解码对话框
 const showMediaCodecDialog = ref(false)
+
+// 📥 Whisper 模型管理对话框
+const showModelManager = ref(false)
 
 // 其他功能对话框
 const scannerDevicesList = ref([])
@@ -4070,125 +4109,32 @@ const handleSubmitNewSource = async (formData) => {
       newSource.autoCrop = formData.autoCrop
       newSource.resolution = '1920x1080'
     } else if (formData.type === 'networkCamera') {
+      // 🎯 参考eb4项目：立即创建信号源，后台异步解析ONVIF
       newSource.protocol = formData.protocol
-
-      // 🎯 修复：ONVIF 协议下，若 streamUrl 为空或是 ONVIF 服务端点，通过 Tauri 后端 ONVIF GetStreamUri
-      // 将设备服务地址解析为真实 RTSP 流地址，防止 ffmpeg 把 ONVIF 服务端点当成视频流打开
-      const isOnvifEndpoint = formData.protocol === 'onvif' &&
-        (formData.streamUrl || formData.onvifUrl) &&
-        /https?:\/\/[^/]+\/onvif\//i.test(formData.streamUrl || formData.onvifUrl)
-
-      if (isOnvifEndpoint) {
-        try {
-          const { invoke } = await import('@tauri-apps/api/core')
-          const onvifAddrMatch = (formData.onvifUrl || formData.streamUrl).match(/^https?:\/\/([^:/]+)(?::(\d+))?/)
-
-          console.log('[TeacherWindow] 📍 ONVIF地址解析信息:')
-          console.log('  - onvifUrl:', formData.onvifUrl)
-          console.log('  - streamUrl:', formData.streamUrl)
-          console.log('  - 匹配结果:', onvifAddrMatch)
-
-          if (onvifAddrMatch) {
-            const ip = onvifAddrMatch[1]
-            const port = parseInt(onvifAddrMatch[2] || '80', 10)
-
-            console.log('[TeacherWindow] 🔧 调用 Tauri API get_onvif_stream_uri:')
-            console.log('  - IP:', ip)
-            console.log('  - 端口:', port)
-            console.log('  - 用户名:', formData.username || 'admin')
-            console.log('  - 密码:', formData.password ? '***' : 'admin')
-
-            const streamUriResult = await invoke('get_onvif_stream_uri', {
-              ip,
-              port,
-              username: formData.username || 'admin',
-              password: formData.password || 'admin'
-            })
-
-            console.log('[TeacherWindow] ✅ Tauri API 返回结果:', streamUriResult)
-
-            if (streamUriResult?.uri) {
-              newSource.streamUrl = streamUriResult.uri
-              newSource.protocol = 'rtsp' // 🎯 关键：修改协议为 RTSP 以使用正确的初始化路径
-              console.log('[TeacherWindow] ONVIF→RTSP解析成功:', streamUriResult.uri)
-            } else {
-              newSource.streamUrl = formData.streamUrl || formData.onvifUrl
-              console.warn('[TeacherWindow] ONVIF GetStreamUri 未返回uri，保留原地址')
-            }
-          } else {
-            console.error('[TeacherWindow] ❌ 无法从 ONVIF 地址中提取 IP 和端口')
-            newSource.streamUrl = formData.streamUrl || formData.onvifUrl
-          }
-        } catch (err) {
-          console.error('[TeacherWindow] ❌ ONVIF RTSP地址解析失败:')
-          console.error('  - 错误类型:', err.constructor.name)
-          console.error('  - 错误消息:', err.message)
-          console.error('  - 完整错误:', err)
-
-          // 🎯 提供更详细的错误信息和备选方案
-          // 🎯 修复：扩展错误检测范围，不仅仅检测 GetProfiles 错误
-          const isOnvifError = err.message && (
-            err.message.includes('GetProfiles') ||
-            err.message.includes('GetStreamUri') ||
-            err.message.includes('ONVIF') ||
-            err.message.includes('设备返回错误') ||
-            err.message.includes('标准流程和降级方案均失败') ||
-            err.message.includes('HTTP 404')
-          )
-
-          if (isOnvifError) {
-            console.warn('[TeacherWindow] ⚠️ ONVIF协议获取流地址失败，可能原因:')
-            console.warn('   1. 设备不支持标准ONVIF协议')
-            console.warn('   2. 认证信息不正确')
-            console.warn('   3. 设备防火墙阻止了请求')
-            console.warn('   4. ONVIF服务未启用')
-            console.warn('   5. 设备需要特定的路径或端口')
-            console.warn('   6. 设备ONVIF服务返回HTTP 404')
-
-            // 🎯 尝试使用备选方案获取RTSP地址
-            try {
-              const { invoke } = await import('@tauri-apps/api/core')
-              console.log('[TeacherWindow] 🔄 尝试使用通用RTSP模板作为备选方案...')
-
-              const ip = onvifAddrMatch ? onvifAddrMatch[1] : ''
-              const port = parseInt(onvifAddrMatch?.[2] || '80', 10)
-
-              const fallbackResult = await invoke('try_common_rtsp_templates', {
-                ip,
-                port,
-                username: formData.username || 'admin',
-                password: formData.password || 'admin',
-                brand: formData.brand || null
-              })
-
-              if (fallbackResult) {
-                console.log('[TeacherWindow] ✅ 备选方案成功，使用RTSP地址:', fallbackResult)
-                newSource.streamUrl = fallbackResult
-                newSource.protocol = 'rtsp'
-              } else {
-                console.warn('[TeacherWindow] ⚠️ 备选方案也失败了，回退到原地址')
-                newSource.streamUrl = formData.streamUrl || formData.onvifUrl
-              }
-            } catch (fallbackErr) {
-              console.error('[TeacherWindow] ❌ 备选方案也失败:', fallbackErr)
-              newSource.streamUrl = formData.streamUrl || formData.onvifUrl
-            }
-          } else {
-            console.warn('[TeacherWindow] 回退到原地址:', formData.streamUrl || formData.onvifUrl)
-            newSource.streamUrl = formData.streamUrl || formData.onvifUrl
-          }
-        }
-      } else {
-        newSource.streamUrl = formData.streamUrl || formData.onvifUrl || ''
-      }
-      newSource.onvifUrl = formData.onvifUrl || ''
+      newSource.streamUrl = cleanUrl(formData.onvifUrl || formData.streamUrl || '')
+      newSource.onvifUrl = cleanUrl(formData.onvifUrl || '')
       newSource.needAuth = formData.needAuth
       newSource.username = formData.username
       newSource.password = formData.password
       newSource.resolution = '1920x1080'
+
+      // 🎯 新增：连接状态管理（参考eb4设计）
+      newSource.connectionStatus = 'connecting'  // 'connecting' | 'connected' | 'failed'
+      newSource.loading = true  // 加载标志
+      newSource.retryCount = 0
+
+      // ✅ 先添加到列表，让预览组件立即显示（带加载动画）
+      sourceStore.addSource(newSource)
+
+      // 🚀 后台异步处理（不阻塞UI）
+      console.log('[TeacherWindow] 🚀 启动后台ONVIF/RTSP连接流程...')
+      startBackgroundNetworkCameraConnection(newSource.id, formData)
+
+      // 🎯 关键：提前返回，不再等待同步解析完成
+      return
     } else if (formData.type === 'networkStream') {
       newSource.protocol = formData.protocol
-      newSource.streamUrl = formData.streamUrl
+      newSource.streamUrl = cleanUrl(formData.streamUrl)
       newSource.bufferTime = formData.bufferTime
       newSource.needAuth = formData.needAuth
       newSource.authToken = formData.authToken
@@ -4238,6 +4184,260 @@ const handleSubmitNewSource = async (formData) => {
     console.error('[TeacherWindow] 添加信号源失败:', error)
     ElMessage.error('添加信号源失败: ' + error.message)
   }
+}
+
+/**
+ * 清理 URL 中的反引号和多余空格
+ */
+function cleanUrl(url) {
+  if (!url) return url
+  return url.trim().replace(/^`\s*/, '').replace(/\s*`$/, '')
+}
+
+/**
+ * 更新网络摄像机配置
+ */
+const handleUpdateNetworkCamera = (updatedSource) => {
+  console.log('[TeacherWindow] 收到更新网络摄像机请求:', updatedSource)
+
+  try {
+    // 查找要更新的信号源
+    const sourceIndex = sourceStore.sources.findIndex(s => s.id === updatedSource.id)
+
+    if (sourceIndex === -1) {
+      console.error('[TeacherWindow] ❌ 未找到要更新的信号源:', updatedSource.id)
+      ElMessage.error('未找到要更新的信号源')
+      return
+    }
+
+    // 清理 URL 中的反引号和多余空格
+    if (updatedSource.streamUrl) {
+      updatedSource.streamUrl = cleanUrl(updatedSource.streamUrl)
+    }
+    if (updatedSource.onvifUrl) {
+      updatedSource.onvifUrl = cleanUrl(updatedSource.onvifUrl)
+    }
+
+    // 更新信号源
+    sourceStore.sources[sourceIndex] = {
+      ...sourceStore.sources[sourceIndex],
+      ...updatedSource,
+      connectionStatus: 'connecting',
+      loading: true,
+      retryCount: 0
+    }
+
+    console.log('[TeacherWindow] ✅ 信号源已更新，开始后台连接...')
+
+    // 启动后台连接流程
+    startBackgroundNetworkCameraConnection(updatedSource.id, updatedSource)
+
+    ElMessage.success('网络摄像机配置已更新')
+  } catch (error) {
+    console.error('[TeacherWindow] 更新网络摄像机失败:', error)
+    ElMessage.error('更新网络摄像机失败: ' + error.message)
+  }
+}
+
+// 🎯 参考eb4项目：后台异步连接网络摄像机（不阻塞UI）
+// 🚀 已升级为使用新的 RTSP 解析器（三层智能探测策略）
+async function startBackgroundNetworkCameraConnection(sourceId, formData) {
+  console.log('[TeacherWindow] 🚀 启动后台ONVIF/RTSP连接流程...')
+
+  // 🎯 修复：从 sourceStore 中查找信号源（而不是 videoPreviews）
+  const source = sourceStore.sources.find(s => s.id === sourceId)
+  if (!source) {
+    console.error('[TeacherWindow] ❌ 未找到信号源:', sourceId)
+    console.error('[TeacherWindow] 当前所有信号源:', sourceStore.sources.map(s => ({ id: s.id, name: s.name })))
+    return
+  }
+
+  try {
+    // 🎯 关键修复：先判断协议类型
+    if (formData.protocol === 'rtsp' && formData.streamUrl) {
+      // 如果是RTSP协议，直接使用用户输入的地址，不进行ONVIF解析
+      console.log('[TeacherWindow] 使用RTSP协议，直接应用地址:', formData.streamUrl)
+      
+      source.streamUrl = formData.streamUrl
+      source.protocol = 'rtsp'
+      source.connectionStatus = 'connected'
+      source.loading = false
+      // 🎯 关键修复：保存用户名和密码，供后续RTSP播放时使用
+      source.username = formData.username || ''
+      source.password = formData.password || ''
+      source.needAuth = formData.needAuth || false
+      
+      ElMessage.success('RTSP地址已配置')
+      
+      // 🎯 触发预览组件重新加载
+      triggerPreviewReload(sourceId)
+      return
+    }
+    
+    // 清理 URL 中的反引号和多余空格
+    const onvifUrl = cleanUrl(formData.onvifUrl || formData.streamUrl || '')
+
+    // 🎯 增强地址解析：支持多种格式
+    let ip = ''
+    let onvifPort = 80
+
+    // 格式1: http(s)://IP:PORT/path
+    const httpMatch = onvifUrl.match(/^https?:\/\/([^:/]+)(?::(\d+))?/)
+    if (httpMatch) {
+      ip = httpMatch[1]
+      onvifPort = parseInt(httpMatch[2] || '80', 10)
+    }
+    // 格式2: rtsp://IP:PORT/path
+    const rtspMatch = onvifUrl.match(/^rtsp:\/\/([^:/]+)(?::(\d+))?/)
+    if (!ip && rtspMatch) {
+      ip = rtspMatch[1]
+      onvifPort = parseInt(rtspMatch[2] || '80', 10)  // ONVIF端口通常不是554
+    }
+    // 格式3: 纯IP地址（如 192.168.1.100）
+    const ipMatch = onvifUrl.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/)
+    if (!ip && ipMatch) {
+      ip = ipMatch[1]
+      onvifPort = 80
+    }
+    // 格式4: IP:PORT
+    const ipPortMatch = onvifUrl.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d+)$/)
+    if (!ip && ipPortMatch) {
+      ip = ipPortMatch[1]
+      onvifPort = parseInt(ipPortMatch[2], 10)
+    }
+    // 🎯 格式5: 如果还是空，尝试从 formData.ip 获取
+    if (!ip && formData.ip) {
+      ip = formData.ip
+      onvifPort = formData.onvifPort || 80
+    }
+
+    if (!ip) {
+      console.error('[TeacherWindow] ❌ 无法从地址中提取IP:', onvifUrl)
+      source.connectionStatus = 'failed'
+      source.loading = false
+
+      ElMessage.warning({
+        message: '无法识别的地址格式，请输入IP地址或ONVIF地址',
+        duration: 8000
+      })
+      return
+    }
+
+    const username = formData.username || 'admin'
+    const password = formData.password || 'admin'
+
+    // 🎯 关键改进：使用统一的 RTSP 解析器（三层智能探测策略）
+    console.log('[TeacherWindow] 🔍 使用智能RTSP解析器...')
+    console.log(`[TeacherWindow] ONVIF地址: ${onvifUrl}, 提取IP: ${ip}, ONVIF端口: ${onvifPort}`)
+
+    // 🎯 判断是否为搜索模式：
+    // - 自动扫描发现的摄像机（无 cameraIp，从 onvifUrl 提取IP）→ 搜索模式
+    // - 用户手动输入 cameraIp → 手动模式（仅用指定端口）
+    const isManualInput = !!(formData.cameraIp && formData.cameraIp.trim() !== '')
+    const isScanMode = !isManualInput
+
+    console.log(`[TeacherWindow] 端口模式: ${isScanMode ? '搜索模式(多端口扫描)' : '手动模式(仅指定端口)'}, ONVIF端口: ${onvifPort}`)
+
+    const result = await resolveRtsp({
+      manufacturer: detectCameraBrand(formData, source),
+      host: ip,
+      port: 554,  // RTSP 默认端口
+      username: username,
+      password: password,
+      // 如果协议是 ONVIF，传入原始地址作为提示
+      onvifUri: formData.protocol === 'onvif' ? onvifUrl : undefined,
+      // 🎯 传入 ONVIF 服务端口
+      onvifPort: onvifPort,
+      // 🎯 搜索模式：自动扫描发现→遍历多端口；手动输入→仅用指定端口
+      scanMode: isScanMode
+    })
+
+    // 解析成功，根据autoToggle选择码流
+    const mediaUrls = result.media_urls ? result.media_urls.split(',') : [result.uri]
+    const autoToggle = true // 子码流优先（节省带宽）
+    const selectedUrl = autoToggle && mediaUrls.length > 1 ? mediaUrls[mediaUrls.length - 1] : mediaUrls[0]
+
+    source.streamUrl = selectedUrl
+    source.protocol = 'rtsp'
+    source.connectionStatus = 'connected'
+    source.loading = false
+    // 保存所有码流地址，供后续切换
+    source.mediaUrls = result.media_urls || result.uri
+
+    console.log('[TeacherWindow] RTSP解析成功:', {
+      uri: result.uri,
+      selectedUrl,
+      mediaUrls,
+      source: result.source,
+      valid: result.valid
+    })
+
+    const streamInfo = mediaUrls.length > 1 ? `${mediaUrls.length}个码流` : 'ONVIF协议'
+    ElMessage.success(`网络摄像机连接成功 (${streamInfo})`)
+
+    // 🎯 触发预览组件重新加载
+    triggerPreviewReload(sourceId)
+
+  } catch (error) {
+    console.error('[TeacherWindow] ❌ RTSP解析失败:', error)
+
+    source.connectionStatus = 'failed'
+    source.loading = false
+
+    // 🎯 自动弹出编辑对话框，让用户手动输入RTSP地址
+    ElMessage.warning({
+      message: 'ONVIF自动解析失败，请手动输入RTSP地址（格式：rtsp://IP:554/路径）',
+      duration: 8000,
+      showClose: true
+    })
+
+    // 🎯 延迟打开 AddSourceDialog 并进入编辑模式
+    setTimeout(() => {
+      showAddSourceDialog.value = true
+      // 通知 AddSourceDialog 进入编辑模式
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('edit-network-camera', { detail: source }))
+      }, 300)
+    }, 500)
+  }
+}
+
+/**
+ * 🎯 检测摄像机品牌（辅助函数）
+ * 优先级：formData.brand > source.brand > URL推断 > generic
+ */
+function detectCameraBrand(formData, source) {
+  // 1. 优先使用 formData 中指定的品牌
+  if (formData.brand && formData.brand !== 'generic' && formData.brand !== '') {
+    return formData.brand
+  }
+
+  // 2. 使用 source 中存储的品牌
+  if (source.brand && source.brand !== 'generic' && source.brand !== '') {
+    return source.brand
+  }
+
+  // 3. 从 URL 推断品牌
+  const url = (formData.onvifUrl || formData.streamUrl || '').toLowerCase()
+  if (url.includes('hikvision') || url.includes('ds-')) return 'Hikvision'
+  if (url.includes('dahua') || url.includes('ipc-')) return 'Dahua'
+  if (url.includes('uniview') || url.includes('unv')) return 'Uniview'
+  if (url.includes('axis')) return 'Axis'
+  if (url.includes('tplink') || url.includes('tp-link')) return 'TP-Link'
+  if (url.includes('xiongmai') || url.includes('xm')) return 'Xiongmai'
+
+  // 4. 默认返回通用
+  return 'generic'
+}
+
+// 🎯 触发预览组件重新加载
+function triggerPreviewReload(sourceId) {
+  console.log('[TeacherWindow] 🔄 触发预览组件重载:', sourceId)
+
+  // 通过事件总线通知SourcePreviewBar
+  window.dispatchEvent(new CustomEvent('reload-preview', {
+    detail: { sourceId }
+  }))
 }
 
 // 提交重命名
@@ -4397,6 +4597,9 @@ onMounted(() => {
   }
 
   console.log('[TeacherWindow] 音频设置已暴露到全局')
+
+  // 📥 初始化 Whisper 模型管理器
+  initWhisperModelManager()
 
   // 🎯 监听添加信号源事件
   window.addEventListener('show-add-source-dialog', handleShowAddSourceDialog)
@@ -4591,6 +4794,151 @@ onUnmounted(() => {
   window.removeEventListener('open-web-window', () => {})
   window.removeEventListener('video-meeting-audio-state', () => {})
 })
+
+// ==================== 🎤 Whisper 语音识别处理 ====================
+
+// 📝 导入说话人分离和模型管理工具
+import { separateSpeakers } from '@/utils/speakerSeparator'
+import { initModelManager } from '@/utils/whisperModelManager'
+
+/**
+ * 初始化 Whisper 模型管理器
+ */
+async function initWhisperModelManager() {
+  try {
+    await initModelManager()
+    console.log('[TeacherWindow] ✅ Whisper 模型管理器初始化成功')
+  } catch (error) {
+    console.error('[TeacherWindow] ❌ Whisper 模型管理器初始化失败:', error)
+  }
+}
+
+/**
+ * 处理 Whisper 语音识别结果
+ */
+async function handleVoiceRecognized(data) {
+  console.log('[TeacherWindow] 🎤 语音识别结果:', data)
+
+  const text = data.text.trim()
+  if (!text) {
+    console.log('[TeacherWindow] ⚠️ 未识别到有效内容')
+    return
+  }
+
+  // 1. 更新全局字幕
+  globalSubtitle.value = text
+  subtitleVisible.value = true
+
+  // 5秒后自动清除字幕
+  setTimeout(() => {
+    if (globalSubtitle.value === text) {
+      globalSubtitle.value = ''
+    }
+  }, 5000)
+
+  // 2. 尝试执行语音命令
+  executeVoiceCommand(text)
+}
+
+/**
+ * 执行语音命令
+ */
+function executeVoiceCommand(text) {
+  const lowerText = text.toLowerCase()
+
+  console.log('[TeacherWindow] 🎯 检查语音命令:', lowerText)
+
+  // 录制控制
+  if (lowerText.includes('开始录制') || lowerText.includes('start recording')) {
+    console.log('[TeacherWindow] ✅ 执行: 开始录制')
+    handleStartAllCanvasRecording()
+    ElMessage.success('已开始录制')
+    return
+  }
+
+  if (lowerText.includes('停止录制') || lowerText.includes('stop recording')) {
+    console.log('[TeacherWindow] ✅ 执行: 停止录制')
+    handleStopAllCanvasRecording()
+    ElMessage.info('已停止录制')
+    return
+  }
+
+  if (lowerText.includes('暂停录制') || lowerText.includes('pause recording')) {
+    console.log('[TeacherWindow] ✅ 执行: 暂停录制')
+    handlePauseAllCanvasRecording()
+    ElMessage.info('已暂停录制')
+    return
+  }
+
+  // 布局切换
+  if (lowerText.includes('切换布局') || lowerText.includes('switch layout')) {
+    console.log('[TeacherWindow] ✅ 执行: 切换布局')
+    const layouts = [1, 2, 3, 4, 5, 7, 10, 11, 12, 13]
+    const currentIndex = layouts.indexOf(currentLayout.value)
+    const nextIndex = (currentIndex + 1) % layouts.length
+    currentLayout.value = layouts[nextIndex]
+    ElMessage.success(`已切换到${layouts[nextIndex]}分屏`)
+    return
+  }
+
+  // 特定布局
+  if (lowerText.includes('一分屏') || lowerText.includes('single')) {
+    currentLayout.value = 1
+    ElMessage.success('已切换到一分屏')
+    return
+  }
+
+  if (lowerText.includes('四分屏') || lowerText.includes('four split')) {
+    currentLayout.value = 4
+    ElMessage.success('已切换到四分屏')
+    return
+  }
+
+  if (lowerText.includes('九分屏') || lowerText.includes('nine split')) {
+    currentLayout.value = 10
+    ElMessage.success('已切换到九分屏')
+    return
+  }
+
+  // 信号源操作
+  if (lowerText.includes('添加摄像机') || lowerText.includes('add camera')) {
+    console.log('[TeacherWindow] ✅ 执行: 添加摄像机')
+    showAddSourceDialog.value = true
+    ElMessage.info('请配置网络摄像机')
+    return
+  }
+
+  if (lowerText.includes('添加信号源') || lowerText.includes('add source')) {
+    console.log('[TeacherWindow] ✅ 执行: 添加信号源')
+    showAddSourceDialog.value = true
+    return
+  }
+
+  // 全屏切换
+  if (lowerText.includes('全屏') || lowerText.includes('fullscreen')) {
+    console.log('[TeacherWindow] ✅ 执行: 全屏切换')
+    toggleFullscreen()
+    return
+  }
+
+  // 注释/标注
+  if (lowerText.includes('开启标注') || lowerText.includes('enable annotation')) {
+    console.log('[TeacherWindow] ✅ 执行: 开启标注')
+    enableAnnotationForAll()
+    ElMessage.success('已开启标注功能')
+    return
+  }
+
+  if (lowerText.includes('关闭标注') || lowerText.includes('disable annotation')) {
+    console.log('[TeacherWindow] ✅ 执行: 关闭标注')
+    isAnnotationEnabled.value = false
+    ElMessage.info('已关闭标注功能')
+    return
+  }
+
+  // 未识别的命令，仅记录日志
+  console.log('[TeacherWindow] ⚠️ 未识别的语音命令:', text)
+}
 
 // 🎯 仅在有视频源时才设置 canvasSourceMap
 if (videoPreviews.value.length > 0 && Object.keys(canvasSourceMap.value).length === 0) {
@@ -4925,5 +5273,22 @@ onUnmounted(() => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* 📥 Whisper 模型管理浮动按钮 */
+.model-manager-float-btn {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  z-index: 1000;
+  width: 50px;
+  height: 50px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 16px rgba(64, 158, 255, 0.3);
+  }
 }
 </style>

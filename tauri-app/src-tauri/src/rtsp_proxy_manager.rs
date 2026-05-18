@@ -1,9 +1,10 @@
-// RTSP Proxy Manager - 管理 Node.js RTSP 代理服务
+// ZLMediaKit Stream Proxy Manager - 通过 ZLMediaKit 管理流媒体代理
+// 替代原 Node.js rtsp-proxy，直接使用 ZLMediaKit 作为流媒体服务器
 use std::process::{Child, Command};
 use tokio::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
-/// RTSP 代理服务状态
+/// ZLMediaKit 流代理状态
 pub struct RtspProxyState {
     pub process: Mutex<Option<Child>>,
     pub host: String,
@@ -14,77 +15,85 @@ impl RtspProxyState {
     pub fn new() -> Self {
         Self {
             process: Mutex::new(None),
-            //  使用 localhost 而不是 127.0.0.1，避免 IPv6/IPv4 解析问题
-            host: "localhost".to_string(),
-            port: 8081, // RTSP Proxy HTTP 端口
+            // 使用 ZLMediaKit HTTP API 端口
+            host: "127.0.0.1".to_string(),
+            port: 801, // ZLMediaKit HTTP API 端口
         }
     }
 }
 
-/// 启动 RTSP 代理服务
+/// 启动流媒体代理服务（通过 ZLMediaKit）
 #[tauri::command]
 pub async fn start_rtsp_proxy(app_handle: AppHandle) -> Result<String, String> {
     let state = app_handle.state::<RtspProxyState>();
 
-    // 检查是否已有运行中的进程
+    // 🎯 先检查 ZLMediaKit 是否已在运行
+    let client = reqwest::Client::new();
+    let health_url = format!("http://{}:{}/index/api/getServerInfo", state.host, state.port);
+
+    match client.get(&health_url).timeout(std::time::Duration::from_secs(3)).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            println!("[ZLMediaKit] 服务已在运行");
+            return Ok(format!("ZLMediaKit 流媒体服务已运行: http://{}:{}", state.host, state.port));
+        }
+        _ => {}
+    }
+
+    // 🎯 ZLMediaKit 未运行，尝试启动
+    println!("[ZLMediaKit] 服务未运行，尝试启动...");
+
+    // 尝试通过 Tauri 的 zlmediakit_manager 启动
+    let zlm_state = app_handle.state::<crate::zlmediakit_manager::ZLMediaKitState>();
     {
-        let mut process = state.process.lock().await;
+        let mut process = zlm_state.process.lock().await;
         if let Some(ref mut child) = *process {
             match child.try_wait() {
-                Ok(Some(_)) => { /* 进程已退出，需要重新启动 */ }
-                Ok(None) => return Ok("RTSP 代理服务已在运行中".to_string()),
+                Ok(Some(_)) => { *process = None; }
+                Ok(None) => {
+                    println!("[ZLMediaKit] 服务已在运行中");
+                    return Ok(format!("ZLMediaKit 流媒体服务已运行: http://{}:{}", state.host, state.port));
+                }
                 Err(_) => {}
             }
-            *process = None;
         }
     }
 
-    // 查找 rtsp-proxy.js 文件
-    let proxy_script = find_rtsp_proxy_script()?;
-    println!("[RTSP Proxy] 找到脚本: {}", proxy_script);
+    // 查找并启动 ZLMediaKit
+    let zlmediakit_path = find_zlmediakit_binary()?;
 
-    // 获取脚本所在目录
-    let script_dir = std::path::Path::new(&proxy_script)
-        .parent()
-        .ok_or("无法获取脚本目录")?
-        .to_str()
-        .ok_or("无效的路径编码")?
-        .to_string();
-
-    // 启动 Node.js 进程
-    let child = Command::new("node")
-        .arg(&proxy_script)
-        .current_dir(&script_dir)
+    let mut child = Command::new(&zlmediakit_path)
+        .current_dir(
+            std::path::Path::new(&zlmediakit_path)
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+        )
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| format!("启动 RTSP 代理服务失败: {}", e))?;
+        .map_err(|e| format!("启动 ZLMediaKit 失败: {}", e))?;
 
-    println!("[RTSP Proxy] 服务已启动 (PID: {})", child.id());
-
-    // 等待服务就绪（增加等待时间）
+    // 等待服务启动
     tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
     // 验证服务是否可用（带重试机制）
-    let client = reqwest::Client::new();
-    let health_url = format!("http://{}:{}/health", state.host, state.port);
-
     let mut health_check_passed = false;
     let max_retries = 5;
 
     for attempt in 1..=max_retries {
-        println!("[RTSP Proxy] 健康检查尝试 {}/{}", attempt, max_retries);
+        println!("[ZLMediaKit] 健康检查尝试 {}/{}", attempt, max_retries);
 
-        match client.get(&health_url).send().await {
+        match client.get(&health_url).timeout(std::time::Duration::from_secs(2)).send().await {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    println!("[RTSP Proxy] 服务健康检查通过");
+                    println!("[ZLMediaKit] 服务健康检查通过");
                     health_check_passed = true;
                     break;
                 } else {
-                    println!("[RTSP Proxy] 健康检查响应状态: {}", resp.status());
+                    println!("[ZLMediaKit] 健康检查响应状态: {}", resp.status());
                 }
             }
             Err(e) => {
-                println!("[RTSP Proxy] 健康检查失败 (尝试 {}/{}): {}", attempt, max_retries, e);
+                println!("[ZLMediaKit] 健康检查失败 (尝试 {}/{}): {}", attempt, max_retries, e);
             }
         }
 
@@ -94,8 +103,7 @@ pub async fn start_rtsp_proxy(app_handle: AppHandle) -> Result<String, String> {
     }
 
     if !health_check_passed {
-        // 健康检查失败，终止进程
-        println!("[RTSP Proxy] 健康检查失败，终止进程");
+        println!("[ZLMediaKit] 健康检查失败，终止进程");
         #[cfg(target_os = "windows")]
         {
             let _ = Command::new("taskkill")
@@ -106,62 +114,60 @@ pub async fn start_rtsp_proxy(app_handle: AppHandle) -> Result<String, String> {
         {
             let _ = child.kill();
         }
-        return Err(format!("RTSP 代理服务启动失败：健康检查未通过（尝试了{}次）", max_retries));
+        return Err(format!("ZLMediaKit 启动失败：健康检查未通过（尝试了{}次）", max_retries));
     }
 
-    // 保存进程
+    // 保存进程到 ZLMediaKit 状态
     {
-        let mut process = state.process.lock().await;
+        let mut process = zlm_state.process.lock().await;
         *process = Some(child);
     }
 
-    Ok(format!("RTSP 代理服务已启动: http://{}:{}", state.host, state.port))
+    Ok(format!("ZLMediaKit 流媒体服务已启动: http://{}:{}", state.host, state.port))
 }
 
-/// 停止 RTSP 代理服务
+/// 停止流媒体代理服务（通过 ZLMediaKit）
 #[tauri::command]
 pub async fn stop_rtsp_proxy(app_handle: AppHandle) -> Result<String, String> {
-    let state = app_handle.state::<RtspProxyState>();
+    let zlm_state = app_handle.state::<crate::zlmediakit_manager::ZLMediaKitState>();
 
-    let mut process = state.process.lock().await;
+    let mut process = zlm_state.process.lock().await;
     if let Some(mut child) = process.take() {
         // 优雅关闭
         #[cfg(target_os = "windows")]
         {
-            // Windows: 使用 taskkill
             let status = Command::new("taskkill")
                 .args(&["/F", "/T", "/PID", &child.id().to_string()])
                 .status();
 
             if let Err(e) = status {
-                eprintln!("[RTSP Proxy] 停止服务失败: {}", e);
+                eprintln!("[ZLMediaKit] 停止服务失败: {}", e);
             }
         }
 
         #[cfg(not(target_os = "windows"))]
         {
-            child.kill().map_err(|e| format!("停止 RTSP 代理服务失败: {}", e))?;
+            child.kill().map_err(|e| format!("停止 ZLMediaKit 失败: {}", e))?;
         }
 
         child.wait().ok();
-        println!("[RTSP Proxy] 服务已停止");
-        Ok("RTSP 代理服务已停止".to_string())
+        println!("[ZLMediaKit] 服务已停止");
+        Ok("ZLMediaKit 流媒体服务已停止".to_string())
     } else {
-        Ok("RTSP 代理服务未运行".to_string())
+        Ok("ZLMediaKit 流媒体服务未运行".to_string())
     }
 }
 
-/// 检查 RTSP 代理服务状态
+/// 检查流媒体代理服务状态（通过 ZLMediaKit）
 #[tauri::command]
 pub async fn check_rtsp_proxy_status(app_handle: AppHandle) -> Result<serde_json::Value, String> {
     let state = app_handle.state::<RtspProxyState>();
 
-    // 🎯 关键修复：通过HTTP健康检查判断服务是否真正运行
-    // 而不是只检查进程状态（因为手动启动的进程不在Tauri管理范围内）
+    // 通过 ZLMediaKit HTTP API 健康检查判断服务是否运行
     let client = reqwest::Client::new();
-    let health_url = format!("http://{}:{}/health", state.host, state.port);
+    let health_url = format!("http://{}:{}/index/api/getServerInfo", state.host, state.port);
 
-    let is_running = match client.get(&health_url).send().await {
+    let is_running = match client.get(&health_url).timeout(std::time::Duration::from_secs(3)).send().await {
         Ok(resp) => resp.status().is_success(),
         Err(_) => false,
     };
@@ -170,11 +176,12 @@ pub async fn check_rtsp_proxy_status(app_handle: AppHandle) -> Result<serde_json
         "running": is_running,
         "host": state.host,
         "port": state.port,
-        "url": format!("http://{}:{}", state.host, state.port)
+        "url": format!("http://{}:{}", state.host, state.port),
+        "backend": "ZLMediaKit"
     }))
 }
 
-/// 启动 RTSP 流代理（Node.js）
+/// 启动 RTSP 流代理（通过 ZLMediaKit addStreamProxy 接口）
 #[tauri::command]
 pub async fn start_rtsp_stream_proxy(
     app_handle: AppHandle,
@@ -183,108 +190,92 @@ pub async fn start_rtsp_stream_proxy(
 ) -> Result<serde_json::Value, String> {
     let state = app_handle.state::<RtspProxyState>();
 
-    // 🎯 关键修复：通过HTTP健康检查判断服务是否真正运行
-    // 而不是只检查进程状态（因为手动启动的进程不在Tauri管理范围内）
+    // 🎯 先确保 ZLMediaKit 服务在运行
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
 
-    //  尝试多个地址（localhost 和 127.0.0.1）
-    let health_urls = vec![
-        format!("http://localhost:{}/health", state.port),
-        format!("http://127.0.0.1:{}/health", state.port),
-    ];
+    let health_url = format!("http://{}:{}/index/api/getServerInfo", state.host, state.port);
 
-    log::info!("🔍 开始健康检查，尝试地址: {:?}", health_urls);
-
-    // 🎯 添加重试机制，最多尝试3次
-    let max_retries = 3;
-    let mut is_running = false;
-    let mut last_error = String::new();
-
-    for health_url in &health_urls {
-        for attempt in 1..=max_retries {
-            log::info!("🔄 健康检查: {} (尝试 {}/{})", health_url, attempt, max_retries);
-
-            match client.get(health_url).send().await {
-                Ok(resp) => {
-                    let status = resp.status();
-                    log::info!("✅ 健康检查响应状态: {}", status);
-                    if status.is_success() {
-                        is_running = true;
-                        log::info!("✅ 健康检查通过: {}", health_url);
-                        break;
-                    } else {
-                        log::warn!("️ 健康检查返回非成功状态: {}", status);
-                    }
-                }
-                Err(e) => {
-                    log::warn!("❌ 健康检查失败 (尝试 {}/{}): {}", attempt, max_retries, e);
-                    last_error = format!("{} - {}", health_url, e);
-                    // 添加更多调试信息
-                    log::warn!("错误类型: {:?}", e);
-                    if e.is_timeout() {
-                        log::warn!("超时：RTSP Proxy服务可能未启动或网络不通");
-                    } else if e.is_connect() {
-                        log::warn!("连接失败：请检查RTSP Proxy服务是否在 {}:{} 运行", state.host, state.port);
-                    } else if e.is_request() {
-                        log::warn!("请求错误：可能是URL格式问题");
-                    }
-                }
-            }
-
-            if is_running {
-                break;
-            }
-
-            // 如果不是最后一次尝试，等待1秒后重试
-            if attempt < max_retries {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            }
-        }
-
-        if is_running {
-            break;
-        }
-    }
+    // 检查 ZLMediaKit 是否运行
+    let is_running = match client.get(&health_url).send().await {
+        Ok(resp) => resp.status().is_success(),
+        Err(_) => false,
+    };
 
     if !is_running {
-        let error_msg = if last_error.is_empty() {
-            "RTSP 代理服务未运行，请先启动服务 (所有健康检查尝试均失败)".to_string()
-        } else {
-            format!("RTSP 代理服务未运行，请先启动服务 (最后错误: {})", last_error)
+        // 尝试启动 ZLMediaKit
+        println!("[ZLMediaKit] 服务未运行，尝试启动...");
+        let _ = start_rtsp_proxy(app_handle.clone()).await;
+
+        // 再次检查
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        let is_running_now = match client.get(&health_url).send().await {
+            Ok(resp) => resp.status().is_success(),
+            Err(_) => false,
         };
-        return Err(error_msg);
+
+        if !is_running_now {
+            return Err("ZLMediaKit 流媒体服务未运行，请先启动服务".to_string());
+        }
     }
 
-    let api_url = format!("http://{}:{}/api/start", state.host, state.port);
+    let id = stream_id.unwrap_or_else(|| format!("stream_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() % 100000));
 
-    let body = serde_json::json!({
+    // 🎯 调用 ZLMediaKit addStreamProxy 接口拉取 RTSP 流
+    let add_url = format!("http://{}:{}/index/api/addStreamProxy", state.host, state.port);
+
+    let params = serde_json::json!({
+        "secret": "035c73f7-bb6b-4889-a715-d9eb2d1925cc",
+        "vhost": "__defaultVhost__",
+        "app": "live",
+        "stream": id,
         "url": rtsp_url,
-        "streamId": stream_id
+        "enable_hls": true,
+        "enable_mp4": false,
+        "enable_rtsp": true,
+        "enable_rtmp": true,
+        "enable_rtp": true,   // 🎯 启用 RTP（WebRTC 底层需要）
+        "enable_webrtc": true, // 🎯 启用 WebRTC（低延迟 <200ms）
+        "rtp_type": 0  // 0=TCP, 1=UDP
     });
 
     let resp = client
-        .post(&api_url)
-        .json(&body)
+        .post(&add_url)
+        .form(&params)
         .send()
         .await
-        .map_err(|e| format!("请求失败: {}", e))?;
+        .map_err(|e| format!("请求 ZLMediaKit addStreamProxy 失败: {}", e))?;
 
     let result: serde_json::Value = resp
         .json()
         .await
         .map_err(|e| format!("解析响应失败: {}", e))?;
 
-    if result["success"].as_bool().unwrap_or(false) {
-        Ok(result)
+    println!("[ZLMediaKit] addStreamProxy 响应: {:?}", result);
+
+    if result["code"].as_i64().unwrap_or(-1) == 0 {
+        Ok(serde_json::json!({
+            "success": true,
+            "streamId": id,
+            "flvUrl": format!("http://{}:{}/live/{}.flv", state.host, state.port, id),
+            "wsUrl": format!("ws://{}:{}/live/{}.flv", state.host, state.port, id),
+            "wsFlvUrl": format!("ws://{}:{}/live/{}.flv", state.host, state.port, id),
+            "rtspUrl": format!("rtsp://{}:554/live/{}", state.host, id),
+            "hlsUrl": format!("http://{}:{}/live/{}/hls.m3u8", state.host, state.port, id),
+            "webrtcUrl": format!("http://{}:{}/index/api/webrtc?app=live&stream={}&type=play", state.host, state.port, id),
+            "status": "ready",
+            "backend": "ZLMediaKit",
+            "playMode": "webrtc"  // 🎯 优先使用 WebRTC（最低延迟）
+        }))
     } else {
-        Err(format!("启动流失败: {}", result["error"].as_str().unwrap_or("未知错误")))
+        let error_msg = result["msg"].as_str().unwrap_or("未知错误");
+        Err(format!("ZLMediaKit 添加流代理失败: {}", error_msg))
     }
 }
 
-/// 停止 RTSP 流代理（Node.js）
+/// 停止 RTSP 流代理（通过 ZLMediaKit delStreamProxy 接口）
 #[tauri::command]
 pub async fn stop_rtsp_stream_proxy(
     app_handle: AppHandle,
@@ -293,15 +284,16 @@ pub async fn stop_rtsp_stream_proxy(
     let state = app_handle.state::<RtspProxyState>();
 
     let client = reqwest::Client::new();
-    let api_url = format!("http://{}:{}/api/stop", state.host, state.port);
+    let del_url = format!("http://{}:{}/index/api/delStreamProxy", state.host, state.port);
 
-    let body = serde_json::json!({
-        "streamId": stream_id
+    let params = serde_json::json!({
+        "secret": "035c73f7-bb6b-4889-a715-d9eb2d1925cc",
+        "key": format!("__defaultVhost__/live/{}", stream_id)
     });
 
     let resp = client
-        .post(&api_url)
-        .json(&body)
+        .post(&del_url)
+        .form(&params)
         .send()
         .await
         .map_err(|e| format!("请求失败: {}", e))?;
@@ -311,23 +303,29 @@ pub async fn stop_rtsp_stream_proxy(
         .await
         .map_err(|e| format!("解析响应失败: {}", e))?;
 
-    if result["success"].as_bool().unwrap_or(false) {
+    if result["code"].as_i64().unwrap_or(-1) == 0 {
         Ok("流已停止".to_string())
     } else {
-        Err(format!("停止流失败: {}", result["error"].as_str().unwrap_or("未知错误")))
+        Err(format!("停止流失败: {}", result["msg"].as_str().unwrap_or("未知错误")))
     }
 }
 
-/// 获取所有活跃流
+/// 获取所有活跃流（通过 ZLMediaKit getMediaList 接口）
 #[tauri::command]
 pub async fn get_rtsp_streams(app_handle: AppHandle) -> Result<serde_json::Value, String> {
     let state = app_handle.state::<RtspProxyState>();
 
     let client = reqwest::Client::new();
-    let api_url = format!("http://{}:{}/api/streams", state.host, state.port);
+    let api_url = format!("http://{}:{}/index/api/getMediaList", state.host, state.port);
+
+    let params = serde_json::json!({
+        "secret": "035c73f7-bb6b-4889-a715-d9eb2d1925cc",
+        "app": "live"
+    });
 
     let resp = client
-        .get(&api_url)
+        .post(&api_url)
+        .form(&params)
         .send()
         .await
         .map_err(|e| format!("请求失败: {}", e))?;
@@ -340,45 +338,35 @@ pub async fn get_rtsp_streams(app_handle: AppHandle) -> Result<serde_json::Value
     Ok(streams)
 }
 
-/// 查找 rtsp-proxy.js 脚本
-fn find_rtsp_proxy_script() -> Result<String, String> {
-    // 尝试多个可能的路径
-    let possible_paths = vec![
-        // 开发环境：相对于可执行文件
-        "./rtsp-proxy/rtsp-proxy.js",
-        "../rtsp-proxy/rtsp-proxy.js",
-        "../../rtsp-proxy/rtsp-proxy.js",
-        // 绝对路径
-        "f:/20260227/tauri-app/rtsp-proxy/rtsp-proxy.js",
-        // Tauri资源目录
-        "resources/rtsp-proxy/rtsp-proxy.js",
+/// 查找 ZLMediaKit 可执行文件
+fn find_zlmediakit_binary() -> Result<String, String> {
+    let candidates = vec![
+        // Windows 根目录（直接安装）
+        "C:\\ZLMediaKit\\MediaServer.exe".to_string(),
+        "D:\\ZLMediaKit\\MediaServer.exe".to_string(),
+        // Windows 常见路径
+        "C:\\ZLMediaKit\\release\\windows\\Debug\\MediaServer.exe".to_string(),
+        "C:\\ZLMediaKit\\release\\windows\\Release\\MediaServer.exe".to_string(),
+        "D:\\ZLMediaKit\\release\\windows\\Debug\\MediaServer.exe".to_string(),
+        "D:\\ZLMediaKit\\release\\windows\\Release\\MediaServer.exe".to_string(),
+        // 相对路径（开发环境）
+        "../ZLMediaKit/release/windows/Debug/MediaServer.exe".to_string(),
+        "../ZLMediaKit/release/windows/Release/MediaServer.exe".to_string(),
+        // Linux/macOS 路径
+        "/usr/local/bin/MediaServer".to_string(),
+        "/opt/ZLMediaKit/MediaServer".to_string(),
     ];
 
-    for path in &possible_paths {
+    for path in &candidates {
         if std::path::Path::new(path).exists() {
-            let canonical = std::path::Path::new(path)
-                .canonicalize()
-                .map_err(|e| format!("路径规范化失败: {}", e))?;
-
-            // 转换为字符串，处理Windows UNC路径
-            let path_str = canonical
-                .to_str()
-                .ok_or("无效的路径编码")?
-                .to_string();
-
-            // 如果是Windows UNC路径 (\\?\)，转换为普通路径
-            #[cfg(target_os = "windows")]
-            let path_str = if path_str.starts_with("\\\\?\\") {
-                path_str[4..].to_string()
-            } else {
-                path_str
-            };
-
-            println!("[RTSP Proxy] 找到脚本: {}", path_str);
-            return Ok(path_str);
+            return Ok(path.clone());
         }
     }
 
-    // 如果都没找到，返回一个明确的错误信息
-    Err(format!("未找到 rtsp-proxy.js 脚本。尝试的路径: {:?}", possible_paths))
+    // 尝试从 PATH 中查找
+    if which::which("MediaServer").is_ok() {
+        return Ok("MediaServer".to_string());
+    }
+
+    Err("未找到 ZLMediaKit 可执行文件，请检查安装路径".to_string())
 }

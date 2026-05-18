@@ -87,12 +87,12 @@
         <span class="tab-label">{{ tab.label }}</span>
       </button>
 
-      <!-- 第三行：文档课件、辅助工具 -->
+      <!-- 第三行：视频会议、云台控制、文档课件、辅助工具 -->
       <button
         v-for="tab in advancedTabs.slice(4)"
         :key="tab.name"
         :class="['tab-icon-btn', { active: tab.action !== 'window' && activeTab === tab.name }]"
-        @click="handleTabClick(tab)"
+        @click="handleAdvancedTabClick(tab)"
         :title="tab.label"
       >
         <component :is="tab.icon" class="tab-icon" />
@@ -104,7 +104,7 @@
 
     <!-- 标签内容区 -->
     <div class="sidepanel-content-wrapper">
-      <SubtitlePanel v-if="activeTab === 'subtitle'" />
+      <SubtitlePanel v-if="activeTab === 'ai-voice'" />
       <WebPanel v-if="activeTab === 'web'" />
       <LayoutPanel v-if="activeTab === 'layout'" @layout-change="$emit('layout-change', $event)" />
       <AudioPanel
@@ -117,6 +117,8 @@
       <ScreenSharePanel v-if="activeTab === 'screenShare'" />
       <MediaFilesPanel v-if="activeTab === 'mediaFiles'" />
       <DocumentsPanel v-if="activeTab === 'documents'" />
+      <VideoMeetingWindow v-if="activeTab === 'meeting'" />
+      <PtzControlPanel v-if="activeTab === 'ptz'" />
       <AidToolsPanel v-if="activeTab === 'aidTools'" ref="aidToolsRef" />
       <!-- 信号源管理面板 - 使用插槽接收父组件内容 -->
       <div v-if="activeTab === 'sources'" class="sources-panel">
@@ -157,6 +159,8 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Grid, VideoCamera, Notebook, Monitor, Document, Film, Microphone, VideoPause, VideoPlay, VideoMeeting, Search } from '@/components/icons';
+import { useSourceStore } from '@/stores/sourceStore';
+import { useMediaStore } from '@/stores/mediaStore';
 import SubtitlePanel from './panels/SubtitlePanel.vue';
 import WebPanel from './panels/WebPanel.vue';
 import LayoutPanel from './panels/LayoutPanel.vue';
@@ -167,12 +171,12 @@ import MediaFilesPanel from './panels/MediaFilesPanel.vue';
 import DocumentsPanel from './panels/DocumentsPanel.vue';
 import VisionAnalysisWindow from '@/components/VisionAnalysisWindow.vue';
 import AidToolsPanel from './panels/AidToolsPanel.vue';
-import { useMediaStore } from '@/stores/mediaStore';
-import { useSourceStore } from '@/stores/sourceStore';
+import VideoMeetingWindow from '@/components/VideoMeetingWindow.vue';
+import PtzControlPanel from '@/components/PtzControlPanel.vue';
 
 // 媒体和信号源 Store
-const mediaStore = useMediaStore();
 const sourceStore = useSourceStore();
+const mediaStore = useMediaStore();
 
 const emit = defineEmits([
   'start-stream',
@@ -199,8 +203,8 @@ const showVisionDialog = ref(false);
 
 // 获取当前选中的摄像头源及其流
 const currentCameraSource = computed(() => {
-  // 从 mediaStore 中查找摄像头源
-  const cameraSources = Array.from(mediaStore.sources.values()).filter(s =>
+  // 从 sourceStore 中查找摄像头源
+  const cameraSources = sourceStore.sources.filter(s =>
     s.type === 'camera' || s.type === 'localCamera'
   );
 
@@ -294,6 +298,15 @@ const handleTabClick = (tab) => {
   }
 };
 
+// 处理高级标签点击（包含action的标签）
+const handleAdvancedTabClick = (tab) => {
+  if (tab.action === 'window') {
+    handleTabClick(tab)
+  } else {
+    activeTab.value = tab.name
+  }
+};
+
 // 监听 activeTab 变化，重置滚动位置
 watch(activeTab, async () => {
   await nextTick()
@@ -338,12 +351,13 @@ const basicTabs = [
 // 高级功能标签
 const advancedTabs = [
   { name: 'audio', label: '音频', icon: Microphone },
-  { name: 'subtitle', label: 'AI语音', icon: Microphone },
+  { name: 'ai-voice', label: 'AI语音', icon: Microphone },
   { name: 'screenShare', label: '屏幕共享', icon: Monitor },
   { name: 'mediaFiles', label: '媒体文件', icon: Film },
+  { name: 'meeting', label: '视频会议', icon: VideoMeeting, action: 'window' },
+  { name: 'ptz', label: '云台控制', icon: Monitor },
   { name: 'documents', label: '文档课件', icon: Document },
-  { name: 'aidTools', label: '辅助工具', icon: Monitor },
-  { name: 'videoMeeting', label: '视频会议', icon: VideoMeeting, action: 'window' }
+  { name: 'aidTools', label: '辅助工具', icon: Monitor }
 ];
 
 // 所有标签（兼容旧代码）

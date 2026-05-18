@@ -14,6 +14,7 @@ pub struct DiscoveredOnvifDevice {
 
 /// 发送 WS-Discovery Probe 并收集局域网 ONVIF 设备
 pub async fn discover_onvif_lan(timeout_secs: u64) -> Vec<DiscoveredOnvifDevice> {
+    // 🎯 优化：增加 Scopes 匹配，提高发现准确率
     let probe_msg = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope"
@@ -28,6 +29,7 @@ pub async fn discover_onvif_lan(timeout_secs: u64) -> Vec<DiscoveredOnvifDevice>
   <e:Body>
     <d:Probe>
       <d:Types>dn:NetworkVideoTransmitter</d:Types>
+      <d:Scopes>onvif://www.onvif.org/type/video_transmitter</d:Scopes>
     </d:Probe>
   </e:Body>
 </e:Envelope>"#,
@@ -42,16 +44,20 @@ pub async fn discover_onvif_lan(timeout_secs: u64) -> Vec<DiscoveredOnvifDevice>
         }
     };
 
-    // 发送多播 Probe
-    if let Err(e) = socket
-        .send_to(probe_msg.as_bytes(), "239.255.255.250:3702")
-        .await
-    {
-        log::error!("发送Probe失败: {}", e);
-        return vec![];
+    // 🎯 优化：设置广播权限并确保多播发送
+    if let Err(e) = socket.set_broadcast(true) {
+        log::warn!("设置广播权限失败: {}", e);
     }
 
+    let multicast_addr = "239.255.255.250:3702";
+    if let Err(e) = socket.send_to(probe_msg.as_bytes(), multicast_addr).await {
+        log::error!("发送Probe到 {} 失败: {}", multicast_addr, e);
+        return vec![];
+    }
+    log::info!("🚀 已发送 ONVIF 探测包至 {}", multicast_addr);
+
     let mut devices = Vec::new();
+    // 🎯 优化：使用更精确的正则表达式提取 XAddr
     let xaddr_re = Regex::new(r"<wsa:Address>(.*?)</wsa:Address>").unwrap();
     let name_re = Regex::new(
         r"<tt:Name>(.*?)</tt:Name>|<dns:Name>(.*?)</dns:Name>",
@@ -75,6 +81,12 @@ pub async fn discover_onvif_lan(timeout_secs: u64) -> Vec<DiscoveredOnvifDevice>
                         .nth(1)
                         .and_then(|s| s.split(':').next())
                     {
+                        // 过滤非摄像机设备（如路由器、网关）
+                        if is_non_camera_device(&xml) {
+                            log::debug!("⏭️ 跳过非摄像机设备: {}", ip);
+                            continue;
+                        }
+
                         // 提取设备名称
                         let name = name_re
                             .captures(&xml)
@@ -108,4 +120,20 @@ pub async fn discover_onvif_lan(timeout_secs: u64) -> Vec<DiscoveredOnvifDevice>
     }
 
     devices
+}
+
+/// 🎯 辅助函数：判断是否为非摄像机设备
+fn is_non_camera_device(xml: &str) -> bool {
+    let lower_xml = xml.to_lowercase();
+    let non_camera_keywords = [
+        "router", "gateway", "switch", "hub", "printer",
+        "tp-link", "huawei", "xiaomi", "netgear", "asus"
+    ];
+
+    for keyword in &non_camera_keywords {
+        if lower_xml.contains(keyword) {
+            return true;
+        }
+    }
+    false
 }

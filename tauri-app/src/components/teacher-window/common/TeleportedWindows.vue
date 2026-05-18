@@ -13,6 +13,8 @@
       <VisionAnalysisWindow
         v-if="showVisionAnalysis"
         @close="$emit('close-vision-analysis')"
+        :external-camera-source="currentCameraSource.source"
+        :external-camera-stream="currentCameraSource.stream"
       />
     </Transition>
 
@@ -35,6 +37,8 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
+import { useSourceStore } from '@/stores/sourceStore';
 import VideoMeetingWindow from '@/components/VideoMeetingWindow.vue'
 import VisionAnalysisWindow from '@/components/VisionAnalysisWindow.vue'
 import AnalysisFullscreenWindow from '@/components/AnalysisFullscreenWindow.vue'
@@ -66,6 +70,26 @@ interface Emits {
 }
 
 defineEmits<Emits>()
+
+// 获取摄像头源
+const sourceStore = useSourceStore();
+
+const currentCameraSource = computed(() => {
+  // 从 sourceStore 中查找摄像头源
+  const cameraSources = sourceStore.sources.filter(s =>
+    s.type === 'camera' || s.type === 'localCamera'
+  );
+
+  // 如果有摄像头源，返回第一个（主摄像头）
+  if (cameraSources.length > 0) {
+    return {
+      source: cameraSources[0],
+      stream: cameraSources[0].stream || null
+    };
+  }
+
+  return { source: null, stream: null };
+});
 </script>
 
 <style scoped lang="scss">

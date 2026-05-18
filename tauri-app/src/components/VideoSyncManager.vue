@@ -4,7 +4,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useSimplifiedVideoSync } from '@/composables/useSimplifiedVideoSync';
 
 const props = defineProps({
@@ -51,13 +51,33 @@ const {
 // 标记是否已注册
 const isRegistered = ref(false);
 
+// 🎯 标记视频是否已加载完成（loadedmetadata事件触发）
+const isVideoReady = ref(false);
+
+// 🎯 视频加载完成处理函数
+const handleVideoLoaded = () => {
+  console.log(`[VideoSyncManager] 视频加载完成: sourceId=${props.sourceId}`);
+  isVideoReady.value = true;
+  // 尝试注册
+  tryRegisterVideo();
+};
+
 /**
- * 注册视频到同步管理器
+ * 🎯 尝试注册视频（需要视频元素和sourceId都就绪）
  */
-const registerVideo = () => {
-  if (!props.videoRef?.value || isRegistered.value) return;
+const tryRegisterVideo = () => {
+  // 检查条件：视频元素存在、sourceId有效、视频已加载、尚未注册
+  if (!props.videoRef?.value || !props.sourceId || !isVideoReady.value || isRegistered.value) {
+    return;
+  }
 
   const videoElement = props.videoRef.value;
+
+  // 🎯 额外检查视频元素是否在DOM中
+  if (!document.contains(videoElement)) {
+    console.warn(`[VideoSyncManager] ⚠️ 视频元素不在DOM中，延迟注册: ${props.sourceId}`);
+    return;
+  }
 
   console.log(`[VideoSyncManager] 注册视频: sourceId=${props.sourceId}, isPreviewArea=${props.isPreviewArea}, index=${props.index}`);
 
@@ -82,6 +102,30 @@ const registerVideo = () => {
 };
 
 /**
+ * 注册视频到同步管理器
+ */
+const registerVideo = () => {
+  // 🎯 重置视频就绪状态
+  isVideoReady.value = false;
+  
+  const videoElement = props.videoRef?.value;
+  
+  // 如果视频已经有loadedmetadata事件，立即标记就绪
+  if (videoElement && videoElement.readyState >= 2) {
+    isVideoReady.value = true;
+  }
+  
+  // 🎯 设置视频加载事件监听
+  if (videoElement) {
+    videoElement.addEventListener('loadedmetadata', handleVideoLoaded);
+    videoElement.addEventListener('loadeddata', handleVideoLoaded);
+  }
+  
+  // 尝试注册
+  tryRegisterVideo();
+};
+
+/**
  * 注销视频
  */
 const unregisterVideo = () => {
@@ -98,6 +142,13 @@ const unregisterVideo = () => {
   }
 
   isRegistered.value = false;
+
+  // 🎯 移除视频加载事件监听
+  const videoElement = props.videoRef?.value;
+  if (videoElement) {
+    videoElement.removeEventListener('loadedmetadata', handleVideoLoaded);
+    videoElement.removeEventListener('loadeddata', handleVideoLoaded);
+  }
 
   // 发出同步状态变化事件
   emit('sync-status-change', {
@@ -126,37 +177,50 @@ const toggleAudio = () => {
   }
 };
 
-// 监听 videoRef 变化，自动注册/注销
+// 🎯 监听 videoRef 变化，自动注册/注销
 watch(
   () => props.videoRef?.value,
   (newVideo, oldVideo) => {
     if (newVideo && !oldVideo) {
-      // 视频元素挂载，注册
-      registerVideo();
+      // 视频元素挂载，等待下一帧再注册
+      nextTick(() => {
+        registerVideo();
+      });
     } else if (!newVideo && oldVideo) {
       // 视频元素卸载，注销
       unregisterVideo();
     }
   },
-  { immediate: true }
+  { immediate: false } // 🎯 改为false，避免初始时重复调用
 );
 
-// 监听 sourceId 变化，重新注册
+// 🎯 监听 sourceId 变化，重新注册
 watch(
   () => props.sourceId,
   (newSourceId, oldSourceId) => {
-    if (newSourceId !== oldSourceId && isRegistered.value) {
+    if (!newSourceId) {
+      // sourceId为空，注销
+      unregisterVideo();
+      return;
+    }
+    
+    if (newSourceId !== oldSourceId) {
       // 先注销旧的
       unregisterVideo();
-      // 再注册新的
-      setTimeout(() => registerVideo(), 0);
+      // 再注册新的（延迟一帧）
+      nextTick(() => {
+        registerVideo();
+      });
     }
   }
 );
 
 // 生命周期钩子
 onMounted(() => {
-  registerVideo();
+  // 🎯 等待DOM渲染完成后再注册
+  nextTick(() => {
+    registerVideo();
+  });
 });
 
 onUnmounted(() => {
@@ -167,7 +231,10 @@ onUnmounted(() => {
 defineExpose({
   selectAsAudioOutput,
   toggleAudio,
-  getSyncStatus: () => getSyncStatus()
+  getSyncStatus: () => getSyncStatus(),
+  // 🎯 暴露注册方法供父组件手动触发
+  registerVideo,
+  unregisterVideo
 });
 </script>
 

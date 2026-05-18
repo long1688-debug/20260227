@@ -6,7 +6,12 @@ export const useSubtitleStore = defineStore('subtitle', {
     subtitles: [],
     currentSubtitle: '',
     isGenerating: false,
-    videoId: null
+    videoId: null,
+    // 控制字幕显示
+    showSubtitles: true,
+    // 实时字幕相关状态
+    isRealtimeSubtitleEnabled: false,
+    realtimeSubtitleText: ''
   }),
 
   getters: {
@@ -26,6 +31,15 @@ export const useSubtitleStore = defineStore('subtitle', {
 
     setCurrentSubtitle(text) {
       this.currentSubtitle = text
+    },
+
+    // 实时字幕相关动作
+    toggleSubtitles() {
+      this.showSubtitles = !this.showSubtitles;
+    },
+
+    updateCurrentSubtitle(text) {
+      this.currentSubtitle = text;
     },
 
     syncSubtitle(currentTime) {
@@ -91,13 +105,13 @@ export const useSubtitleStore = defineStore('subtitle', {
       try {
         console.log('[SubtitleStore] 更新字幕:', subtitleId)
         await apiService.updateSubtitle(subtitleId, subtitleData)
-        
+
         // 更新本地状态
         const index = this.subtitles.findIndex(s => s.id === subtitleId)
         if (index !== -1) {
           this.subtitles[index] = { ...this.subtitles[index], ...subtitleData }
         }
-        
+
         console.log('[SubtitleStore] 字幕更新成功')
       } catch (error) {
         console.error('[SubtitleStore] 更新字幕失败:', error)
@@ -112,10 +126,10 @@ export const useSubtitleStore = defineStore('subtitle', {
       try {
         console.log('[SubtitleStore] 删除字幕:', subtitleId)
         await apiService.deleteSubtitle(subtitleId)
-        
+
         // 更新本地状态
         this.subtitles = this.subtitles.filter(s => s.id !== subtitleId)
-        
+
         console.log('[SubtitleStore] 字幕删除成功')
       } catch (error) {
         console.error('[SubtitleStore] 删除字幕失败:', error)

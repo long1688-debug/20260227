@@ -8,12 +8,14 @@ use super::discovery::{discover_onvif_lan, DiscoveredOnvifDevice};
 /// PTZ 设备管理器 - 统一管理多厂商摄像机
 pub struct PtzDeviceManager {
     cameras: RwLock<HashMap<String, Arc<OnvifCamera>>>,
+    rtsp_urls: RwLock<HashMap<String, String>>,
 }
 
 impl PtzDeviceManager {
     pub fn new() -> Self {
         Self {
             cameras: RwLock::new(HashMap::new()),
+            rtsp_urls: RwLock::new(HashMap::new()),
         }
     }
 
@@ -32,7 +34,27 @@ impl PtzDeviceManager {
     /// 注销摄像机
     pub async fn unregister(&self, id: &str) {
         self.cameras.write().await.remove(id);
+        self.rtsp_urls.write().await.remove(id);
         log::info!("📹 设备已注销: {}", id);
+    }
+
+    /// 设置设备的手动RTSP地址
+    pub async fn set_rtsp_url(&self, id: &str, rtsp_url: String) -> Result<(), String> {
+        if self.get(id).await.is_none() {
+            return Err(format!("设备未注册: {}", id));
+        }
+        self.rtsp_urls.write().await.insert(id.to_string(), rtsp_url);
+        Ok(())
+    }
+
+    /// 获取设备的手动RTSP地址
+    pub async fn get_rtsp_url(&self, id: &str) -> Option<String> {
+        self.rtsp_urls.read().await.get(id).cloned()
+    }
+
+    /// 删除设备的手动RTSP地址
+    pub async fn remove_rtsp_url(&self, id: &str) {
+        self.rtsp_urls.write().await.remove(id);
     }
 
     /// 获取所有已注册设备ID列表

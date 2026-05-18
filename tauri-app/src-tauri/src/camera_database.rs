@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use tokio::time::{interval, Duration};
 use tauri::AppHandle;
 use tauri::Manager;
+use crate::rtsp_resolver; // 用于解析 RTSP 地址（ONVIF + 模板 + 探针）
 
 /// 网络摄像机配置
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -234,10 +235,52 @@ pub fn init_camera_database(app_handle: AppHandle) -> Result<(), String> {
 
 /// 保存摄像机配置
 #[tauri::command]
-pub fn save_camera_config(
+pub async fn save_camera_config(
     app_handle: AppHandle,
-    camera: NetworkCameraConfig,
+    mut camera: NetworkCameraConfig,
 ) -> Result<(), String> {
+    // 如果是 ONVIF 协议且没有有效 RTSP 地址，则尝试通过解析器获取
+    if camera.protocol.to_lowercase() == "onvif" && (camera.stream_url.trim().is_empty() || !camera.stream_url.starts_with("rtsp://")) {
+        log::info!("[CameraDB] 尝试为 ONVIF 设备解析 RTSP 地址: {}", camera.name);
+
+        // 提取主机（优先使用 onvif_url，其次使用 stream_url）
+        let host = if let Some(onvif) = &camera.onvif_url {
+            extract_host_port(onvif).map(|(h, _)| h).unwrap_or_else(|| onvif.clone())
+        } else {
+            extract_host_port(&camera.stream_url).map(|(h, _)| h).unwrap_or_else(|| String::new())
+        };
+
+        if !host.is_empty() {
+            let req = rtsp_resolver::RtspResolveRequest {
+                manufacturer: camera.name.clone(),
+                host: host.clone(),
+                port: 554,
+                username: camera.username.clone().unwrap_or_default(),
+                password: camera.password.clone().unwrap_or_default(),
+                onvif_uri: camera.onvif_url.clone(),
+                onvif_port: None,
+                scan_mode: false,
+            };
+
+            match rtsp_resolver::resolve_rtsp(req).await {
+                Ok(res) => {
+                    if res.valid && !res.uri.is_empty() {
+                        log::info!("[CameraDB] RTSP 解析成功: {} -> {}", camera.name, res.uri);
+                        camera.stream_url = res.uri;
+                    } else {
+                        log::warn!("[CameraDB] RTSP 解析返回无效结果: {:?}", res);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[CameraDB] RTSP 解析失败: {}", e);
+                    // 不阻止保存，允许用户手动输入 RTSP
+                }
+            }
+        } else {
+            log::warn!("[CameraDB] 无法从 onvif_url/stream_url 提取主机，跳过自动解析");
+        }
+    }
+
     let db = app_handle.state::<CameraDatabase>();
     db.save_camera(&camera)
         .map_err(|e| format!("保存失败: {}", e))

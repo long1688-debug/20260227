@@ -61,7 +61,7 @@ impl StreamState {
             http_client: Client::new(),
             zlmediakit_host: "127.0.0.1".to_string(),
             zlmediakit_port: 801, // ZLMediaKit HTTP 端口
-            zlmediakit_secret: "035c73f7-bb6b-4889-a715-d9eb2d1925cc".to_string(), // 默认密钥
+           zlmediakit_secret: "8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3".to_string(), // ZLMediaKit 配置的密钥
             mobile_connections: Mutex::new(HashMap::new()),
         }
     }
@@ -128,22 +128,32 @@ pub async fn proxy_network_stream(
     let id = stream_id.unwrap_or_else(|| StreamState::generate_stream_id("net"));
     let opts = options.unwrap_or_default();
 
+    // 构建带有认证信息的 RTSP URL
+    let mut rtsp_url = stream_url.clone();
+    if let (Some(username), Some(password)) = (opts.username, opts.password) {
+        if !username.is_empty() && !password.is_empty() {
+            // 将认证信息添加到 RTSP URL
+            // rtsp://ip:port/stream -> rtsp://username:password@ip:port/stream
+            if let Some(pos) = rtsp_url.find("://") {
+                rtsp_url = format!("{}://{}:{}@{}",
+                    &rtsp_url[..pos],
+                    username,
+                    password,
+                    &rtsp_url[pos+3..]
+                );
+                println!("[网络流代理] 添加认证信息到 URL");
+            }
+        }
+    }
+
     // 调用 ZLMediaKit addStreamProxy API
     let meta = add_stream_proxy(
         &state,
         &id,
-        &stream_url,
+        &rtsp_url,
         stream_type,
         opts.enable_retry.unwrap_or(true),
     ).await?;
-
-    // 应用额外选项
-    if let Some(username) = opts.username {
-        if !username.is_empty() {
-            // 可以在这里处理认证信息
-            println!("[网络流代理] 使用认证: {}", username);
-        }
-    }
 
     println!("[网络流代理] 启动成功: {} -> {}", stream_url, meta.flv_url);
     Ok(meta)
@@ -163,13 +173,14 @@ async fn check_stream_ready(
     client: &reqwest::Client,
     host: &str,
     port: u16,
+    secret: &str,
     stream_id: &str,
     max_retries: u32,
 ) -> bool {
     for i in 0..max_retries {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-        let api_url = format!("http://{}:{}/index/api/getMediaList?secret=", host, port);
+        let api_url = format!("http://{}:{}/index/api/getMediaList?secret={}", host, port, secret);
         if let Ok(resp) = client.get(&api_url).send().await {
             if let Ok(body) = resp.json::<serde_json::Value>().await {
                 if let Some(list) = body["data"].as_array() {
@@ -239,11 +250,19 @@ async fn add_stream_proxy(
             "audio_enabled": 1,
             "mp4_save_path": "",
             "retry_count": if enable_retry { -1 } else { 0 }, // -1 表示无限重试
-            "rtp_type": 0,
+            "rtp_type": 1, // 🎯 优化：使用 RTP over TCP，更稳定，减少丢包重传延迟
             "timeout_sec": 10,
             "enable_audio": 1,
             "auto_close": 0, // 0 表示不自动关闭
-            "direct_proxy": 0, // 🎯 修复：强制 ZLMediaKit 实际拉流，而非仅注册流信息
+            "direct_proxy": 1, // 🎯 优化：启用直接代理模式，减少转码延迟
+            "buffer_ms": 100, // 🎯 优化：进一步降低缓冲时间（从200ms降至100ms）
+            "low_latency": 1, // 🎯 优化：启用低延迟模式
+            "drop_delay_ms": 300, // 🎯 优化：丢帧延迟阈值，超过此值则丢弃帧
+            "max_fps": 0, // 0 表示不限制帧率
+            "min_fps": 0, // 0 表示不限制最小帧率
+            "recv_buffer_size": 65536, // 接收缓冲区大小
+            "send_buffer_size": 65536, // 发送缓冲区大小
+            "tcp_no_delay": 1, // 🎯 优化：启用TCP_NODELAY，减少TCP延迟
         }))
         .send()
         .await
@@ -258,24 +277,31 @@ async fn add_stream_proxy(
         return Err(format!("ZLM 拉流失败: {}", body["msg"].as_str().unwrap_or("未知错误")));
     }
 
-    // 🎯 新增：等待流就绪（最多等待 5 秒）
-    println!("[RTSP代理] ZLM 返回成功，等待流就绪...");
-    tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+    // 🎯 提取 ZLM 返回的实际流 ID（可能与传入的不同）
+    let zlm_stream_id = body["data"]["stream"]
+        .as_str()
+        .unwrap_or(stream_id)
+        .to_string();
+    if zlm_stream_id != stream_id {
+        println!("[RTSP代理] ZLM 返回的流 ID 与传入的不同: {} -> {}", stream_id, zlm_stream_id);
+    }
 
-    // 检查流是否就绪
-    let is_ready = check_stream_ready(client, host, port, &stream_id, 3).await;
+    // 🎯 优化：减少等待时间，直接返回，让前端处理流就绪逻辑
+    println!("[RTSP代理] ZLM 流代理创建成功");
+
+    // 检查流是否就绪（快速检查，不阻塞）
+    let is_ready = check_stream_ready(client, host, port, secret, &zlm_stream_id, 2).await;
     if !is_ready {
-        println!("[RTSP代理] ⚠️ 流在 2 秒后仍未就绪，可能需要更长时间");
-        // 不返回错误，让前端重试
+        println!("[RTSP代理] ⚠️ 流可能尚未就绪，前端需处理重连逻辑");
     } else {
         println!("[RTSP代理] ✅ 流已就绪");
     }
 
-    // 生成播放 URL
+    // 生成播放 URL（使用 ZLM 返回的实际流 ID）
     // 🎯 修复：ZLMediaKit FLV 地址格式为 /app/stream.live.flv
-    let flv_url = format!("http://{}:{}/live/{}.live.flv", host, port, stream_id);
-    let ws_flv_url = format!("ws://{}:{}/live/{}.live.flv", host, port, stream_id);
-    let webrtc_url = format!("http://{}:{}/index/api/webrtc?app=live&stream={}&type=play", host, port, stream_id);
+    let flv_url = format!("http://{}:{}/live/{}.live.flv", host, port, zlm_stream_id);
+    let ws_flv_url = format!("ws://{}:{}/live/{}.live.flv", host, port, zlm_stream_id);
+    let webrtc_url = format!("http://{}:{}/index/api/webrtc?app=live&stream={}&type=play", host, port, zlm_stream_id);
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -283,7 +309,7 @@ async fn add_stream_proxy(
         .as_secs();
 
     let meta = StreamMeta {
-        id: stream_id.to_string(),
+        id: zlm_stream_id.clone(),
         stream_type,
         source_url: source_url.to_string(),
         flv_url,
@@ -295,10 +321,10 @@ async fn add_stream_proxy(
         created_at: now,
     };
 
-    // 保存到状态
+    // 保存到状态（使用 ZLM 返回的实际流 ID）
     {
         let mut streams = state.active_streams.lock().await;
-        streams.insert(stream_id.to_string(), meta.clone());
+        streams.insert(zlm_stream_id.clone(), meta.clone());
     }
 
     Ok(meta)

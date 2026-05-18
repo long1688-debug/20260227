@@ -16,31 +16,26 @@
         "title": "实训教学系统 - 教师端",
         "width": 1920,
         "height": 1080,
-        "minWidth": 1280,
-        "minHeight": 720,
+        "minWidth": 768,
+        "minHeight": 480,
         "maxWidth": 3840,
         "maxHeight": 2160,
         "resizable": true,
         "fullscreen": false,
         "decorations": false,
         "transparent": false,
-        "center": true
+        "center": true,
+        "visible": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://cdn.jsdelivr.net; connect-src 'self' https://huggingface.co https://hf.co blob: asset:; worker-src 'self' blob:;",
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://cdn.jsdelivr.net; connect-src 'self' https://huggingface.co https://hf.co blob: asset: ws: wss:; worker-src 'self' blob:; media-src 'self' blob:;",
       "dangerousDisableAssetCspModification": false
     }
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "msi",
-      "nsis",
-      "appimage",
-      "deb",
-      "rpm"
-    ],
+    "targets": "msi",
     "resources": {
       "../rtsp-proxy/*": "rtsp-proxy/"
     },
@@ -49,7 +44,8 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/icon.ico",
+      "icons/icon.png"
     ],
     "windows": {
       "certificateThumbprint": null,
@@ -72,14 +68,16 @@
         "depends": [
           "libgtk-3-0",
           "libwebkit2gtk-4.0-37",
-          "libappindicator3-1"
+          "libappindicator3-1",
+          "libxcb-cursor0"
         ]
       },
       "rpm": {
         "depends": [
           "gtk3",
           "webkit2gtk4.0",
-          "libappindicator-gtk3"
+          "libappindicator-gtk3",
+          "libxcb-cursor"
         ]
       }
     }

@@ -24,8 +24,8 @@
         <span class="error-text">{{ videoError }}</span>
       </div>
 
-      <!-- 字幕叠加层 -->
-      <div v-if="subtitleText || realtimeSubtitleText" class="subtitle-overlay">
+      <!-- 实时字幕叠加层 - 显示在视频区域内下方 -->
+      <div v-if="showRealtimeSubtitle && (subtitleText || realtimeSubtitleText)" class="subtitle-overlay">
         <div class="subtitle-text">{{ realtimeSubtitleText || subtitleText }}</div>
       </div>
 
@@ -112,9 +112,11 @@ import { useRealtimeSubtitle } from '@/composables/useRealtimeSubtitle';
 import flvjs from 'flv.js'; // 🎯 导入 FLV.js 播放器
 // 🎯 导入视频源管理工具
 import { useVideoSourceManager } from '@/utils/videoSource';
+import { useSourceStore } from '@/stores/sourceStore';
 
 // 🎯 初始化视频源管理器
 const videoSourceManager = useVideoSourceManager();
+const sourceStore = useSourceStore();
 
 const props = defineProps({
   index: {
@@ -164,6 +166,10 @@ const props = defineProps({
   onvifConfig: {
     type: Object,
     default: null
+  },
+  showRealtimeSubtitle: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -310,6 +316,12 @@ const registerVideoToSyncSystem = () => {
     return;
   }
 
+  // 🎯 关键修复：如果播放器正在销毁，跳过注册
+  if (videoRef.value?._isDestroying) {
+    console.log(`[VideoPreview.registerVideoToSyncSystem] 播放器正在销毁，跳过注册: ${props.sourceId}`);
+    return;
+  }
+
   // 检查是否有有效的视频源（含 FLV 播放器实例）
   // flv.js 通过 MediaSource 写入 SourceBuffer，不设置 src/srcObject，
   // 此时 src 和 srcObject 均为空，但 _flvPlayer 存在表示视频已就绪。
@@ -334,12 +346,14 @@ const registerVideoToSyncSystem = () => {
   console.log(`[VideoPreview.registerVideoToSyncSystem] 手动注册视频: ${props.sourceId}, index: ${props.index}`);
 
   if (props.index === 0) {
-    registerMasterVideo(videoRef.value, props.sourceId);
+    registerMasterVideo(videoRef.value, props.videoSource || props.sourceId);
     console.log(`[VideoPreview] 主控视频已手动注册: ${props.sourceId}`);
   } else {
-    // 🎯 修复：传递 sourceId 参数
-    registerSlaveVideo(videoRef.value, props.index, props.sourceId);
-    console.log(`[VideoPreview] 从属视频已手动注册: ${props.sourceId}`);
+    // 🎯 关键修复：传递完整的 videoSource 对象，而不是仅传递 sourceId
+    // 这样 useVideoSync 可以检测到 isClone 和 originalStreamId 属性
+    const sourceToRegister = props.videoSource || props.sourceId;
+    registerSlaveVideo(videoRef.value, props.index, sourceToRegister);
+    console.log(`[VideoPreview] 从属视频已手动注册: ${props.sourceId}, isClone: ${props.videoSource?.isClone || false}`);
   }
 
   isRegistered.value = true;
@@ -371,12 +385,14 @@ const onVideoLoadedMetadata = () => {
     if (!videoRef.value || isRegistered.value) return;
 
     if (props.index === 0) {
-      registerMasterVideo(videoRef.value, props.sourceId);
+      registerMasterVideo(videoRef.value, props.videoSource || props.sourceId);
       console.log(`[VideoPreview] 主控视频已注册: ${props.sourceId}`);
     } else {
-      // 🎯 修复：传递 sourceId 参数
-      registerSlaveVideo(videoRef.value, props.index, props.sourceId);
-      console.log(`[VideoPreview] 从属视频已注册: ${props.sourceId}`);
+      // 🎯 关键修复：传递完整的 videoSource 对象，而不是仅传递 sourceId
+      // 这样 useVideoSync 可以检测到 isClone 和 originalStreamId 属性
+      const sourceToRegister = props.videoSource || props.sourceId;
+      registerSlaveVideo(videoRef.value, props.index, sourceToRegister);
+      console.log(`[VideoPreview] 从属视频已注册: ${props.sourceId}, isClone: ${props.videoSource?.isClone || false}`);
     }
 
     isRegistered.value = true;
@@ -501,23 +517,17 @@ const togglePtzPanel = () => {
 
 // 生命周期
 onMounted(async () => {
-  // 等待DOM更新，确保videoRef已经准备好
   await nextTick();
 
-  // 🎯 修复：确保视频元素尺寸正确设置
   if (videoRef.value) {
     const videoElement = videoRef.value;
     console.log('[VideoPreview.onMounted] 视频元素已准备好');
 
-    // 设置视频元素初始尺寸
     videoElement.style.width = '100%';
     videoElement.style.height = '100%';
-
-    // 设置视频元素样式
     videoElement.style.objectFit = 'contain';
     videoElement.style.backgroundColor = '#000';
 
-    // 添加事件监听器
     videoElement.addEventListener('click', () => {
       if (videoElement.paused) {
         videoElement.play().catch(err => {
@@ -527,12 +537,11 @@ onMounted(async () => {
     });
   }
 
-  // 如果有videoSource props，根据源的类型加载对应的视频内容
   if (props.videoSource) {
     console.log('[VideoPreview.onMounted] 检测到videoSource，准备加载:', props.videoSource.type, props.videoSource.name);
 
-    // 🎯 修复：支持多种摄像头类型标识
-    const isCameraSource = ['camera', 'usb', 'localCamera'].includes(props.videoSource.type);
+    const cameraTypes = ['camera', 'usb', 'localCamera'];
+    const isCameraSource = cameraTypes.includes(props.videoSource.type);
 
     if (props.videoSource.type === 'localVideo' && props.videoSource.file) {
       console.log('[VideoPreview.onMounted] 加载本地视频文件:', props.videoSource.name);
@@ -556,11 +565,12 @@ onMounted(async () => {
 onUnmounted(() => {
   cleanup();
 
-  // 注销同步 - 🎯 传递 sourceId 参数
   if (props.index === 0) {
     clearMasterVideo(props.sourceId);
   } else if (props.sourceId) {
-    unregisterSlaveVideo(props.index, props.sourceId);
+    // 🎯 关键修复：传递完整的 videoSource 对象，以便正确移除克隆源
+    const sourceToUnregister = props.videoSource || props.sourceId;
+    unregisterSlaveVideo(props.index, sourceToUnregister);
   }
 });
 
@@ -656,89 +666,27 @@ async function startUSBCamera(sourceData = null) {
 
 // 已验证的 RTSP 地址映射表（用于 ONVIF 失败时的回退）
 const VERIFIED_RTSP_URLS = {
-  '192.168.5.165': 'rtsp://192.168.5.165:554/live/av0',  // 已通过 VLC 验证
+  // '192.168.5.165': 'rtsp://192.168.5.165:554/live/av0',  // 已通过 VLC 验证
   // 添加更多已验证的设备...
 };
 
-// 品牌 RTSP 地址模板库
+// 🚫 品牌 RTSP 地址模板库已删除，强制使用 ONVIF 协议获取真实 RTSP 地址
 const BRAND_RTSP_TEMPLATES = {
-  // 海康威视
-  hikvision: [
-    'rtsp://{ip}:554/h264/ch1/main/av_stream',
-    'rtsp://{ip}:554/h264/ch1/sub/av_stream',
-    'rtsp://{ip}/h264/ch1/main/av_stream',
-  ],
-  // 大华
-  dahua: [
-    'rtsp://{ip}:554/cam/realmonitor?channel=1&subtype=0',
-    'rtsp://{ip}:554/cam/realmonitor?channel=1&subtype=1',
-    'rtsp://{ip}/cam/realmonitor?channel=1&subtype=0',
-  ],
-  // 宇视
-  uniview: [
-    'rtsp://{ip}:554/stream',
-    'rtsp://{ip}:554/unicast/c1/s1/live',
-  ],
-  // 安讯士
-  axis: [
-    'rtsp://{ip}:554/axis-media/media.amp',
-    'rtsp://{ip}:554/axis-media/media.3gp',
-  ],
-  // 雄迈
-  xiongmai: [
-    'rtsp://{ip}:554/live/av0',
-    'rtsp://{ip}:554/user=admin&password=&channel=1&stream=0.sdp',
-  ],
-  // TP-Link
-  tplink: [
-    'rtsp://{ip}:554/stream1',
-    'rtsp://{ip}:554/stream2',
-  ],
-  // 通用模板（最后尝试）
   generic: [
-    'rtsp://{ip}:554/live/ch1',
-    'rtsp://{ip}:554/Streaming/Channels/101',
-    'rtsp://{ip}:554/Streaming/Channels/102',
-    'rtsp://{ip}:8554/live',
-  ],
+    'rtsp://{ip}:554/stream',
+    'rtsp://{ip}:554/live/av0'
+  ]
 };
-
-// 品牌识别函数（基于 ONVIF 信息或用户输入）
-function detectCameraBrand(sourceData) {
-  // 1. 如果用户指定了品牌
-  if (sourceData?.brand) {
-    return sourceData.brand.toLowerCase();
-  }
-
-  // 2. 基于 ONVIF 信息识别
-  if (sourceData?.onvifInfo) {
-    const manufacturer = sourceData.onvifInfo.manufacturer?.toLowerCase() || '';
-    const model = sourceData.onvifInfo.model?.toLowerCase() || '';
-
-    if (manufacturer.includes('hikvision') || model.includes('ds-')) return 'hikvision';
-    if (manufacturer.includes('dahua') || model.includes('ipc-')) return 'dahua';
-    if (manufacturer.includes('uniview')) return 'uniview';
-    if (manufacturer.includes('axis')) return 'axis';
-    if (manufacturer.includes('xiongmai') || manufacturer.includes('xm')) return 'xiongmai';
-    if (manufacturer.includes('tp-link') || manufacturer.includes('tplink')) return 'tplink';
-  }
-
-  // 3. 基于已有配置推断
-  if (sourceData?.streamUrl) {
-    const url = sourceData.streamUrl;
-    if (url.includes('h264/ch')) return 'hikvision';
-    if (url.includes('cam/realmonitor')) return 'dahua';
-    if (url.includes('axis-media')) return 'axis';
-    if (url.includes('live/av0')) return 'xiongmai';
-  }
-
-  // 4. 默认返回通用模板
-  return 'generic';
-}
 
 // 尝试常见的RTSP地址模板（智能回退策略）
 async function tryRtspTemplates(ip, username, password, sourceData) {
   console.log('[VideoPreview] 尝试RTSP地址模板:', ip);
+
+  // 🎯 策略 0: 如果用户已经提供了具体的RTSP地址，优先使用用户输入的地址
+  if (sourceData?.streamUrl && sourceData.streamUrl.startsWith('rtsp://')) {
+    console.log('[VideoPreview] ✅ 策略0 - 使用用户输入的 RTSP 地址:', sourceData.streamUrl);
+    return sourceData.streamUrl;
+  }
 
   //  策略 1: 优先检查是否有已验证的 RTSP 地址
   if (VERIFIED_RTSP_URLS[ip]) {
@@ -746,19 +694,8 @@ async function tryRtspTemplates(ip, username, password, sourceData) {
     return VERIFIED_RTSP_URLS[ip];
   }
 
-  // 🎯 策略 2: 基于品牌识别使用对应模板
-  const brand = detectCameraBrand(sourceData);
-  console.log('[VideoPreview]  策略2 - 识别品牌:', brand);
-
-  if (BRAND_RTSP_TEMPLATES[brand]) {
-    const templates = BRAND_RTSP_TEMPLATES[brand];
-    console.log('[VideoPreview] 使用品牌模板:', brand, templates);
-
-    // 返回第一个模板，后端会尝试验证
-    const url = templates[0].replace('{ip}', ip);
-    console.log('[VideoPreview] ✅ 策略2 - 使用品牌模板地址:', url);
-    return url;
-  }
+  // 🚫 策略 2 已删除：不再基于品牌识别使用模板
+  // 强制使用 ONVIF 协议获取真实 RTSP 地址
 
   // 🎯 策略 3: 使用通用模板
   console.log('[VideoPreview] 🔍 策略3 - 使用通用模板');
@@ -820,6 +757,56 @@ async function testRtspConnection(rtspUrl) {
   }
 }
 
+// 🎯 新增：验证用户输入的RTSP地址
+async function validateUserRtspUrl(rtspUrl, sourceData) {
+  console.log('[VideoPreview] 🔍 开始验证用户输入的RTSP地址:', rtspUrl);
+
+  // 1. 基本格式验证
+  if (!rtspUrl || !rtspUrl.startsWith('rtsp://')) {
+    console.error('[VideoPreview] ❌ RTSP地址格式错误:', rtspUrl);
+    return {
+      valid: false,
+      error: 'RTSP地址格式错误，必须以 rtsp:// 开头'
+    };
+  }
+
+  // 2. 解析URL检查基本结构
+  try {
+    const urlObj = new URL(rtspUrl);
+    if (!urlObj.hostname) {
+      return {
+        valid: false,
+        error: 'RTSP地址缺少主机名'
+      };
+    }
+  } catch (e) {
+    console.error('[VideoPreview] ❌ RTSP地址解析失败:', e);
+    return {
+      valid: false,
+      error: `RTSP地址格式无效: ${e.message}`
+    };
+  }
+
+  // 3. TCP连接测试（快速验证网络可达性）
+  console.log('[VideoPreview] 📡 进行TCP连接测试...');
+  const tcpResult = await testRtspConnection(rtspUrl);
+
+  if (!tcpResult) {
+    console.warn('[VideoPreview] ⚠️ TCP连接测试失败，但继续尝试播放');
+    // TCP失败不一定代表RTSP无效，可能是防火墙阻止了TCP探测
+    // 所以这里只警告，不直接返回失败
+  }
+
+  // 4. 🎯 使用后端ZLMediaKit进行完整RTSP验证（可选，耗时较长）
+  // 这里我们选择先尝试播放，让FFmpeg来最终验证
+  console.log('[VideoPreview] ✅ RTSP地址基础验证通过，将进行实际播放测试');
+
+  return {
+    valid: true,
+    warning: tcpResult ? null : 'TCP连接测试失败，但将继续尝试播放'
+  };
+}
+
 // 确保ZLMediaKit流媒体服务已启动
 async function ensureZLMediaKitRunning(invoke) {
   console.log('[VideoPreview] 检查ZLMediaKit状态...');
@@ -841,26 +828,25 @@ async function ensureZLMediaKitRunning(invoke) {
   }
 }
 
-// 🆕 确保 RTSP Proxy 服务已启动（Node.js）
+// 🆕 确保 ZLMediaKit 流媒体服务已启动（WebRTC + FLV）
 async function ensureRtspProxyRunning(invoke) {
-  console.log('[VideoPreview] 检查RTSP Proxy服务状态...');
+  console.log('[VideoPreview] 检查ZLMediaKit流媒体服务状态...');
 
   try {
-    // 🎯 关键修复：先通过HTTP健康检查判断服务是否真正运行
-    // 避免Tauri进程管理的问题
+    // 🎯 先通过HTTP健康检查判断服务是否真正运行
     let serviceRunning = false;
 
     try {
       console.log('[VideoPreview] 尝试HTTP健康检查...');
-      const response = await fetch('http://127.0.0.1:8081/health', {
+      const response = await fetch('/index/api/getServerInfo', {
         method: 'GET',
         mode: 'cors',
-        timeout: 2000
+        signal: AbortSignal.timeout(3000)
       });
 
       if (response.ok) {
         const data = await response.json();
-        console.log('[VideoPreview] ✅ RTSP Proxy服务已通过HTTP健康检查:', data);
+        console.log('[VideoPreview] ✅ ZLMediaKit服务已通过HTTP健康检查:', data);
         serviceRunning = true;
       } else {
         console.warn('[VideoPreview] ⚠️ HTTP健康检查失败，HTTP状态:', response.status);
@@ -876,14 +862,14 @@ async function ensureRtspProxyRunning(invoke) {
     }
 
     // 如果HTTP检查失败，再使用Tauri API
-    console.log('[VideoPreview] 调用Tauri API检查RTSP Proxy状态...');
+    console.log('[VideoPreview] 调用Tauri API检查ZLMediaKit状态...');
     const status = await invoke('check_rtsp_proxy_status');
-    console.log('[VideoPreview] RTSP Proxy状态:', status);
+    console.log('[VideoPreview] ZLMediaKit状态:', status);
 
     if (!status.running) {
-      console.log('[VideoPreview] RTSP Proxy未运行，尝试启动...');
+      console.log('[VideoPreview] ZLMediaKit未运行，尝试启动...');
       const result = await invoke('start_rtsp_proxy');
-      console.log('[VideoPreview] RTSP Proxy启动结果:', result);
+      console.log('[VideoPreview] ZLMediaKit启动结果:', result);
 
       // 等待服务启动
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -891,7 +877,7 @@ async function ensureRtspProxyRunning(invoke) {
       console.log('[VideoPreview] ✅ Tauri API检测到服务已在运行');
     }
   } catch (e) {
-    console.error('[VideoPreview] ❌ RTSP Proxy检查/启动失败:', e);
+    console.error('[VideoPreview] ❌ ZLMediaKit检查/启动失败:', e);
     // 即使检查失败，也继续尝试（可能服务已在外部运行）
     console.warn('[VideoPreview] 警告：服务检查失败，但仍将尝试连接...');
   }
@@ -910,13 +896,37 @@ async function startNetworkCamera(sourceData) {
     videoLoading.value = true;
     videoError.value = null;
 
+    // 🎯 关键修复：重新从store获取最新的源数据，确保使用更新后的数据
+    const currentSource = sourceStore.sources.find(s => s.id === props.sourceId);
+    if (currentSource) {
+      sourceData = { ...sourceData, ...currentSource };
+      console.log('[VideoPreview] ✅ 使用最新的源数据:', {
+        id: sourceData.id,
+        protocol: sourceData.protocol,
+        streamUrl: sourceData.streamUrl
+      });
+    }
+
     // 获取RTSP URL
     let rtspUrl = sourceData?.streamUrl || sourceData?.url;
 
-    // ONVIF协议处理：尝试获取RTSP流地址
-    // ONVIF用于云台控制，视频流仍需RTSP地址
-    if (!rtspUrl && sourceData?.protocol === 'onvif') {
-      console.log('[VideoPreview] ONVIF协议，尝试通过ONVIF获取RTSP流地址');
+    // 🎯 修复：如果 streamUrl 是 ONVIF 端点但协议是 ONVIF，清空它让它走 ONVIF 获取流程
+    if (sourceData?.protocol === 'onvif' && rtspUrl && /^https?:\/\/[^/]+\/onvif\//i.test(rtspUrl)) {
+      console.warn('[VideoPreview] ⚠️ 检测到 streamUrl 是 ONVIF 端点，将通过 ONVIF 协议获取 RTSP 流地址');
+      rtspUrl = '';
+    }
+
+    // 🎯 关键优化：如果用户已经提供了RTSP地址，直接播放，不需要ONVIF探测
+    if (rtspUrl && rtspUrl.startsWith('rtsp://')) {
+      console.log('[VideoPreview] ✅ 检测到用户提供的RTSP地址，直接播放:', rtspUrl);
+      console.log('[VideoPreview] 💡 提示：如需云台控制，请确保摄像机支持ONVIF协议');
+
+      // 直接跳转到播放流程，跳过ONVIF探测
+      // 后续的代码会处理RTSP代理启动和FLV播放
+    }
+    // ONVIF协议处理：仅当没有RTSP地址时才通过ONVIF获取
+    else if (sourceData?.protocol === 'onvif' && !rtspUrl) {
+      console.log('[VideoPreview] 🔄 ONVIF协议，开始通过ONVIF获取RTSP流地址');
       console.log('[VideoPreview] 完整源数据:', JSON.stringify(sourceData, null, 2));
 
       // 获取IP地址
@@ -953,9 +963,9 @@ async function startNetworkCamera(sourceData) {
         const additionalPorts = [
           80,    // HTTP默认端口（很多摄像机使用）
           8080,  // 常见替代端口
-          8899,  // 海康威视常用端口
-          5000,  // 大华常用端口
-          37777, // 大华另一常用端口
+          8899,  // 常用端口
+          5000,  // 常用端口
+          37777, // 常用端口
           8000,  // 其他品牌常用
         ];
         onvifPorts.push(...additionalPorts);
@@ -967,6 +977,12 @@ async function startNetworkCamera(sourceData) {
       // 去重并保持顺序
       const uniquePorts = [...new Set(onvifPorts)];
       console.log('[VideoPreview] 将尝试的ONVIF端口:', uniquePorts);
+
+      // 🎯 显示ONVIF探测提示
+      ElMessage.info({
+        message: `正在通过ONVIF协议获取RTSP地址（最多15秒）...`,
+        duration: 3000
+      });
 
       // 尝试ONVIF协议获取RTSP流地址
       const { invoke } = await import('@tauri-apps/api/core');
@@ -1017,10 +1033,11 @@ async function startNetworkCamera(sourceData) {
             }
 
             // 验证3：可选 - 快速测试RTSP连接（TCP握手）
+            // 🎯 修复：TCP探测失败不跳过该地址，可能是防火墙阻止了探测但RTSP实际可用
             const isRtspReachable = await testRtspConnection(rtspUri);
             if (!isRtspReachable) {
-              console.warn(`[VideoPreview] ⚠️ 端口 ${port} RTSP地址无法连接:`, rtspUri);
-              continue;
+              console.warn(`[VideoPreview] ⚠️ 端口 ${port} RTSP地址TCP连接测试失败，但仍尝试使用:`, rtspUri);
+              // 不再 continue，继续使用此地址（TCP探测不可靠，可能被防火墙拦截）
             }
 
             rtspUrl = rtspUri;
@@ -1028,14 +1045,19 @@ async function startNetworkCamera(sourceData) {
             console.log('[VideoPreview] ✅ ONVIF获取RTSP流地址成功:', rtspUrl);
             console.log('[VideoPreview] ✅ 验证通过的端口:', verifiedPort);
 
-            // 🎯 关键修复：如果RTSP地址不包含认证信息，但源数据中有用户名密码，则添加到URL中
-            if (sourceData?.needAuth && sourceData?.username && sourceData?.password) {
-              // 检查URL是否已包含认证信息
-              if (!rtspUrl.includes('@')) {
-                // 在 rtsp:// 后插入 username:password@
-                rtspUrl = rtspUrl.replace('rtsp://', `rtsp://${sourceData.username}:${sourceData.password}@`);
-                console.log('[VideoPreview] 添加认证信息到RTSP URL:', rtspUrl);
-              }
+            // 🎯 重要：尊重ONVIF返回的RTSP地址格式，不强制添加认证
+            // ONVIF返回的地址可能已经包含认证，也可能是免密访问
+            const hasAuthInUrl = rtspUrl.includes('@');
+            if (hasAuthInUrl) {
+              console.log('[VideoPreview] ℹ️ ONVIF返回的RTSP URL已包含认证信息');
+            } else if (sourceData?.username || sourceData?.password) {
+              // 🎯 修复：ONVIF返回的URL通常不含认证，需要手动注入用户名密码
+              const username = sourceData.username || 'admin';
+              const password = sourceData.password || '';
+              rtspUrl = rtspUrl.replace('rtsp://', `rtsp://${username}:${password}@`);
+              console.log('[VideoPreview] ✅ 已注入认证信息到ONVIF返回的RTSP URL:', username, '***');
+            } else {
+              console.log('[VideoPreview] ℹ️ ONVIF返回的RTSP URL无认证信息，尝试免密访问');
             }
 
             onvifSuccess = true;
@@ -1050,36 +1072,45 @@ async function startNetworkCamera(sourceData) {
       if (!onvifSuccess) {
         console.warn('[VideoPreview] ⚠️ ONVIF所有端口均失败，回退到RTSP地址模板');
 
-        // 显示更详细的错误提示
-        ElMessage.warning({
-          message: 'ONVIF协议获取失败，将尝试常见RTSP地址模板。建议：\n1. 确认设备支持ONVIF协议\n2. 检查用户名/密码是否正确\n3. 手动指定RTSP地址',
-          duration: 5000,
-          showClose: true
-        });
-
-        // 🎯 新增：先尝试智能验证 RTSP 地址
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          console.log('[VideoPreview] 🔍 开始智能 RTSP 地址验证...');
-
-          const verifiedUrl = await invoke('try_multiple_rtsp_templates_cmd', {
-            ip: ip,
-            brand: sourceData?.brand || null
-          }).catch(err => {
-            console.warn('[VideoPreview] 智能验证失败，回退到模板:', err);
-            return null;
+        // 🎯 关键修复：如果用户已经提供了有效的RTSP地址，不要覆盖它
+        if (rtspUrl && rtspUrl.startsWith('rtsp://')) {
+          console.log('[VideoPreview] ✅ 用户已提供RTSP地址，保持使用:', rtspUrl);
+          ElMessage.success({
+            message: 'ONVIF探测未完成，但将使用您手动输入的RTSP地址',
+            duration: 3000
+          });
+        } else {
+          // 显示更详细的错误提示
+          ElMessage.warning({
+            message: 'ONVIF协议获取失败，将尝试常见RTSP地址模板。\n\n建议：\n1. 确认设备支持ONVIF协议\n2. 检查用户名/密码是否正确\n3. 在摄像机Web界面启用ONVIF服务\n4. 或手动输入RTSP地址',
+            duration: 8000,
+            showClose: true
           });
 
-          if (verifiedUrl) {
-            console.log('[VideoPreview] ✅ 智能验证成功，使用地址:', verifiedUrl);
-            rtspUrl = verifiedUrl;
-          } else {
-            console.log('[VideoPreview] ⚠️ 智能验证失败，使用传统模板');
+          // 🎯 新增：先尝试智能验证 RTSP 地址
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            console.log('[VideoPreview] 🔍 开始智能 RTSP 地址验证...');
+
+            const verifiedUrl = await invoke('try_multiple_rtsp_templates_cmd', {
+              ip: ip,
+              brand: sourceData?.brand || null
+            }).catch(err => {
+              console.warn('[VideoPreview] 智能验证失败，回退到模板:', err);
+              return null;
+            });
+
+            if (verifiedUrl) {
+              console.log('[VideoPreview] ✅ 智能验证成功，使用地址:', verifiedUrl);
+              rtspUrl = verifiedUrl;
+            } else {
+              console.log('[VideoPreview] ⚠️ 智能验证失败，使用传统模板');
+              rtspUrl = await tryRtspTemplates(ip, sourceData?.username, sourceData?.password, sourceData);
+            }
+          } catch (e) {
+            console.error('[VideoPreview] RTSP 验证异常:', e);
             rtspUrl = await tryRtspTemplates(ip, sourceData?.username, sourceData?.password, sourceData);
           }
-        } catch (e) {
-          console.error('[VideoPreview] RTSP 验证异常:', e);
-          rtspUrl = await tryRtspTemplates(ip, sourceData?.username, sourceData?.password, sourceData);
         }
 
         if (rtspUrl) {
@@ -1094,14 +1125,101 @@ async function startNetworkCamera(sourceData) {
       throw new Error('未提供视频流地址（RTSP或ONVIF服务地址）');
     }
 
+    // 🎯 参考eb4项目：检查连接状态，如果正在后台连接中，等待完成
+    if (sourceData?.loading || sourceData?.connectionStatus === 'connecting') {
+      console.log('[VideoPreview] ⏳ 信号源正在后台连接中，等待ONVIF/RTSP解析完成...')
+
+      // 🎯 监听重载事件，自动重新加载
+      const reloadHandler = (event) => {
+        if (event.detail.sourceId === props.sourceId) {
+          console.log('[VideoPreview] 🔄 收到重载事件，重新加载视频流...')
+          window.removeEventListener('reload-preview', reloadHandler)
+
+          // 延迟后重新调用本函数
+          setTimeout(() => {
+            startNetworkCamera(sourceData)
+          }, 500)
+        }
+      }
+
+      window.addEventListener('reload-preview', reloadHandler)
+
+      // 显示加载提示
+      ElMessage.info({
+        message: '正在连接网络摄像机...',
+        duration: 3000
+      })
+
+      return  // 🎯 提前返回，不继续播放
+    }
+
     console.log('[VideoPreview] 尝试加载视频流:', rtspUrl);
+
+    // 🎯 新增：如果用户手动输入了RTSP地址，先进行验证
+    const isUserProvided = sourceData?.streamUrl && sourceData.streamUrl.startsWith('rtsp://');
+    if (isUserProvided) {
+      console.log('[VideoPreview] 🔍 检测到用户输入的RTSP地址，开始验证...');
+
+      // 显示加载提示
+      ElMessage.info({
+        message: '正在验证RTSP地址...',
+        duration: 2000
+      });
+
+      try {
+        const validationResult = await validateUserRtspUrl(rtspUrl, sourceData);
+
+        if (!validationResult.valid) {
+          console.error('[VideoPreview] ❌ RTSP地址验证失败:', validationResult.error);
+          ElMessage.error({
+            message: `RTSP地址验证失败：${validationResult.error}\n\n请检查：\n1. 地址格式是否正确\n2. 网络连接是否正常\n3. 用户名密码是否正确`,
+            duration: 8000,
+            showClose: true
+          });
+          videoLoading.value = false;
+          videoError.value = validationResult.error;
+          return; // 直接返回，不继续播放
+        }
+
+        // 如果有警告，显示给用户
+        if (validationResult.warning) {
+          console.warn('[VideoPreview] ⚠️ RTSP地址验证警告:', validationResult.warning);
+          ElMessage.warning({
+            message: validationResult.warning,
+            duration: 5000,
+            showClose: true
+          });
+        }
+
+        console.log('[VideoPreview] ✅ RTSP地址验证通过');
+      } catch (e) {
+        console.error('[VideoPreview] ❌ RTSP地址验证过程出错:', e);
+        // 验证过程出错，不阻止播放，但记录日志
+        ElMessage.warning({
+          message: 'RTSP地址验证过程出现异常，将尝试直接播放',
+          duration: 3000
+        });
+      }
+    }
 
     // 尝试使用 Tauri API 代理RTSP流
     try {
       const { invoke } = await import('@tauri-apps/api/core');
 
-      // 🎯 修复：先检查并启动RTSP代理服务（Node.js）
-      await ensureRtspProxyRunning(invoke);
+      // 🎯 关键修复：验证 URL 格式，确保不是 ONVIF 服务端点
+      if (/^https?:\/\/[^/]+\/onvif\//i.test(rtspUrl)) {
+        console.error('[VideoPreview] ❌ 无法使用 ONVIF 服务端点作为 RTSP 流地址:', rtspUrl);
+        console.warn('[VideoPreview] ⚠️ 提示：请手动输入正确的 RTSP 地址');
+        ElMessage.error({
+          message: 'ONVIF解析失败，无法获取RTSP流地址。请重新添加信号源并输入正确的RTSP地址。',
+          duration: 5000,
+          showClose: true
+        });
+        return;  // 🎯 直接返回，不继续尝试播放
+      }
+
+      // 🎯 使用 ZLMediaKit 处理 RTSP 流
+      await ensureZLMediaKitRunning(invoke);
 
       // 尝试启动RTSP代理
       // 🎯 关键修复：优先使用克隆源的 originalStreamId，复用预览区域的RTSP代理
@@ -1124,30 +1242,68 @@ async function startNetworkCamera(sourceData) {
         password: sourceData?.password ? '***' : '空'
       });
 
-      // 🎯 修复：如果RTSP地址不包含认证信息，但源数据中有用户名密码，则添加到URL中
+      // 🎯 重要：智能处理RTSP地址（补全端口 + 条件注入认证）
       let finalRtspUrl = rtspUrl;
-      if (sourceData?.needAuth && sourceData?.username && sourceData?.password) {
-        // 检查URL是否已包含认证信息
-        if (!rtspUrl.includes('@')) {
-          // 在 rtsp:// 后插入 username:password@
-          finalRtspUrl = rtspUrl.replace('rtsp://', `rtsp://${sourceData.username}:${sourceData.password}@`);
-          console.log('[VideoPreview] 添加认证信息到RTSP URL:', finalRtspUrl);
-        }
+
+      // 🎯 步骤1：补全端口号（如果缺失）
+      // rtsp://192.168.5.163/live/av0 -> rtsp://192.168.5.163:554/live/av0
+      const urlWithoutAuth = rtspUrl.replace(/rtsp:\/\/[^@]*@/, 'rtsp://');
+      const hostPart = urlWithoutAuth.split('/')[2] || '';
+      const hasPort = /:\d+/.test(hostPart);
+
+      if (!hasPort) {
+        // 在主机名后添加默认端口554
+        finalRtspUrl = rtspUrl.replace(/(rtsp:\/\/[^:/]+)(\/)/, '$1:554$2');
+        console.log('[VideoPreview] ✅ 已补全默认端口554:', finalRtspUrl);
       }
 
-      // 🆕 使用新的 Node.js RTSP Proxy 服务
-      const proxyResult = await invoke('start_rtsp_stream_proxy', {
-        rtspUrl: finalRtspUrl,
-        streamId: streamId
-      }).catch(err => {
-        console.error('[VideoPreview] RTSP代理启动失败:', err);
+      // 🎯 步骤2：条件注入认证信息
+      const hasAuthInUrl = finalRtspUrl.includes('@');
+      if (hasAuthInUrl) {
+        console.log('[VideoPreview] ℹ️ RTSP URL已包含认证信息，保持不变');
+      } else if (sourceData?.protocol === 'onvif' && (sourceData?.username || sourceData?.password)) {
+        // ONVIF协议：只要有凭据就注入认证（ONVIF设备通常需要认证）
+        const username = sourceData.username || 'admin';
+        const password = sourceData.password || '';
+        finalRtspUrl = finalRtspUrl.replace('rtsp://', `rtsp://${username}:${password}@`);
+        console.log('[VideoPreview] ✅ ONVIF协议：已注入认证信息:', username, '***');
+      } else if (sourceData?.protocol === 'rtsp' && sourceData?.needAuth && (sourceData?.username || sourceData?.password)) {
+        // RTSP协议：只有明确标记需要认证(needAuth=true)时才注入
+        const username = sourceData.username || 'admin';
+        const password = sourceData.password || '';
+        finalRtspUrl = finalRtspUrl.replace('rtsp://', `rtsp://${username}:${password}@`);
+        console.log('[VideoPreview] ✅ RTSP协议：已注入认证信息(needAuth=true):', username, '***');
+      } else {
+        // 免密访问或用户未提供凭据或未标记需要认证
+        console.log('[VideoPreview] ℹ️ RTSP URL无认证信息，尝试免密访问');
+      }
 
-        // 提供更详细的错误提示
-        let errorMsg = 'RTSP代理启动失败';
+      // 🎯 使用 ZLMediaKit 处理 RTSP 流（替代 Node.js 代理）
+      console.log('[VideoPreview] 🚀 使用ZLMediaKit处理RTSP流...');
+
+      // 确保ZLMediaKit服务已启动
+      await ensureZLMediaKitRunning(invoke);
+
+      // 准备代理选项（包含认证信息）
+      const proxyOptions = {};
+      if (sourceData?.username) {
+        proxyOptions.username = sourceData.username;
+      }
+      if (sourceData?.password) {
+        proxyOptions.password = sourceData.password;
+      }
+
+      const proxyResult = await invoke('proxy_network_stream', {
+        streamUrl: finalRtspUrl,
+        streamId: streamId,
+        streamType: 'NetworkCamera',
+        options: proxyOptions
+      }).catch(err => {
+        console.error('[VideoPreview] ZLMediaKit代理启动失败:', err);
+
+        let errorMsg = 'RTSP流代理启动失败';
         if (typeof err === 'string') {
-          if (err.includes('端口') || err.includes('未运行')) {
-            errorMsg = 'RTSP代理服务未正常运行，请检查Node.js是否已安装';
-          } else if (err.includes('连接') || err.includes('connect')) {
+          if (err.includes('连接') || err.includes('connect')) {
             errorMsg = '无法连接到RTSP流，请检查地址和网络连接';
           } else {
             errorMsg = err;
@@ -1163,29 +1319,75 @@ async function startNetworkCamera(sourceData) {
         return null;
       });
 
+      // 检查代理结果是否有效
+      if (!proxyResult) {
+        console.error('[VideoPreview] ❌ ZLMediaKit代理未返回有效结果');
+        videoLoading.value = false;
+        videoError.value = 'RTSP代理启动失败';
+        return;
+      }
+
+      console.log('[VideoPreview] ZLMediaKit代理返回结果:', JSON.stringify(proxyResult, null, 2));
+
       // 使用代理后的FLV URL播放
-      // 🎯 修复：兼容 camelCase (flvUrl) 和 snake_case (flv_url)
-      if (proxyResult && (proxyResult.flvUrl || proxyResult.flv_url)) {
-        const flvUrl = proxyResult.flvUrl || proxyResult.flv_url;
+      // 🎯 优化：优先使用 WebSocket-FLV 降低延迟
+      let flvUrl = null;
+      if (proxyResult) {
+        // 🎯 优先使用 WebSocket-FLV（更低延迟）
+        flvUrl = proxyResult.wsFlvUrl || proxyResult.ws_flv_url;
+        // 如果没有WebSocket-FLV，回退到HTTP-FLV
+        if (!flvUrl) {
+          flvUrl = proxyResult.flvUrl || proxyResult.flv_url;
+        }
+      }
+
+      if (flvUrl) {
         console.log('[VideoPreview] 使用代理后的FLV URL:', flvUrl);
+        console.log('[VideoPreview] 使用协议:', flvUrl.startsWith('ws://') ? 'WebSocket-FLV (低延迟)' : 'HTTP-FLV');
         console.log('[VideoPreview] 代理返回结果:', JSON.stringify(proxyResult, null, 2));
 
         // 使用flv.js播放FLV流
         if (flvjs.isSupported()) {
           console.log('[VideoPreview] ✅ 创建FLV播放器...')
 
-          // 🎯 先销毁旧播放器（如果存在）
+          // 🎯 先销毁旧播放器（如果存在）- 使用安全销毁流程
           if (videoRef.value._flvPlayer) {
             console.log('[VideoPreview] 销毁旧的FLV播放器')
+            videoRef.value._isDestroying = true;  // 🎯 标记为正在销毁
             try {
-              videoRef.value._flvPlayer.pause()
-              videoRef.value._flvPlayer.unload()
-              videoRef.value._flvPlayer.detachMediaElement()
-              videoRef.value._flvPlayer.destroy()
+              const oldPlayer = videoRef.value._flvPlayer;
+
+              // 🎯 安全销毁：按顺序执行，每个步骤单独捕获异常
+              try {
+                oldPlayer.pause();
+              } catch (e) {
+                console.warn('[VideoPreview] pause失败:', e);
+              }
+
+              try {
+                oldPlayer.unload();
+              } catch (e) {
+                console.warn('[VideoPreview] unload失败:', e);
+              }
+
+              try {
+                oldPlayer.detachMediaElement();
+              } catch (e) {
+                console.warn('[VideoPreview] detachMediaElement失败:', e);
+              }
+
+              try {
+                oldPlayer.destroy();
+              } catch (e) {
+                console.warn('[VideoPreview] destroy失败:', e);
+              }
+
+              videoRef.value._flvPlayer = null;
             } catch (e) {
               console.warn('[VideoPreview] 销毁旧播放器时出错:', e)
+            } finally {
+              videoRef.value._isDestroying = false;  // 🎯 销毁完成
             }
-            videoRef.value._flvPlayer = null
           }
 
           const flvPlayer = flvjs.createPlayer({
@@ -1198,16 +1400,16 @@ async function startNetworkCamera(sourceData) {
             // 🎯 关键配置：修复flushStashedSamples错误，同时优化延迟
             enableWorker: false,              // 禁用Worker避免跨线程错误
             enableStashBuffer: true,          // ✅ 必须启用，否则会导致flushStashedSamples错误
-            stashInitialSize: 4096,           // 初始缓冲 4KB（有效覆盖单帧 FLV tag + 音频头，消除 flushStashedSamples 错误）
+            stashInitialSize: 1024,           // 初始缓冲 1KB（降低延迟）
             lazyLoad: false,                  // 禁用懒加载
             lazyLoadMaxDuration: 0,           // 不限制最大持续时间
             deferLoadAfterSourceOpen: false,  // 不延迟加载
             // 🎯 自动清理策略 - 控制内存和延迟
             autoCleanupSourceBuffer: true,    // 自动清理SourceBuffer
-            autoCleanupMaxBackwardDuration: 2, // 最大向后保留2秒
-            autoCleanupMinBackwardDuration: 1,  // 最小向后保留1秒
-            // 🎯 直播同步配置 - 降低延迟（1秒覆盖窗口，兼顾平滑与低延迟）
-            liveSyncDuration: 1,               // 直播同步时长1秒
+            autoCleanupMaxBackwardDuration: 1, // 最大向后保留1秒（降低延迟）
+            autoCleanupMinBackwardDuration: 0.5,  // 最小向后保留0.5秒
+            // 🎯 直播同步配置 - 极低延迟（局域网环境）
+            liveSyncDuration: 0.5,               // 直播同步时长0.5秒（极低延迟）
             liveSyncDurationCount: 1,         // 直播同步帧数
             fixAudioTimestampGap: true        // 修正音频时间戳间隙
           });
@@ -1223,11 +1425,13 @@ async function startNetworkCamera(sourceData) {
           if (!isRegistered.value && props.sourceId && videoRef.value) {
             console.log(`[VideoPreview] FLV播放器已创建，时序兜底触发注册: ${props.sourceId}`);
             if (props.index === 0) {
-              registerMasterVideo(videoRef.value, props.sourceId);
+              registerMasterVideo(videoRef.value, props.videoSource || props.sourceId);
               console.log(`[VideoPreview] 时序兜底-主控注册: ${props.sourceId}`);
             } else {
-              registerSlaveVideo(videoRef.value, props.index, props.sourceId);
-              console.log(`[VideoPreview] 时序兜底-从属注册: ${props.sourceId}`);
+              // 🎯 关键修复：传递完整的 videoSource 对象
+              const sourceToRegister = props.videoSource || props.sourceId;
+              registerSlaveVideo(videoRef.value, props.index, sourceToRegister);
+              console.log(`[VideoPreview] 时序兜底-从属注册: ${props.sourceId}, isClone: ${props.videoSource?.isClone || false}`);
             }
             isRegistered.value = true;
             lastRegisteredSourceId = props.sourceId;
@@ -1242,6 +1446,12 @@ async function startNetworkCamera(sourceData) {
           flvPlayer.on(flvjs.Events.ERROR, (errorType, errorDetail, errorInfo) => {
             console.error('[VideoPreview] FLV播放错误:', errorType, errorDetail, errorInfo)
 
+            // 🎯 关键修复：忽略播放器销毁过程中的错误
+            if (videoRef.value?._isDestroying) {
+              console.log('[VideoPreview] ℹ️ 播放器正在销毁，忽略错误')
+              return
+            }
+
             // 🎯 关键修复：遇到网络错误时尝试重新加载，最多重试3次
             if (errorType === 'NetworkError' && retryCount < MAX_RETRIES) {
               retryCount++;
@@ -1250,15 +1460,39 @@ async function startNetworkCamera(sourceData) {
 
               setTimeout(() => {
                 try {
-                  if (videoRef.value && videoRef.value._flvPlayer) {
+                  if (videoRef.value && videoRef.value._flvPlayer && !videoRef.value._isDestroying) {
                     // 🎯 先销毁旧播放器，再重新创建
                     console.log('[VideoPreview] 销毁旧的FLV播放器并重建...');
+                    videoRef.value._isDestroying = true;  // 🎯 标记为正在销毁
                     const oldPlayer = videoRef.value._flvPlayer;
-                    oldPlayer.pause();
-                    oldPlayer.unload();
-                    oldPlayer.detachMediaElement();
-                    oldPlayer.destroy();
+
+                    // 🎯 安全销毁：按顺序执行，每个步骤单独捕获异常
+                    try {
+                      oldPlayer.pause();
+                    } catch (e) {
+                      console.warn('[VideoPreview] pause失败:', e);
+                    }
+
+                    try {
+                      oldPlayer.unload();
+                    } catch (e) {
+                      console.warn('[VideoPreview] unload失败:', e);
+                    }
+
+                    try {
+                      oldPlayer.detachMediaElement();
+                    } catch (e) {
+                      console.warn('[VideoPreview] detachMediaElement失败:', e);
+                    }
+
+                    try {
+                      oldPlayer.destroy();
+                    } catch (e) {
+                      console.warn('[VideoPreview] destroy失败:', e);
+                    }
+
                     videoRef.value._flvPlayer = null;
+                    videoRef.value._isDestroying = false;  // 🎯 销毁完成
 
                     // 重新创建播放器
                     const newFlvPlayer = flvjs.createPlayer({
@@ -2007,11 +2241,18 @@ function initFlvPlayer(streamUrl) {
 
     flvPlayer.on(flvjs.Events.ERROR, (errorType, errorDetail, errorInfo) => {
       console.error('[VideoPreview] FLV 错误:', errorType, errorDetail, errorInfo);
+
+      // 🎯 关键修复：忽略播放器销毁过程中的错误
+      if (videoRef.value?._isDestroying) {
+        console.log('[VideoPreview] ℹ️ 播放器正在销毁，忽略错误')
+        return
+      }
+
       streamConnected.value = false;
 
       // 尝试重连
       setTimeout(() => {
-        if (flvPlayer) {
+        if (flvPlayer && !videoRef.value?._isDestroying) {
           try {
             flvPlayer.unload();
             flvPlayer.load();

@@ -312,6 +312,57 @@
             </div>
           </div>
 
+          <!-- 📝 会议纪要 -->
+          <div class="panel-section meeting-notes-section">
+            <div class="panel-title">
+              <span>会议纪要</span>
+              <el-tag v-if="meetingNotes.length > 0" size="small" type="success">{{ meetingNotes.length }}条</el-tag>
+            </div>
+
+            <!-- 会议记录控制 -->
+            <div class="meeting-notes-controls">
+              <button
+                class="notes-control-btn"
+                :class="{ active: isRecordingNotes }"
+                @click="toggleMeetingNotesRecording"
+                :disabled="!isMeetingActive"
+              >
+                <el-icon><Microphone v-if="!isRecordingNotes" /><VideoStop v-else /></el-icon>
+                <span>{{ isRecordingNotes ? '停止记录' : '开始记录' }}</span>
+              </button>
+            </div>
+
+            <!-- 会议记录列表 -->
+            <div class="meeting-notes-list" v-if="meetingNotes.length > 0">
+              <div
+                v-for="(note, index) in meetingNotes"
+                :key="index"
+                class="note-item"
+              >
+                <div class="note-header">
+                  <span class="note-time">{{ formatNoteTime(note.timestamp) }}</span>
+                  <span class="note-speaker">{{ note.speaker || '未知' }}</span>
+                </div>
+                <div class="note-content">{{ note.content }}</div>
+              </div>
+            </div>
+            <div v-else class="empty-notes">
+              <el-empty description="暂无会议记录" :image-size="80" />
+            </div>
+
+            <!-- 导出按钮 -->
+            <div class="meeting-notes-actions" v-if="meetingNotes.length > 0">
+              <button class="export-btn" @click="exportMeetingNotes('txt')">
+                <el-icon><Document /></el-icon>
+                <span>导出TXT</span>
+              </button>
+              <button class="export-btn" @click="exportMeetingNotes('json')">
+                <el-icon><Files /></el-icon>
+                <span>导出JSON</span>
+              </button>
+            </div>
+          </div>
+
           <!-- 邀请按钮 -->
           <div class="panel-section">
             <button class="invite-btn" @click="inviteParticipants">
@@ -350,7 +401,7 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { ElMessage } from 'element-plus';
-import { VideoCamera, User, Monitor, Microphone, VideoStop, VideoPause, CopyDocument, Close } from '@/components/icons';
+import { VideoCamera, User, Monitor, Microphone, VideoStop, VideoPause, CopyDocument, Close, Document, Files } from '@/components/icons';
 import webrtcService from '@/services/webrtcService';
 import meetingStatsService from '@/services/meetingStats';
 
@@ -395,6 +446,11 @@ const isScreenSharing = ref(false);
 const mediaRecorder = null;
 const recordedChunks = [];
 const recordedBlob = ref(null);
+
+// 📝 会议记录状态
+const isRecordingNotes = ref(false);
+const meetingNotes = ref([]);
+let speechRecognition = null;
 
 // 自动布局计算属性 - 根据参会人数自动调整
 const videoGridLayout = computed(() => {
@@ -1200,6 +1256,132 @@ const loadSavedMeetingInfo = () => {
   }
 };
 
+// 📝 会议记录相关方法
+
+// 切换会议记录状态
+const toggleMeetingNotesRecording = () => {
+  if (isRecordingNotes.value) {
+    stopMeetingNotesRecording();
+  } else {
+    startMeetingNotesRecording();
+  }
+};
+
+// 开始会议记录
+const startMeetingNotesRecording = () => {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    ElMessage.warning('您的浏览器不支持语音识别功能');
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  speechRecognition = new SpeechRecognition();
+  speechRecognition.lang = 'zh-CN';
+  speechRecognition.continuous = true;
+  speechRecognition.interimResults = false;
+
+  speechRecognition.onresult = (event) => {
+    const transcript = event.results[event.results.length - 1][0].transcript;
+    if (transcript.trim()) {
+      addMeetingNote(transcript.trim());
+    }
+  };
+
+  speechRecognition.onerror = (event) => {
+    console.error('[会议记录] 语音识别错误:', event.error);
+    if (event.error === 'not-allowed') {
+      ElMessage.error('未授权使用麦克风，请检查浏览器权限设置');
+      stopMeetingNotesRecording();
+    }
+  };
+
+  speechRecognition.onend = () => {
+    // 如果仍在记录状态，自动重启
+    if (isRecordingNotes.value) {
+      try {
+        speechRecognition.start();
+      } catch (e) {
+        console.warn('[会议记录] 重启识别失败:', e);
+      }
+    }
+  };
+
+  try {
+    speechRecognition.start();
+    isRecordingNotes.value = true;
+    ElMessage.success('会议记录已开始');
+  } catch (e) {
+    console.error('[会议记录] 启动失败:', e);
+    ElMessage.error('启动会议记录失败');
+  }
+};
+
+// 停止会议记录
+const stopMeetingNotesRecording = () => {
+  if (speechRecognition) {
+    speechRecognition.stop();
+    speechRecognition = null;
+  }
+  isRecordingNotes.value = false;
+  ElMessage.info('会议记录已停止');
+};
+
+// 添加会议记录
+const addMeetingNote = (content) => {
+  const note = {
+    timestamp: Date.now(),
+    content: content,
+    speaker: '教师'
+  };
+  meetingNotes.value.push(note);
+  console.log('[会议记录] 新增记录:', note);
+};
+
+// 格式化记录时间
+const formatNoteTime = (timestamp) => {
+  const date = new Date(timestamp);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
+};
+
+// 导出会议记录
+const exportMeetingNotes = (format) => {
+  if (meetingNotes.value.length === 0) {
+    ElMessage.warning('暂无会议记录可导出');
+    return;
+  }
+
+  let content = '';
+  let filename = '';
+  let mimeType = '';
+
+  if (format === 'txt') {
+    content = meetingNotes.value.map(note =>
+      `[${formatNoteTime(note.timestamp)}] ${note.speaker}: ${note.content}`
+    ).join('\n\n');
+    filename = `会议纪要_${new Date().toISOString().slice(0, 10)}.txt`;
+    mimeType = 'text/plain;charset=utf-8';
+  } else if (format === 'json') {
+    content = JSON.stringify(meetingNotes.value, null, 2);
+    filename = `会议纪要_${new Date().toISOString().slice(0, 10)}.json`;
+    mimeType = 'application/json;charset=utf-8';
+  }
+
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  ElMessage.success(`会议记录已导出为${format.toUpperCase()}格式`);
+};
+
 // 初始化
 loadSavedMeetingInfo();
 
@@ -1207,6 +1389,10 @@ loadSavedMeetingInfo();
 onUnmounted(() => {
   if (isWebRTCConnected.value) {
     webrtcService.closeAll();
+  }
+  // 清理会议记录
+  if (isRecordingNotes.value) {
+    stopMeetingNotesRecording();
   }
 });
 </script>
@@ -2249,6 +2435,123 @@ onUnmounted(() => {
           .el-icon {
             font-size: 12px;
           }
+        }
+      }
+    }
+  }
+
+  /* 📝 会议纪要样式 */
+  .meeting-notes-section {
+    .meeting-notes-controls {
+      margin-bottom: 12px;
+
+      .notes-control-btn {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px;
+        background: #415A77;
+        border: none;
+        border-radius: 6px;
+        color: #E0E1DD;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s;
+
+        &:hover:not(:disabled) {
+          background: #5a7a9a;
+        }
+
+        &:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        &.active {
+          background: #FF5252;
+
+          &:hover {
+            background: #ff6b6b;
+          }
+        }
+
+        .el-icon {
+          font-size: 16px;
+        }
+      }
+    }
+
+    .meeting-notes-list {
+      max-height: 250px;
+      overflow-y: auto;
+      margin-bottom: 12px;
+
+      .note-item {
+        padding: 10px;
+        background: #0D1B2A;
+        border-radius: 6px;
+        border: 1px solid #2d3a4f;
+        margin-bottom: 8px;
+
+        .note-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 6px;
+
+          .note-time {
+            font-size: 11px;
+            color: #778DA9;
+            font-family: 'Courier New', monospace;
+          }
+
+          .note-speaker {
+            font-size: 11px;
+            color: #4CC9F0;
+            font-weight: 500;
+          }
+        }
+
+        .note-content {
+          font-size: 13px;
+          color: #E0E1DD;
+          line-height: 1.5;
+          word-wrap: break-word;
+        }
+      }
+    }
+
+    .empty-notes {
+      padding: 20px 0;
+    }
+
+    .meeting-notes-actions {
+      display: flex;
+      gap: 8px;
+
+      .export-btn {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 8px;
+        background: #1B263B;
+        border: 1px solid #415A77;
+        border-radius: 6px;
+        color: #E0E1DD;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+
+        &:hover {
+          background: #415A77;
+        }
+
+        .el-icon {
+          font-size: 14px;
         }
       }
     }

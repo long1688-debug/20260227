@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { pipeline } from '@xenova/transformers'
+import { getCocoDatasetManager } from '@/services/coco-dataset'
 
 // YOLO 模型加载器（单例模式）
 let yoloDetector = null
@@ -416,6 +417,8 @@ export const useVisionStore = defineStore('vision', {
     setCocoDatasetPath(path) {
       this.cocoDataset.localPath = path
       COCO_DATASET_CONFIG.localPath = path
+      const manager = getCocoDatasetManager()
+      manager.setLocalPath(path)
       console.log(`[VisionStore] COCO 数据集路径已设置为: ${path}`)
     },
 
@@ -428,43 +431,13 @@ export const useVisionStore = defineStore('vision', {
 
     // 加载本地 COCO 数据集图片列表
     async loadCocoDatasetImages(valDir = true) {
-      const dirName = valDir ? COCO_DATASET_CONFIG.valDir : COCO_DATASET_CONFIG.trainDir
-      const datasetPath = COCO_DATASET_CONFIG.getDatasetPath()
-      const dirPath = `${datasetPath}/${dirName}`
+      const manager = getCocoDatasetManager()
+      const images = await manager.loadImages(valDir)
 
-      console.log(`[VisionStore] 加载 COCO ${dirName} 图片列表...`)
-
-      try {
-        // 尝试获取目录下的图片列表
-        // 在 Tauri 环境中可以使用 fs 插件读取目录
-        if (typeof window !== 'undefined' && window.__TAURI__) {
-          const { readDir } = await import('@tauri-apps/plugin-fs')
-          try {
-            const entries = await readDir(`${this.cocoDataset.localPath}\\${dirName}`)
-            const imageFiles = entries
-              .filter(entry => entry.isFile && /\.(jpg|jpeg|png)$/i.test(entry.name))
-              .map(entry => ({
-                name: entry.name,
-                path: `${dirPath}/${entry.name}`,
-                fullPath: `${this.cocoDataset.localPath}\\${dirName}\\${entry.name}`
-              }))
-
-            this.cocoDataset.images = imageFiles
-            this.cocoDataset.imageIndex = 0
-            console.log(`[VisionStore] 已加载 ${imageFiles.length} 张 COCO ${dirName} 图片`)
-            return imageFiles
-          } catch (e) {
-            console.warn(`[VisionStore] 无法读取 COCO 数据集目录: ${e.message}`)
-            return []
-          }
-        }
-        // Web 环境：使用 fetch 列出文件（需要本地服务器）
-        console.warn('[VisionStore] Web 环境需要配置本地服务器来访问 COCO 数据集')
-        return []
-      } catch (error) {
-        console.error('[VisionStore] 加载 COCO 数据集失败:', error)
-        return []
-      }
+      this.cocoDataset.images = images
+      this.cocoDataset.imageIndex = 0
+      console.log(`[VisionStore] 已加载 ${images.length} 张 COCO 图片`)
+      return images
     },
 
     // 获取当前 COCO 图片
@@ -485,6 +458,24 @@ export const useVisionStore = defineStore('vision', {
       if (this.cocoDataset.images.length === 0) return null
       this.cocoDataset.imageIndex = (this.cocoDataset.imageIndex - 1 + this.cocoDataset.images.length) % this.cocoDataset.images.length
       return this.getCurrentCocoImage()
+    },
+
+    // 验证数据集是否完整
+    async validateCocoDataset() {
+      const manager = getCocoDatasetManager()
+      return await manager.validateDataset()
+    },
+
+    // 获取数据集统计信息
+    async getCocoDatasetStats() {
+      const manager = getCocoDatasetManager()
+      return await manager.getStatistics()
+    },
+
+    // 搜索包含指定类别的图片
+    async searchCocoImagesByCategory(categoryName, maxResults = 10) {
+      const manager = getCocoDatasetManager()
+      return await manager.searchImagesByCategory(categoryName, maxResults)
     },
 
     // 分析本地 COCO 图片

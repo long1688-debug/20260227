@@ -1,20 +1,22 @@
 /**
  * 实时字幕 Composable
  * 使用 Tauri 后端 Whisper 实现实时语音转文字
- * 
+ *
  * 🎯 全局单例模式：实时字幕是全局功能，不应在每个视频组件中独立管理
  */
 
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { ElMessage } from 'element-plus';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { useSubtitleStore } from '@/stores/subtitleStore';
 
 // 🎯 全局状态（单例）
-const subtitleText = ref('');
 const isRecognizing = ref(false);
 let speechResultListener = null;
 let isInitialized = false; // 标记是否已初始化
+
+// 注意：store将在函数内部获取，以避免Pinia初始化问题
 
 /**
  * 初始化 Whisper
@@ -74,7 +76,9 @@ const startRealtimeSubtitle = async () => {
 
       // 更新字幕文本
       if (result && result.text) {
-        subtitleText.value = result.text;
+        // 在事件处理器中获取store
+        const subtitleStore = useSubtitleStore();
+        subtitleStore.realtimeSubtitleText = result.text;
       }
     });
 
@@ -82,6 +86,10 @@ const startRealtimeSubtitle = async () => {
     await invoke('start_speech_recognition');
 
     isRecognizing.value = true;
+
+    // 在函数内部获取store
+    const subtitleStore = useSubtitleStore();
+    subtitleStore.isRealtimeSubtitleEnabled = true;
     ElMessage.success('实时字幕已启动');
   } catch (error) {
     console.error('[实时字幕] 启动失败:', error);
@@ -112,7 +120,11 @@ const stopRealtimeSubtitle = async () => {
     }
 
     isRecognizing.value = false;
-    subtitleText.value = '';
+
+    // 在函数内部获取store
+    const subtitleStore = useSubtitleStore();
+    subtitleStore.isRealtimeSubtitleEnabled = false;
+    subtitleStore.realtimeSubtitleText = '';
 
     ElMessage.info('实时字幕已停止');
   } catch (error) {
@@ -134,13 +146,20 @@ const toggleRealtimeSubtitle = async () => {
   }
 };
 
+// 导出函数，同时提供一种安全的方式来获取store
+const getSubtitleStore = async () => {
+  // 动态导入store以避免初始化问题
+  const { useSubtitleStore } = await import('@/stores/subtitleStore');
+  return useSubtitleStore();
+};
+
 /**
  * 更新识别设置
  */
 const updateRecognitionSettings = async (settings) => {
   try {
     console.log('[实时字幕] 更新识别设置:', settings);
-    
+
     // 发送设置到后端
     await invoke('update_recognition_settings', {
       config: {
@@ -152,7 +171,7 @@ const updateRecognitionSettings = async (settings) => {
         enableSegmentation: settings.enableSegmentation !== undefined ? settings.enableSegmentation : true
       }
     });
-    
+
     ElMessage.success('识别设置已更新');
     return true;
   } catch (error) {
@@ -199,8 +218,11 @@ const triggerRecognitionComplete = (result) => {
  * 不再在 onUnmounted 中自动停止，由用户手动控制
  */
 export function useRealtimeSubtitle() {
+  // 返回响应式引用而不是直接值，确保响应式更新
+  const subtitleStore = useSubtitleStore();
+
   return {
-    subtitleText,
+    subtitleText: subtitleStore.$state.realtimeSubtitleText,
     isRecognizing,
     startRealtimeSubtitle,
     stopRealtimeSubtitle,

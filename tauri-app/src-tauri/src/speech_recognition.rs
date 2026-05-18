@@ -79,7 +79,7 @@ pub async fn start_speech_recognition(
                 let capturing = is_capturing.lock().unwrap();
                 *capturing
             };
-            
+
             if !is_capturing_active {
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 continue;
@@ -124,7 +124,7 @@ pub async fn process_audio_data(
 
     // 尝试调用 Whisper 识别器
     let mut guard = whisper_state.recognizer.lock().await;
-    
+
     // 如果 Whisper 未初始化，返回空字符串（不报错）
     let recognizer = match guard.as_mut() {
         Some(rec) => rec,
@@ -133,7 +133,7 @@ pub async fn process_audio_data(
             return Ok(String::new());
         }
     };
-    
+
     // 尝试处理音频数据
     let results = match recognizer.process_audio(&float_data) {
         Ok(results) => results,
@@ -143,10 +143,10 @@ pub async fn process_audio_data(
             return Ok(String::new());
         }
     };
-    
+
     // 合并识别结果
-    let text = results.iter()
-        .map(|r| r.text.clone())
+    let text = results.segments.iter()
+        .map(|s| s.text.clone())
         .collect::<Vec<String>>()
         .join(" ");
 
@@ -174,9 +174,4 @@ pub async fn get_speech_recognition_status(state: tauri::State<'_, SpeechRecogni
     Ok(*is_recognizing)
 }
 
-// 获取 Whisper 识别器状态
-#[tauri::command]
-pub async fn get_whisper_status(whisper_state: tauri::State<'_, WhisperState>) -> Result<bool, String> {
-    let recognizer = whisper_state.recognizer.lock().await;
-    Ok(recognizer.is_some())
-}
+

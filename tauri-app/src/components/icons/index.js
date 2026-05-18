@@ -40,6 +40,7 @@ import IconChatDotRound from './IconChatDotRound.vue'
 import IconSetting from './IconSetting.vue'
 import IconVolume from './IconVolume.vue'
 import IconSearch from './IconSearch.vue'  // 🎯 搜索图标
+import IconFiles from './IconFiles.vue'  // 🎯 文件列表图标
 
 export {
   IconGrid,
@@ -107,5 +108,6 @@ export {
   IconChatDotRound as ChatDotRound,
   IconSetting as Setting,
   IconVolume as Volume,
-  IconSearch as Search  // 🎯 搜索图标
+  IconSearch as Search,  // 🎯 搜索图标
+  IconFiles as Files  // 🎯 文件列表图标
 }

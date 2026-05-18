@@ -209,10 +209,10 @@ const services = ref([
     connections: 156
   },
   {
-    name: 'WebSocket',
+    name: 'ZLMediaKit',
     icon: '📡',
     online: true,
-    port: 8081,
+    port: 801,
     status: '正常运行',
     connections: 42
   },

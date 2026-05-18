@@ -117,11 +117,25 @@
     <div class="status-info" v-if="statusMessage">
       <p :class="{ error: isError }">{{ statusMessage }}</p>
     </div>
+
+    <!-- 手动输入RTSP地址 -->
+    <div class="manual-rtsp-input" v-if="selectedDevice">
+      <h4>手动设置RTSP地址:</h4>
+      <div class="input-group">
+        <input
+          type="text"
+          v-model="manualRtspUrl"
+          placeholder="例如: rtsp://192.168.1.100:554/stream1"
+          class="rtsp-url-input"
+        />
+        <button @click="setManualRtspUrl" class="set-rtsp-btn">设置</button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 
 const selectedDevice = ref('')
@@ -133,6 +147,9 @@ const zoomLevel = ref(3.0)
 const isBusy = ref(false)
 const statusMessage = ref('')
 const isError = ref(false)
+const ptzVideo = ref(null)
+let videoStream = null
+const manualRtspUrl = ref('')
 
 // 加载已注册设备列表
 async function loadDevices() {
@@ -150,7 +167,7 @@ async function loadDevices() {
 async function discoverDevices() {
   scanning.value = true
   showStatus('正在扫描...', false)
-  
+
   try {
     const found = await invoke('onvif_discover_devices', { timeoutSecs: 3 })
     discoveredDevices.value = found
@@ -166,7 +183,7 @@ async function discoverDevices() {
 async function registerDevice(dev) {
   registering.value = true
   showStatus('正在注册设备...', false)
-  
+
   try {
     // 这里应该弹出对话框获取用户名密码，简化起见使用默认值
     const deviceId = await invoke('ptz_register_device', {
@@ -175,7 +192,7 @@ async function registerDevice(dev) {
       password: 'admin',
       name: dev.name
     })
-    
+
     showStatus(`设备注册成功: ${deviceId}`, false)
     await loadDevices()
     discoveredDevices.value = discoveredDevices.value.filter(d => d.ip !== dev.ip)
@@ -186,10 +203,114 @@ async function registerDevice(dev) {
   }
 }
 
+// 获取设备的RTSP流地址
+async function getRtspStreamUrl(deviceId) {
+  try {
+    // 首先尝试获取已设置的RTSP URL
+    try {
+      const savedRtspUrl = await invoke('get_device_rtsp_url', {
+        device_id: deviceId
+      })
+      return savedRtspUrl
+    } catch (savedErr) {
+      // 如果没有预设的RTSP URL，尝试通过ONVIF获取
+      console.log('未找到预设的RTSP地址，尝试通过ONVIF获取')
+    }
+
+    // 通过ONVIF协议获取RTSP流地址
+    const streamUri = await invoke('get_onvif_stream_uri', {
+      device_id: deviceId
+    })
+
+    return streamUri.uri
+  } catch (err) {
+    console.warn(`通过ONVIF获取RTSP地址失败: ${err}`)
+    showStatus('无法通过ONVIF获取RTSP地址，需要手动输入', true)
+    return null
+  }
+}
+
+// 播放视频流
+async function playVideoStream(deviceId) {
+  if (!ptzVideo.value) return
+
+  // 停止当前流
+  if (videoStream) {
+    videoStream.close()
+    videoStream = null
+  }
+
+  // 尝试获取RTSP流地址
+  const rtspUrl = await getRtspStreamUrl(deviceId)
+  if (!rtspUrl) {
+    showStatus('无法获取视频流地址，请手动配置', true)
+    return
+  }
+
+  try {
+    // 这里我们使用代理服务将RTSP转换为浏览器可播放的格式
+    // 实际实现可能需要后端启动一个流媒体代理服务
+    const streamResponse = await invoke('start_rtsp_stream', {
+      rtsp_url: rtspUrl,
+      username: null, // 如果RTSP需要认证，可以传递
+      password: null
+    })
+
+    // 设置视频源
+    ptzVideo.value.src = streamResponse.streamUrl
+    ptzVideo.value.play().catch(error => {
+      console.error('视频播放失败:', error)
+      showStatus('视频播放失败: ' + error.message, true)
+    })
+  } catch (err) {
+    console.error('启动RTSP流失败:', err)
+    showStatus('启动视频流失败: ' + err.message, true)
+  }
+}
+
+// 停止视频流
+function stopVideoStream() {
+  if (ptzVideo.value) {
+    ptzVideo.value.pause()
+    ptzVideo.value.src = ''
+  }
+  if (videoStream) {
+    videoStream.close()
+    videoStream = null
+  }
+}
+
+// 手动设置RTSP地址
+async function setManualRtspUrl() {
+  if (!selectedDevice.value) {
+    showStatus('请先选择设备', true)
+    return
+  }
+
+  if (!manualRtspUrl.value.trim()) {
+    showStatus('请输入RTSP地址', true)
+    return
+  }
+
+  try {
+    await invoke('set_device_rtsp_url', {
+      device_id: selectedDevice.value,
+      rtsp_url: manualRtspUrl.value.trim()
+    })
+
+    showStatus('RTSP地址设置成功，正在刷新视频流...', false)
+
+    // 刷新视频流
+    await playVideoStream(selectedDevice.value)
+  } catch (err) {
+    showStatus('设置RTSP地址失败: ' + err.message, true)
+  }
+}
+
 // 视频画面点击处理
 async function handleVideoClick(e) {
   if (!selectedDevice.value || isBusy.value) return
-  
+
   isBusy.value = true
   const rect = e.target.getBoundingClientRect()
   const x = (e.clientX - rect.left) / rect.width
@@ -217,7 +338,7 @@ async function handleVideoClick(e) {
 // 开始连续移动
 async function startMove(direction) {
   if (!selectedDevice.value) return
-  
+
   const moves = {
     up: [0, 0.5, 0],
     down: [0, -0.5, 0],
@@ -228,9 +349,9 @@ async function startMove(direction) {
     down_left: [-0.5, -0.5, 0],
     down_right: [0.5, -0.5, 0]
   }
-  
+
   const [pan, tilt, zoom] = moves[direction] || [0, 0, 0]
-  
+
   try {
     await invoke('ptz_continuous_move', {
       deviceId: selectedDevice.value,
@@ -246,7 +367,7 @@ async function startMove(direction) {
 // 停止移动
 async function stopMove() {
   if (!selectedDevice.value) return
-  
+
   try {
     await invoke('ptz_stop', {
       deviceId: selectedDevice.value
@@ -265,7 +386,7 @@ async function stopAll() {
 // 变焦控制
 async function onZoomChange() {
   if (!selectedDevice.value) return
-  
+
   try {
     await invoke('ptz_relative_move', {
       deviceId: selectedDevice.value,
@@ -281,7 +402,7 @@ async function onZoomChange() {
 // 预置位调用
 async function gotoPreset(token) {
   if (!selectedDevice.value) return
-  
+
   try {
     await invoke('ptz_goto_preset', {
       deviceId: selectedDevice.value,
@@ -296,7 +417,7 @@ async function gotoPreset(token) {
 // 相对移动
 async function relativeMove(pan, tilt, zoom) {
   if (!selectedDevice.value) return
-  
+
   try {
     await invoke('ptz_relative_move', {
       deviceId: selectedDevice.value,
@@ -311,8 +432,15 @@ async function relativeMove(pan, tilt, zoom) {
 }
 
 // 设备变更
-function onDeviceChange() {
+async function onDeviceChange() {
   showStatus(`已切换到设备: ${selectedDevice.value}`, false)
+
+  // 切换设备时，自动播放对应设备的视频流
+  if (selectedDevice.value) {
+    await playVideoStream(selectedDevice.value)
+  } else {
+    stopVideoStream()
+  }
 }
 
 // 显示状态消息
@@ -329,6 +457,11 @@ function showStatus(msg, error = false) {
 // 组件挂载时加载设备
 onMounted(() => {
   loadDevices()
+})
+
+// 组件卸载时清理资源
+onUnmounted(() => {
+  stopVideoStream()
 })
 </script>
 
@@ -484,5 +617,53 @@ onMounted(() => {
   background: #ffebee;
   padding: 10px;
   border-radius: 4px;
+}
+
+.manual-rtsp-input {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #f9f9f9;
+}
+
+.manual-rtsp-input h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.input-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.rtsp-url-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.rtsp-url-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.set-rtsp-btn {
+  padding: 8px 16px;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.set-rtsp-btn:hover {
+  background: #218838;
 }
 </style>

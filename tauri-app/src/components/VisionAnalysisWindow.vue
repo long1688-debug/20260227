@@ -85,15 +85,21 @@
             class="source-image"
             ref="sourceImage"
           />
-          <video
-            v-else-if="(sourceType === 'camera' || sourceType === 'video') && sourceUrl"
-            ref="sourceVideo"
-            class="source-video"
-            autoplay
-            playsinline
-            muted
-            @loadedmetadata="onVideoLoaded"
-          ></video>
+           <video
+             v-else-if="(sourceType === 'camera' && cameraStream) || (sourceType === 'video' && sourceUrl)"
+             ref="sourceVideo"
+             class="source-video"
+             autoplay
+             playsinline
+             :muted="sourceType === 'camera'"
+             :src="sourceType === 'video' ? sourceUrl : null"
+             :src-object="sourceType === 'camera' ? cameraStream : null"
+             @loadedmetadata="onVideoLoaded"
+             @canplay="onVideoCanPlay"
+             @play="onVideoPlay"
+             @pause="onVideoPause"
+             @error="onVideoError"
+           ></video>
 
           <!-- 摄像头占位 -->
           <div v-else class="video-placeholder">
@@ -670,11 +676,19 @@ const sourceUrl = ref('')
 const videoContainer = ref(null)
 const sourceVideo = ref(null)
 const sourceImage = ref(null)
+const cameraStream = ref(null)
 const canvasOverlay = ref(null)
 let ctx = null
 let animationId = null
 // 标记是否使用了外部摄像头流
 const usingExternalCamera = ref(false)
+
+// 窗口大小变化处理函数
+const handleResize = () => {
+  nextTick(() => {
+    initCanvas()
+  })
+};
 
 // 检测配置
 const hasYoloModel = ref(true) // 假设模型已加载
@@ -821,7 +835,7 @@ const selectSource = async (type) => {
   if (type === 'camera') {
     // 如果有外部传入的摄像头流，优先使用
     if (props.externalCameraStream) {
-      sourceUrl.value = props.externalCameraStream
+      cameraStream.value = props.externalCameraStream
       usingExternalCamera.value = true
       console.log('[VisionAnalysis] 使用外部摄像头流')
       ElMessage.success('已连接到主界面摄像头')
@@ -830,36 +844,49 @@ const selectSource = async (type) => {
       try {
         usingExternalCamera.value = false
         const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-        sourceUrl.value = stream
+        cameraStream.value = stream
+        ElMessage.success('摄像头已连接')
       } catch (err) {
-        ElMessage.error('无法访问摄像头: ' + err.message)
+        console.error('摄像头访问失败:', err)
+        ElMessage.error('无法访问摄像头，请检查设备和权限设置')
+        // 重置为图片模式，避免界面空白
+        sourceType.value = 'image'
+        cameraStream.value = null
       }
     }
-  } else if (type === 'video') {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'video/*'
-    input.onchange = (e) => {
-      const file = e.target.files[0]
-      if (file) {
-        sourceUrl.value = URL.createObjectURL(file)
+    // 清除视频/图片 URL
+    sourceUrl.value = ''
+  } else {
+    // 切换到其他来源时，清除摄像头流
+    cameraStream.value = null
+    if (type === 'video') {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'video/*'
+      input.onchange = (e) => {
+        const file = e.target.files[0]
+        if (file) {
+          sourceUrl.value = URL.createObjectURL(file)
+          ElMessage.success('视频文件已加载: ' + file.name)
+        }
       }
-    }
-    input.click()
-  } else if (type === 'image') {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/*'
-    input.onchange = (e) => {
-      const file = e.target.files[0]
-      if (file) {
-        sourceUrl.value = URL.createObjectURL(file)
-        nextTick(() => {
-          drawImageOverlay()
-        })
+      input.click()
+    } else if (type === 'image') {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/*'
+      input.onchange = (e) => {
+        const file = e.target.files[0]
+        if (file) {
+          sourceUrl.value = URL.createObjectURL(file)
+          nextTick(() => {
+            drawImageOverlay()
+          })
+          ElMessage.success('图片已加载: ' + file.name)
+        }
       }
+      input.click()
     }
-    input.click()
   }
 }
 
@@ -914,6 +941,47 @@ const onVideoLoaded = () => {
         console.warn('[VisionAnalysis] 自动播放失败:', err)
       })
     }
+
+    // 视频加载完成后重新初始化画布，确保尺寸正确
+    nextTick(() => {
+      initCanvas()
+    })
+  }
+}
+
+// 视频可以播放
+const onVideoCanPlay = () => {
+  console.log('[VisionAnalysis] 视频可以播放')
+  if (sourceVideo.value) {
+    // 确保视频处于播放状态
+    if (sourceVideo.value.paused) {
+      sourceVideo.value.play().catch(err => {
+        console.warn('[VisionAnalysis] 播放失败:', err)
+      })
+    }
+
+    // 重新初始化画布
+    nextTick(() => {
+      initCanvas()
+    })
+  }
+}
+
+// 视频开始播放
+const onVideoPlay = () => {
+  console.log('[VisionAnalysis] 视频开始播放')
+}
+
+// 视频暂停
+const onVideoPause = () => {
+  console.log('[VisionAnalysis] 视频暂停')
+}
+
+// 视频错误
+const onVideoError = () => {
+  console.error('[VisionAnalysis] 视频播放错误')
+  if (sourceVideo.value) {
+    console.error('[VisionAnalysis] 视频错误详细:', sourceVideo.value.error)
   }
 }
 
@@ -1534,31 +1602,67 @@ const handleClose = () => {
 }
 
 // 监听视频源变化
-watch(sourceUrl, () => {
-  nextTick(() => {
-    initCanvas()
+watch(sourceUrl, async () => {
+  await nextTick()
+  // 再次 nextTick 确保带 v-else-if 的视频元素已完全渲染
+  await nextTick()
 
-    if (!sourceVideo.value) return
+  initCanvas()
 
-    if (sourceUrl.value instanceof MediaStream) {
+  if (!sourceVideo.value) {
+    console.warn('[VisionAnalysis] 视频元素尚未渲染')
+    return
+  }
+
+  if (sourceUrl.value instanceof MediaStream) {
+    // MediaStream: 通过 srcObject 绑定（模板中已绑定，此处做兜底确保）
+    if (sourceVideo.value.srcObject !== sourceUrl.value) {
       sourceVideo.value.srcObject = sourceUrl.value
       sourceVideo.value.removeAttribute('src')
-      console.log('[VisionAnalysis] 已设置 srcObject 为 MediaStream')
-    } else if (typeof sourceUrl.value === 'string' && sourceUrl.value) {
+    }
+    console.log('[VisionAnalysis] 已设置 srcObject 为 MediaStream')
+    // MediaStream 不需要调用 load()，autoplay 会自动播放
+    // 尝试播放
+    try {
+      if (sourceVideo.value.paused) {
+        await sourceVideo.value.play()
+      }
+      console.log('[VisionAnalysis] 摄像头视频播放成功')
+    } catch (err) {
+      console.warn('[VisionAnalysis] 摄像头视频播放失败:', err)
+    }
+  } else if (typeof sourceUrl.value === 'string' && sourceUrl.value) {
+    // 字符串 URL: 通过 src 绑定（模板中已绑定，此处做兜底确保）
+    if (sourceVideo.value.src !== sourceUrl.value) {
       sourceVideo.value.srcObject = null
       sourceVideo.value.src = sourceUrl.value
-      console.log('[VisionAnalysis] 已设置 src 为字符串')
-    } else {
-      sourceVideo.value.srcObject = null
-      sourceVideo.value.removeAttribute('src')
-      return
     }
-
+    console.log('[VisionAnalysis] 已设置 src 为字符串')
+    // 本地视频需要 load() 来加载新源
     sourceVideo.value.load()
-    sourceVideo.value.play().catch(err => {
-      console.warn('[VisionAnalysis] 视频播放失败:', err)
+
+    // 等待视频元数据加载完成
+    await new Promise((resolve) => {
+      if (sourceVideo.value && sourceVideo.value.readyState >= 1) {
+        resolve()
+      } else if (sourceVideo.value) {
+        sourceVideo.value.addEventListener('loadedmetadata', resolve, { once: true })
+      }
     })
-  })
+
+    // 尝试播放视频
+    try {
+      if (sourceVideo.value.paused) {
+        await sourceVideo.value.play()
+      }
+      console.log('[VisionAnalysis] 本地视频播放成功')
+    } catch (err) {
+      console.warn('[VisionAnalysis] 本地视频播放失败:', err)
+    }
+  } else {
+    sourceVideo.value.srcObject = null
+    sourceVideo.value.removeAttribute('src')
+  }
 })
 
 // 监听外部摄像头流变化
@@ -1577,11 +1681,27 @@ onMounted(() => {
     initCanvas()
   })
 
+  // 监听窗口大小变化，调整画布大小
+  const handleResize = () => {
+    nextTick(() => {
+      initCanvas()
+    })
+  };
+
+  window.addEventListener('resize', handleResize);
+
   // 如果有外部传入的摄像头，自动使用它
   if (props.externalCameraStream) {
     nextTick(() => {
       selectSource('camera')
     })
+  } else {
+    // 如果没有外部摄像头流且当前类型是摄像头，尝试初始化摄像头
+    if (sourceType.value === 'camera') {
+      nextTick(() => {
+        selectSource('camera')
+      })
+    }
   }
 
   // 加载模拟数据
@@ -1648,6 +1768,9 @@ onUnmounted(() => {
   if (examTimer) {
     clearInterval(examTimer)
   }
+
+  // 移除窗口大小变化监听器
+  window.removeEventListener('resize', handleResize);
 })
 </script>
 
@@ -1776,12 +1899,27 @@ onUnmounted(() => {
     border-radius: 12px;
     overflow: hidden;
     min-height: 400px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 
     .source-image,
     .source-video {
       width: 100%;
       height: 100%;
       object-fit: contain;
+      z-index: 1;
+      position: relative;
+    }
+
+    .detection-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 2;
     }
 
     .video-placeholder {

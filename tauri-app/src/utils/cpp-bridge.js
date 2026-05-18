@@ -243,14 +243,14 @@ export async function proxyLocalVideo(filePath, streamId = null) {
  */
 export async function proxyNetworkStream(streamUrl, streamType, streamId = null, options = {}) {
   return await sendNativeCommand('proxy_network_stream', {
-    stream_url: streamUrl,
-    stream_type: streamType,
-    stream_id: streamId,
+    streamUrl: streamUrl,
+    streamType: streamType,
+    streamId: streamId,
     options: {
       username: options.username || null,
       password: options.password || null,
-      enable_retry: options.enableRetry !== undefined ? options.enableRetry : true,
-      timeout_sec: options.timeoutSec || null
+      enableRetry: options.enableRetry !== undefined ? options.enableRetry : true,
+      timeoutSec: options.timeoutSec || null
     }
   });
 }

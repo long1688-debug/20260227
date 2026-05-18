@@ -23,3 +23,4 @@ export { useEvaluationStore } from './evaluationStore';
 export { useMediaStore } from './mediaStore';
 export { useCanvasStore } from './canvasStore';
 export { useTTSStore } from './ttsStore';
+export { useLiveStreamingStore } from './liveStreamingStore';

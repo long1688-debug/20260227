@@ -4,6 +4,7 @@
  */
 import { RenderSource } from './RenderSource.js';
 import { startRtspStream, ensureRtspProxyRunning } from '../../utils/rtsp-proxy-api.js';
+import { ZLMediaKitWebRTCPlayer } from '../../utils/zlm-webrtc-player.js';
 
 export class RenderSourceNetcam extends RenderSource {
   constructor(options = {}) {
@@ -16,10 +17,13 @@ export class RenderSourceNetcam extends RenderSource {
     };
     this._streamType = options.streamType || 'tcp'; // tcp, udp
 
-    // FLV 播放器引用
+    // 播放器引用
     this._flvPlayer = null;
+    this._webrtcPlayer = null;  // 🎯 WebRTC 播放器（低延迟 <200ms）
     this._videoElement = null;
-    this._flvUrl = null;       // 🎯 保存 rtsp-proxy 返回的 FLV 地址
+    this._flvUrl = null;       // 🎯 保存 ZLMediaKit 返回的 FLV 地址
+    this._webrtcUrl = null;    // 🎯 保存 ZLMediaKit 返回的 WebRTC 信令地址
+    this._playMode = 'webrtc'; // 🎯 播放模式：webrtc（优先）| flv（降级）
 
     // 重连机制
     this._reconnectAttempts = 0;
@@ -55,7 +59,7 @@ export class RenderSourceNetcam extends RenderSource {
    * 设置 RTSP 流
    */
   async _setupRtspStream(resolve, reject) {
-    // 🎯 先确保 rtsp-proxy 服务在运行
+    // 🎯 先确保 ZLMediaKit 流媒体服务在运行
     try {
       await ensureRtspProxyRunning();
     } catch (err) {
@@ -90,20 +94,83 @@ export class RenderSourceNetcam extends RenderSource {
       }
     }
 
-    // 🎯 调用 Tauri 后端命令，通过 Node.js rtsp-proxy 将 RTSP 转为 HTTP-FLV
-    const streamId = this._properties?.networkCamera?.streamId || `${this.id}`;
+    // 🎯 调用 Tauri 后端命令，通过 ZLMediaKit 代理 RTSP 流
+    const streamId = this._properties?.networkCamera?.streamId || String(this.id);
     try {
       const result = await startRtspStream(effectiveUrl, streamId);
-      this._flvUrl = result.flvUrl || `http://127.0.0.1:8081/live/${streamId}.flv`;
+      this._flvUrl = result.flvUrl || 'http://127.0.0.1:801/live/' + streamId + '.flv';
+      this._webrtcUrl = result.webrtcUrl || 'http://127.0.0.1:801/index/api/webrtc?app=live&stream=' + streamId + '&type=play';
+      this._playMode = result.playMode || 'webrtc';
 
-      console.log(`[RenderSourceNetcam] RTSP → FLV 代理已启动: ${effectiveUrl} → ${this._flvUrl}`);
+      console.log('[RenderSourceNetcam] RTSP 代理已启动 (ZLMediaKit): ' + effectiveUrl);
+      console.log('  - WebRTC URL: ' + this._webrtcUrl);
+      console.log('  - FLV URL: ' + this._flvUrl);
+      console.log('  - 播放模式: ' + this._playMode);
     } catch (err) {
-      reject(new Error(`启动 RTSP 流转发失败: ${err.message}`));
+      reject(new Error('启动 RTSP 流转发失败: ' + err.message));
       return;
     }
 
-    // 🎯 用 flv.js 播放 HTTP-FLV 流
-    this._loadFlvPlayer(this._flvUrl, resolve, reject);
+    // 🎯 优先使用 WebRTC（延迟 <200ms），不支持时降级到 FLV
+    if (this._playMode === 'webrtc' && typeof RTCPeerConnection !== 'undefined') {
+      this._loadWebRTCPlayer(streamId, resolve, reject);
+    } else {
+      this._loadFlvPlayer(this._flvUrl, resolve, reject);
+    }
+  }
+
+  /**
+   * 加载 WebRTC 播放器（低延迟 <200ms）
+   * @param {string} streamId - 流 ID
+   */
+  async _loadWebRTCPlayer(streamId, resolve, reject) {
+    console.log('[RenderSourceNetcam] 🎯 使用 WebRTC 播放（低延迟模式）, streamId: ' + streamId);
+
+    try {
+      this._webrtcPlayer = new ZLMediaKitWebRTCPlayer(this._videoElement, {
+        streamId: streamId,
+        host: '127.0.0.1',
+        httpPort: 801,
+        enableAudio: true,
+        enableVideo: true,
+        onConnected: () => {
+          console.log('[RenderSourceNetcam] ✅ WebRTC 连接成功');
+        },
+        onDisconnected: () => {
+          console.warn('[RenderSourceNetcam] ⚠️ WebRTC 连接断开，尝试降级到 FLV...');
+          // WebRTC 断开时降级到 FLV
+          this._webrtcPlayer = null;
+          this._playMode = 'flv';
+          this._loadFlvPlayer(this._flvUrl, resolve, reject);
+        },
+        onError: (err) => {
+          console.warn('[RenderSourceNetcam] ⚠️ WebRTC 错误，降级到 FLV:', err.message);
+          // WebRTC 失败时降级到 FLV
+          this._webrtcPlayer = null;
+          this._playMode = 'flv';
+          this._loadFlvPlayer(this._flvUrl, resolve, reject);
+        },
+        onStats: (stats) => {
+          // 可用于显示延迟信息
+          if (stats.transport.rtt > 0) {
+            this._emit('stats', { rtt: stats.transport.rtt, mode: 'webrtc' });
+          }
+        }
+      });
+
+      await this._webrtcPlayer.connect();
+
+      this._isReady = true;
+      this._emit('ready');
+      resolve();
+
+    } catch (err) {
+      console.warn('[RenderSourceNetcam] ⚠️ WebRTC 连接失败，降级到 FLV:', err.message);
+      // WebRTC 连接失败，降级到 FLV
+      this._webrtcPlayer = null;
+      this._playMode = 'flv';
+      this._loadFlvPlayer(this._flvUrl, resolve, reject);
+    }
   }
 
   /**
@@ -147,7 +214,7 @@ export class RenderSourceNetcam extends RenderSource {
     if (window.flvjs) {
       try {
         this._flvPlayer = flvjs.createPlayer({
-          // 通过 rtsp-proxy 输出的 HTTP-FLV 流使用 type: 'flv'
+          // 通过 ZLMediaKit 输出的 HTTP-FLV 流使用 type: 'flv'
           type: flvUrl ? 'flv' : 'rtmp',
           url: flvUrl || this._url,
 
@@ -281,6 +348,11 @@ export class RenderSourceNetcam extends RenderSource {
   dispose() {
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer);
+    }
+
+    if (this._webrtcPlayer) {
+      this._webrtcPlayer.destroy();
+      this._webrtcPlayer = null;
     }
 
     if (this._flvPlayer) {

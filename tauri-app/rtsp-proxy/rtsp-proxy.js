@@ -11,6 +11,31 @@ const WebSocket = require('ws');
 const http = require('http');
 const { v4: uuidv4 } = require('uuid');
 
+// 🎯 关键修复：正确编码RTSP URL中的特殊字符
+// RTSP URL格式: rtsp://username:password@host:port/path
+function encodeRtspUrl(url) {
+  try {
+    const rtspRegex = /^rtsp:\/\/([^:]+):([^@]+)@([^:/]+)(?::(\d+))?(.*)$/;
+    const match = url.match(rtspRegex);
+
+    if (match) {
+      const [, username, password, host, port, path] = match;
+      // 对用户名和密码进行URL编码
+      const encodedUsername = encodeURIComponent(username);
+      const encodedPassword = encodeURIComponent(password);
+      const portPart = port ? `:${port}` : '';
+      const pathPart = path || '/';
+      return `rtsp://${encodedUsername}:${encodedPassword}@${host}${portPart}${pathPart}`;
+    }
+
+    // 如果不匹配RTSP URL格式，直接返回原URL
+    return url;
+  } catch (e) {
+    console.error(`[RTSP Proxy] URL编码失败:`, e.message);
+    return url;
+  }
+}
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -34,9 +59,27 @@ app.use((req, res, next) => {
 
 // 健康检查
 app.get('/health', (req, res) => {
+  // 统计各状态的流数量
+  let startingCount = 0;
+  let readyCount = 0;
+  let errorCount = 0;
+
+  STREAMS.forEach((stream) => {
+    switch (stream.status) {
+      case 'starting': startingCount++; break;
+      case 'ready': readyCount++; break;
+      case 'error': errorCount++; break;
+    }
+  });
+
   res.json({
     status: 'ok',
     streams: STREAMS.size,
+    streamsByStatus: {
+      starting: startingCount,
+      ready: readyCount,
+      error: errorCount
+    },
     maxStreams: MAX_CONCURRENT_STREAMS,
     uptime: process.uptime(),
     memoryUsage: process.memoryUsage()
@@ -49,7 +92,10 @@ app.get('/api/streams', (req, res) => {
     id,
     url: stream.url,
     startTime: stream.startTime,
-    viewers: stream.viewers
+    viewers: stream.viewers,
+    status: stream.status,
+    hasReceivedData: !!stream.hasReceivedData,
+    lastError: stream.lastError
   }));
   res.json(streams);
 });
@@ -66,12 +112,22 @@ app.post('/api/start', express.json(), async (req, res) => {
 
   // 检查是否已存在
   if (STREAMS.has(id)) {
-    return res.json({
-      success: true,
-      streamId: id,
-      flvUrl: `http://localhost:${PORT}/live/${id}.flv`,
-      wsUrl: `ws://localhost:${PORT}/live/${id}`
-    });
+    const existingStream = STREAMS.get(id);
+
+    // 如果流处于错误状态，重新启动
+    if (existingStream.status === 'error') {
+      console.log(`[RTSP Proxy] 流 ${id} 处于错误状态，重新启动...`);
+      cleanupStream(id);
+    } else {
+      // 流已存在且正常运行
+      return res.json({
+        success: true,
+        streamId: id,
+        flvUrl: `http://127.0.0.1:${PORT}/live/${id}.flv`,
+        wsUrl: `ws://127.0.0.1:${PORT}/live/${id}`,
+        status: existingStream.status
+      });
+    }
   }
 
   // 🎯 检查并发限制
@@ -86,15 +142,24 @@ app.post('/api/start', express.json(), async (req, res) => {
   try {
     console.log(`[RTSP Proxy] 启动流: ${id} -> ${url}`);
 
+    // 🎯 关键修复：正确处理RTSP URL中的特殊字符
+    // 如果用户名或密码包含特殊字符（如@、:、/等），需要进行URL编码
+    const encodedUrl = encodeRtspUrl(url);
+    console.log(`[RTSP Proxy] 编码后的RTSP URL: ${encodedUrl}`);
+
     const stream = {
       id,
-      url,
+      url: encodedUrl,  // 使用编码后的URL
+      originalUrl: url, // 保存原始URL用于调试
       startTime: Date.now(),
       viewers: 0,
       process: null,
       clients: [],
-      flvHeader: null,  // 🎯 存储FLV头部信息
-      metadata: null    // 🎯 存储onMetaData信息
+      httpClients: [],   // 🎯 显式初始化HTTP客户端列表
+      flvHeader: null,   // 🎯 存储FLV头部信息
+      metadata: null,    // 🎯 存储onMetaData信息
+      status: 'starting',// 🎯 流状态: starting, ready, error
+      lastError: null    // 🎯 记录最后错误信息
     };
 
     STREAMS.set(id, stream);
@@ -117,7 +182,16 @@ app.post('/api/start', express.json(), async (req, res) => {
       // 推送给已有的HTTP客户端
       stream.httpClients?.forEach(client => {
         if (!client.res.writableEnded) {
-          client.res.write(data);
+          try {
+            client.res.write(data);
+            // 🎯 每推送10次数据强制刷新一次，确保数据及时发送
+            client.pushCount = (client.pushCount || 0) + 1;
+            if (client.pushCount % 10 === 0) {
+              client.res.flush?.();
+            }
+          } catch (e) {
+            console.error(`[HTTP-FLV] 推送数据失败: ${streamId}`, e.message);
+          }
         }
       });
 
@@ -141,8 +215,9 @@ app.post('/api/start', express.json(), async (req, res) => {
     res.json({
       success: true,
       streamId: id,
-      flvUrl: `http://localhost:${PORT}/live/${id}.flv`,
-      wsUrl: `ws://localhost:${PORT}/live/${id}`
+      flvUrl: `http://127.0.0.1:${PORT}/live/${id}.flv`,
+      wsUrl: `ws://127.0.0.1:${PORT}/live/${id}`,
+      status: 'starting'
     });
 
   } catch (error) {
@@ -169,24 +244,37 @@ app.get('/live/:streamId.flv', (req, res) => {
   const stream = STREAMS.get(streamId);
 
   if (!stream) {
-    return res.status(404).send('Stream not found');
+    console.error(`[HTTP-FLV] ❌ 流不存在: ${streamId}`);
+    return res.status(404).json({ error: 'Stream not found', streamId });
   }
 
-  console.log(`[HTTP-FLV] 新客户端连接: ${streamId}`);
+  // 🎯 关键修复：检查流状态
+  if (stream.status === 'error') {
+    console.error(`[HTTP-FLV] ❌ 流状态错误: ${streamId}, 错误: ${stream.lastError}`);
+    return res.status(503).json({
+      error: 'Stream error',
+      streamId,
+      message: stream.lastError || 'Unknown error'
+    });
+  }
+
+  console.log(`[HTTP-FLV] 新客户端连接: ${streamId}, 状态: ${stream.status}`);
   stream.viewers++;
 
-  // 🎯 跟踪HTTP客户端
-  if (!stream.httpClients) {
-    stream.httpClients = [];
-  }
   const clientInfo = { res, connectedAt: Date.now() };
   stream.httpClients.push(clientInfo);
+
+  // 🎯 关键修复：禁用TCP延迟，强制立即发送数据（降低直播延迟）
+  res.socket.setNoDelay(true);
 
   // 设置响应头
   res.writeHead(200, {
     'Content-Type': 'video/x-flv',
     'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*'
+    'Access-Control-Allow-Origin': '*',
+    // 🎯 禁用缓存，确保实时流传输
+    'Cache-Control': 'no-cache',
+    'X-Accel-Buffering': 'no'  // 禁用nginx等代理的缓冲
   });
 
   // 🎯 关键修复：如果FFmpeg已经在运行，立即发送FLV头部
@@ -223,11 +311,19 @@ wss.on('connection', (ws, req) => {
   const stream = STREAMS.get(streamId);
 
   if (!stream) {
+    console.error(`[WebSocket] ❌ 流不存在: ${streamId}`);
     ws.close(1008, 'Stream not found');
     return;
   }
 
-  console.log(`[WebSocket] 新客户端连接: ${streamId}`);
+  // 🎯 关键修复：检查流状态
+  if (stream.status === 'error') {
+    console.error(`[WebSocket] ❌ 流状态错误: ${streamId}, 错误: ${stream.lastError}`);
+    ws.close(1011, `Stream error: ${stream.lastError || 'Unknown error'}`);
+    return;
+  }
+
+  console.log(`[WebSocket] 新客户端连接: ${streamId}, 状态: ${stream.status}`);
   stream.viewers++;
   stream.clients.push(ws);
 
@@ -261,35 +357,42 @@ function startFFmpeg(stream, onData, onError) {
   console.log(`[FFmpeg] 启动: ${stream.id}`);
   console.log(`[FFmpeg] RTSP地址: ${stream.url}`);
 
-  // 🎯 修复：移除探测命令，直接使用主流程（避免并发问题）
-  // 在Windows上，并发运行多个ffmpeg进程可能导致问题
-
+  // 🎯 关键修复：移除强制 TCP 限制，让 FFmpeg 自动协商传输协议
+  // 某些摄像机不支持 TCP 模式，会导致连接失败
   const command = ffmpeg(stream.url)
     .inputOptions([
-      '-rtsp_transport tcp',          // 使用 TCP 传输（更稳定）
-      '-timeout', '5000000',          // 超时 5 秒（微秒）
-      '-fflags', '+nobuffer',         // 禁用缓冲，降低延迟
-      '-flags', '+low_delay',         // 低延迟模式
-      '-fflags', '+genpts',           // ← 新增：为每个包生成连续 PTS/DTS，防止首帧（时间戳=0）粘附导致的 MSE seek
-      '-analyzeduration', '100000',   // 分析时长 0.1 秒（进一步降低探测等待）
-      '-probesize', '50000',          // 探测包大小 50KB（减少首帧等待）
-      '-gop', '3',                    // ← 每 3 帧一个 I 帧（~90ms GOP 延迟，极低延迟）
-      '-max_delay', '500000',         // 最大延迟 0.5 秒
+      // 🎯 移除 -rtsp_transport tcp，让 FFmpeg 自动选择 TCP/UDP
+      '-timeout', '10000000',         // 超时 10 秒（微秒），给摄像机更多响应时间
+
+      // 🎯 低延迟优化参数（输入端）
+      '-fflags', '+nobuffer+flush_packets',  // 禁用缓冲，立即刷新数据包
+      '-flags', '+low_delay',                // 启用低延迟模式
+      '-analyzeduration', '500000',          // 500ms探测时间，足够检测流格式（过小会导致转码失败）
+      '-probesize', '32768',                 // 32KB探测大小，足够获取编解码信息（过小会导致格式识别失败）
+      // ⚠️ 注意：-tune zerolatency 只能用于输出端，不能放在输入选项中
     ])
     .outputOptions([
-      '-c', 'copy',                   // 复制编码（不转码）
+      // 🎯 关键修复：强制转码为 H.264 + AAC，确保浏览器兼容
+      '-c:v', 'libx264',              // 视频编码：H.264
+      '-preset', 'ultrafast',         // 最快编码速度（降低延迟）
+      '-tune', 'zerolatency',         // 零延迟调优
+      '-c:a', 'aac',                  // 音频编码：AAC
+      '-b:a', '128k',                 // 音频比特率
       '-f', 'flv',                    // 输出 FLV 格式
-      '-flvflags', 'no_duration_filesize',
-      '-fflags', '+flush_packets',    // 立即刷新数据包
+      '-flvflags', 'no_duration_filesize',  // 不写入duration和filesize，适合直播
+      '-fflags', '+flush_packets',    // 立即刷新输出包
       '-flush_packets', '1'           // 每个包都刷新
     ])
     .on('start', (cmdline) => {
       console.log(`[FFmpeg] 命令: ${cmdline}`);
       console.log(`[FFmpeg] ✅ FFmpeg进程已启动: ${stream.id}`);
+      stream.status = 'starting';
     })
     .on('error', (err) => {
       console.error(`[FFmpeg] ❌ 错误: ${stream.id}`, err.message);
       console.error(`[FFmpeg] ❌ 错误详情:`, err);
+      stream.status = 'error';
+      stream.lastError = err.message;
       onError(err);
     })
     .on('stderr', (stderrLine) => {
@@ -302,9 +405,10 @@ function startFFmpeg(stream, onData, onError) {
 
   const stream_output = command.pipe();
   stream_output.on('data', (chunk) => {
-    // 🎯 第一次接收到数据时记录日志
+    // 🎯 第一次接收到数据时记录日志并设置状态为就绪
     if (!stream.hasReceivedData) {
       stream.hasReceivedData = true;
+      stream.status = 'ready';
       console.log(`[FFmpeg] ✅ 首次接收到视频数据: ${stream.id}, 大小: ${chunk.length} bytes`);
     }
     onData(chunk);
@@ -412,17 +516,29 @@ app.get('/api/thumbnail/:streamId', async (req, res) => {
     await new Promise((resolve, reject) => {
       ffmpeg(stream.url)
         .inputOptions([
-          '-rtsp_transport tcp',
-          '-timeout 5000000'
+          // 🎯 移除强制 TCP，让 FFmpeg 自动协商
+          '-timeout', '5000000',
+          '-analyzeduration', '0',
+          '-probesize', '32'
         ])
-        .screenshots({
-          timestamps: [0],  // 截取第一帧
-          filename: `${streamId}.jpg`,
-          folder: THUMBNAIL_DIR,
-          size: '320x180'  // 缩略图尺寸
+        .outputOptions([
+          '-vframes', '1',           // 只截取1帧
+          '-vf', 'scale=320:180',    // 缩略图尺寸
+          '-q:v', '2',               // JPEG质量（2=高质量）
+          '-update', '1'             // 覆盖已有文件
+        ])
+        .output(thumbnailPath)
+        .on('start', (cmdline) => {
+          console.log(`[Thumbnail] FFmpeg命令: ${cmdline}`);
         })
-        .on('end', resolve)
-        .on('error', reject);
+        .on('end', () => {
+          console.log(`[Thumbnail] ✅ 缩略图生成成功: ${streamId}`);
+          resolve();
+        })
+        .on('error', (err) => {
+          console.error(`[Thumbnail] ❌ FFmpeg错误: ${streamId}`, err.message);
+          reject(err);
+        });
     });
 
     // 读取图片并转换为 base64

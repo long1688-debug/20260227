@@ -165,7 +165,7 @@ export class HybridTransport {
 
     // 非 Tauri 模式：使用 WebSocket
     if (!wsUrl) {
-      wsUrl = `ws://${window.location.hostname}:8081/ws`;
+      wsUrl = `ws://${window.location.hostname}:801/ws`;
     }
 
     return new Promise((resolve, reject) => {

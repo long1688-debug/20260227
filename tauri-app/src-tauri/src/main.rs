@@ -28,7 +28,11 @@ mod camera_discovery;
 mod rtsp_stream;
 mod rtsp_validator;
 mod rtsp_proxy_manager;
+mod rtsp_resolver;  // 🎯 RTSP 地址解析器（ONVIF + 模板匹配 + 探针）
 mod camera_database;  // 🎯 网络摄像机数据库管理
+mod onvif_discovery;  // 🎯 ONVIF 设备发现和流地址探索
+mod webrtc_service;  // 🎯 WebRTC 实时传输服务
+mod vision_service;   // 🎯 视觉分析服务（COCO数据集 + 智能视觉分析 + AI评估）
 
 use tauri::Manager;
 use commands::*;
@@ -40,7 +44,7 @@ use onvif_ptz::*;
 use zlmediakit_manager::*;
 use audio_capture::*;
 use speech_recognition::*;
-use whisper_wrapper::*;
+use whisper_wrapper::{WhisperState, init_whisper, recognize_audio, cleanup_whisper, get_whisper_status, download_whisper_model, delete_whisper_model, check_whisper_model_exists};
 use audio_device::*;
 use video_subtitle::*;
 use recording_manager::*;
@@ -64,9 +68,16 @@ use video_layout::*;
 use fire_detection::*;
 use rtsp_validator::*;
 use rtsp_proxy_manager::*;
+use rtsp_resolver::*;  // 🎯 RTSP 地址解析器
 use camera_database::*;  // 🎯 网络摄像机数据库管理
+use onvif_discovery::{get_onvif_device_info, get_onvif_profiles, test_rtsp_connection};  // 🎯 ONVIF 设备发现和流地址探索
+use webrtc_service::*;  // 🎯 WebRTC 实时传输服务
+use vision_service::*;  // 🎯 视觉分析服务
 
 fn main() {
+    // 初始化日志系统
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+    
     tauri::Builder::default()
         // 管理状态
         .manage(ServerState::default())
@@ -83,6 +94,8 @@ fn main() {
         .manage(PtzDeviceManager::new())
         .manage(VideoPolicyState::new())
         .manage(AudioDeviceState::new())
+        .manage(WebRTCServiceState::new())  // 🎯 WebRTC 服务状态
+        .manage(VisionServiceState::new())  // 🎯 视觉分析服务状态
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -205,8 +218,10 @@ fn main() {
             remove_camera_device,
             get_onvif_stream_uri,
             try_common_rtsp_templates,  // 🎯 新增：通用RTSP模板备选方案
+            probe_rtsp_connection,      // 🎯 新增：轻量级RTSP探测（使用OPTIONS请求）
             detect_onvif_services,  // 🎯 新增：ONVIF服务路径检测
             test_onvif_connection,
+            diagnose_onvif_flow,  // 🎯 ONVIF完整流程诊断
             test_tcp_connection,  // 🎯 新增：TCP连接测试
 
             // 音频捕获
@@ -231,9 +246,15 @@ fn main() {
             stop_video_audio_capture,
             process_audio_data,
 
-            // Whisper 语音识别
+            // 🎤 Whisper 语音识别
+            init_whisper,
+            recognize_audio,
+            cleanup_whisper,
             get_whisper_status,
-            // init_whisper (暂时禁用，需要配置whisper-rs库)
+            // 📥 模型下载管理
+            download_whisper_model,
+            delete_whisper_model,
+            check_whisper_model_exists,
 
             // 录制管理
             start_canvas_recording,
@@ -330,6 +351,45 @@ fn main() {
             // 🔍 RTSP 地址验证
             validate_rtsp_address,
             try_multiple_rtsp_templates_cmd,
+
+            // 🎯 RTSP 地址解析（ONVIF + 模板匹配 + 探针）
+            resolve_rtsp,
+
+            // 🎯 ONVIF 设备发现和流地址探索（类似 ONVIF Device Manager）
+            get_onvif_device_info,
+            get_onvif_profiles,
+            test_rtsp_connection,
+
+            // 🎯 WebRTC 实时传输服务
+            webrtc_join_room,
+            webrtc_leave_room,
+            webrtc_send_offer,
+            webrtc_send_answer,
+            webrtc_send_ice_candidate,
+            webrtc_get_room_peers,
+            webrtc_check_room,
+            webrtc_get_service_status,
+            webrtc_generate_peer_id,
+
+            // 🎯 视觉分析服务（COCO数据集 + 智能视觉分析 + AI评估）
+            // COCO 数据集管理
+            set_coco_dataset_path,
+            get_coco_dataset_path,
+            validate_coco_dataset,
+            get_coco_dataset_stats,
+            search_coco_images_by_category,
+
+            // 智能视觉分析
+            analyze_image,
+            get_analysis_history,
+            clear_analysis_history,
+
+            // 人工智能评估系统
+            set_exam_config,
+            get_exam_config,
+            start_batch_test,
+            analyze_exam_results,
+            get_vision_service_status,
         ])
         .setup(|app| {
             // 🎯 初始化摄像机数据库

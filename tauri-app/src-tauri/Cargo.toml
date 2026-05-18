@@ -18,7 +18,8 @@ tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
+futures-util = { version = "0.3", features = ["async-await", "channel"] }
 bcrypt = "0.15"
 dirs = "5"
 uuid = { version = "1", features = ["v4"] }
@@ -27,6 +28,7 @@ thiserror = "1"
 anyhow = "1"
 camino = "1"
 sha2 = "0.10"
+sha1 = "0.10"
 
 # 系统信息
 sysinfo = "0.30"
@@ -42,8 +44,8 @@ cpal = "0.15"
 # 字幕解析
 regex = "1.10"
 
-# Whisper 语音识别 (暂时禁用，需要 libclang)
-# whisper-rs = { version = "0.11", default-features = false }
+# 🎤 Whisper 语音识别（基于 Python subprocess）
+hound = "3.5"         # WAV 文件读写
 
 # 音频重采样
 rubato = "0.14"
@@ -51,11 +53,18 @@ rubato = "0.14"
 # 随机数生成（用于 ONVIF MessageID）
 rand = "0.8"
 
-# 🎯 临时文件支持（用于 RTSP 转码）
+# 🎯 临时文件支持（用于 RTSP 转码和 Whisper）
 tempfile = "3"
 
 # 快速随机数生成（用于 ONVIF）
 fastrand = "2"
+
+# 🎯 XML 解析（用于 ONVIF 协议解析）
+roxmltree = "0.19"
+
+# 🎯 URL 解析和编码（用于 RTSP 地址处理）
+url = "2.5"
+percent-encoding = "2.3"
 
 # 图像处理（用于火焰/烟雾检测）
 image = "0.25"
@@ -65,6 +74,7 @@ async-trait = "0.1"
 
 # 日志
 log = "0.4"
+env_logger = "0.11"
 
 # 全局静态变量
 lazy_static = "1.4"
@@ -109,9 +119,3 @@ strip = true
 [profile.dev]
 opt-level = 0
 debug = false
-
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]
-
-[build]
-target-dir = "D:/cargo_target"

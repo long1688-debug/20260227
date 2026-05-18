@@ -1,0 +1,404 @@
+# 实训教学系统 - 分布式部署配置
+# 使用方式: docker-compose -f docker-compose.distributed.yml up -d
+
+version: '3.8'
+
+services:
+  # ==================== API 服务 ====================
+  api-server-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: training-api-1
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    volumes:
+      - ../server:/app/server
+      - api-logs-1:/app/logs
+    environment:
+      - NODE_ENV=production
+      - NODE_ID=api-1
+      - HTTP_PORT=8080
+      - WS_PORT=8081
+      - REDIS_HOST=redis-cluster
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=postgres-primary
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=training
+      - POSTGRES_USER=training
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - MEDIA_SERVER=media-cluster
+      - INSTANCE_TYPE=api
+    depends_on:
+      redis-cluster:
+        condition: service_healthy
+      postgres-primary:
+        condition: service_healthy
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  api-server-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: training-api-2
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+      - "8083:8081"
+    volumes:
+      - ../server:/app/server
+      - api-logs-2:/app/logs
+    environment:
+      - NODE_ENV=production
+      - NODE_ID=api-2
+      - HTTP_PORT=8080
+      - WS_PORT=8081
+      - REDIS_HOST=redis-cluster
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=postgres-primary
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=training
+      - POSTGRES_USER=training
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - MEDIA_SERVER=media-cluster
+      - INSTANCE_TYPE=api
+    depends_on:
+      redis-cluster:
+        condition: service_healthy
+      postgres-primary:
+        condition: service_healthy
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  # ==================== 媒体服务 ====================
+  media-server-1:
+    image: zlmediakit/zlmediakit:master
+    container_name: training-media-1
+    restart: unless-stopped
+    ports:
+      - "1935:1935"
+      - "554:554"
+      - "8084:8080"
+      - "8000:8000"
+      - "8443:8443"
+    volumes:
+      - ./config/zlmediakit:/opt/zlmediakit/conf
+      - media-hls-1:/opt/zlmediakit/www/hls
+      - media-recordings-1:/opt/zlmediakit/www/recordings
+    environment:
+      - MEDIA_ID=media-1
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/index/api/getServerInfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  media-server-2:
+    image: zlmediakit/zlmediakit:master
+    container_name: training-media-2
+    restart: unless-stopped
+    ports:
+      - "1936:1935"
+      - "555:554"
+      - "8085:8080"
+      - "8001:8000"
+      - "8444:8443"
+    volumes:
+      - ./config/zlmediakit:/opt/zlmediakit/conf
+      - media-hls-2:/opt/zlmediakit/www/hls
+      - media-recordings-2:/opt/zlmediakit/www/recordings
+    environment:
+      - MEDIA_ID=media-2
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/index/api/getServerInfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+
+  # ==================== 缓存服务 ====================
+  redis-primary:
+    image: redis:7-alpine
+    container_name: training-redis-primary
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-primary-data:/data
+      - ./config/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    environment:
+      - REDIS_REPLICATION_MODE=primary
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  redis-replica-1:
+    image: redis:7-alpine
+    container_name: training-redis-replica-1
+    restart: unless-stopped
+    command: >
+      redis-server
+      --replicaof redis-primary 6379
+      --readonly
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-replica-1-data:/data
+    depends_on:
+      - redis-primary
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  redis-replica-2:
+    image: redis:7-alpine
+    container_name: training-redis-replica-2
+    restart: unless-stopped
+    command: >
+      redis-server
+      --replicaof redis-primary 6379
+      --readonly
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis-replica-2-data:/data
+    depends_on:
+      - redis-primary
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # ==================== 数据库服务 ====================
+  postgres-primary:
+    image: postgres:15-alpine
+    container_name: training-postgres-primary
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-primary-data:/var/lib/postgresql/data
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      - POSTGRES_DB=training
+      - POSTGRES_USER=training
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_MAX_CONNECTIONS=200
+      - POSTGRES_SHARED_BUFFERS=256MB
+      - POSTGRES_EFFECTIVE_CACHE_SIZE=1GB
+      - POSTGRES_MAINTENANCE_WORK_MEM=64MB
+      - POSTGRES_WAL_BUFFERS=16MB
+      - POSTGRES_CHECKPOINT_COMPLETION_TARGET=0.9
+      - POSTGRES_MAX_WAL_SIZE=1GB
+      - POSTGRES_MIN_WAL_SIZE=80MB
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U training -d training"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  postgres-replica:
+    image: postgres:15-alpine
+    container_name: training-postgres-replica
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-replica-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=training
+      - POSTGRES_USER=training
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_REPLICATION_MODE=replica
+      - POSTGRES_REPLICATION_USER=repl_user
+      - POSTGRES_REPLICATION_PASSWORD=${POSTGRES_REPL_PASSWORD}
+      - POSTGRES_PRIMARY_HOST=postgres-primary
+      - POSTGRES_PRIMARY_PORT=5432
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U training -d training"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  # ==================== 负载均衡 ====================
+  nginx-lb:
+    image: nginx:alpine
+    container_name: training-nginx-lb
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./config/nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - api-server-1
+      - api-server-2
+    networks:
+      - training-network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==================== 监控服务 ====================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: training-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - training-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: training-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3001
+    depends_on:
+      - prometheus
+    networks:
+      - training-network
+
+# ==================== 网络定义 ====================
+networks:
+  training-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ==================== 存储卷定义 ====================
+volumes:
+  api-logs-1:
+  api-logs-2:
+  media-hls-1:
+  media-hls-2:
+  media-recordings-1:
+  media-recordings-2:
+  redis-primary-data:
+  redis-replica-1-data:
+  redis-replica-2-data:
+  postgres-primary-data:
+  postgres-replica-data:
+  prometheus-data:
+  grafana-data:
+  nginx-logs:

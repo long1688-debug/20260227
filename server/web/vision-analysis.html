@@ -2485,8 +2485,8 @@
                 video.srcObject = null;
             }
 
-            // 隐藏视频，显示占位符
-            video.style.display = 'none';
+            // 显示占位符（不再隐藏视频元素，避免重新开始时视频不可见）
+            video.style.display = '';
             document.getElementById('cameraPlaceholder').style.display = 'flex';
 
             // 隐藏视频控制条

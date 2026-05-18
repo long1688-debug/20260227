@@ -396,10 +396,7 @@
               <el-form-item v-if="form.protocol === 'onvif'" label="摄像头品牌">
                 <el-select v-model="form.brand" placeholder="自动识别（可选）" style="width: 100%" clearable>
                   <el-option label="自动识别" value="" />
-                  <el-option label="海康威视 (Hikvision)" value="hikvision" />
-                  <el-option label="大华 (Dahua)" value="dahua" />
-                  <el-option label="宇视 (Uniview)" value="uniview" />
-                  <el-option label="安讯士 (Axis)" value="axis" />
+                  <!-- 🚫 品牌选项已删除，强制使用 ONVIF 协议获取真实 RTSP 地址 -->
                   <el-option label="雄迈 (Xiongmai)" value="xiongmai" />
                   <el-option label="TP-Link" value="tplink" />
                   <el-option label="其他/未知" value="generic" />
@@ -440,9 +437,6 @@
                   <div class="example-label mb-1 text-sm text-gray-600">常见ONVIF格式：</div>
                   <el-button-group size="small">
                     <el-button @click="setOnvifExample('default')">默认格式</el-button>
-                    <el-button @click="setOnvifExample('hikvision')">海康威视</el-button>
-                    <el-button @click="setOnvifExample('dahua')">大华</el-button>
-                    <el-button @click="setOnvifExample('axis')">安讯士</el-button>
                   </el-button-group>
                 </div>
               </el-form-item>
@@ -479,14 +473,7 @@
 
                 <!-- RTSP URL 模板选择器 -->
                 <div v-if="form.protocol === 'rtsp'" class="rtsp-url-templates mt-2">
-                  <div class="template-label mb-1 text-sm text-gray-600">常用格式：</div>
-                  <el-button-group size="small">
-                    <el-button @click="selectRtspTemplate('hikvision')">海康威视</el-button>
-                    <el-button @click="selectRtspTemplate('dahua')">大华</el-button>
-                    <el-button @click="selectRtspTemplate('axis')">安讯士</el-button>
-                    <el-button @click="selectRtspTemplate('uniview')">宇视</el-button>
-                    <el-button @click="selectRtspTemplate('generic')">通用格式</el-button>
-                  </el-button-group>
+                  <!-- 🚫 品牌模板按钮已删除，强制使用 ONVIF 协议获取真实 RTSP 地址 -->
                 </div>
               </el-form-item>
 
@@ -859,9 +846,7 @@
           <el-select v-model="editingCameraData.protocol" placeholder="请选择协议" style="width: 100%">
             <el-option label="RTSP - 实时流" value="rtsp" />
             <el-option label="ONVIF - 标准协议" value="onvif" />
-            <el-option label="海康威视" value="hikvision" />
-            <el-option label="大华" value="dahua" />
-            <el-option label="宇视" value="uniview" />
+            <!-- 🚫 品牌选项已删除，强制使用 ONVIF 协议获取真实 RTSP 地址 -->
           </el-select>
         </el-form-item>
         <el-form-item label="IP地址" prop="address">
@@ -1139,7 +1124,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { Refresh, VideoPlay, VideoPause, Edit, Delete, Warning, VideoCamera, Search, InfoFilled, DocumentCopy, Grid } from '@element-plus/icons-vue';
 import { SOURCE_TYPE_OPTIONS, SOURCE_TYPE_GROUPS, getSourceTypeIcon, getSourceTypeLabel, getSourceTypeTag } from '@/constants/sourceTypes';
 import { ElMessage } from 'element-plus';
@@ -1176,8 +1161,17 @@ const emit = defineEmits([
   'remove-from-preview',
   'rename-source',
   'delete-source',
-  'submit-source-form'
+  'submit-source-form',
+  'update-network-camera'
 ]);
+
+/**
+ * 清理 URL 中的反引号和多余空格
+ */
+function cleanUrl(url) {
+  if (!url) return url;
+  return url.trim().replace(/^`\s*/, '').replace(/\s*`$/, '');
+}
 
 // ==================== State ====================
 
@@ -1368,6 +1362,34 @@ const editingCameraData = ref({
   password: ''
 });
 
+// 🎯 监听 edit-network-camera 事件（从 TeacherWindow 触发，ONVIF解析失败后自动打开编辑）
+function handleEditNetworkCameraEvent(e) {
+  const source = e.detail;
+  if (source) {
+    console.log('[AddSourceDialog] 收到 edit-network-camera 事件:', source);
+    // 切换到网络摄像机类型
+    form.value.type = 'networkCamera';
+    form.value.protocol = source.protocol || 'rtsp';
+    form.value.streamUrl = source.streamUrl || '';
+    form.value.cameraIp = source.streamUrl ? getIpFromUrl(source.streamUrl) : '';
+    form.value.needAuth = source.needAuth !== false;
+    form.value.username = source.username || 'admin';
+    form.value.password = source.password || 'admin';
+    form.value.onvifUrl = source.onvifUrl || '';
+    form.value.onvifPort = source.onvifPort || 2000;
+    // 展开手动输入区域
+    showManualInput.value = true;
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('edit-network-camera', handleEditNetworkCameraEvent);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('edit-network-camera', handleEditNetworkCameraEvent);
+});
+
 // 协议URL模板配置
 const protocolUrlTemplates = {
   rtsp: 'rtsp://{ip}/live/ch1',
@@ -1392,9 +1414,7 @@ const getStreamUrlTip = computed(() => {
   const tips = {
     rtsp: 'RTSP格式示例：rtsp://192.168.1.10/live/ch1',
     onvif: 'ONVIF格式示例：http://192.168.1.10:2000/onvif/device_service',
-    hikvision: '海康威视格式：rtsp://{ip}:554/h264/ch1/main/av_stream',
-    dahua: '大华格式：rtsp://{ip}:554/cam/realmonitor?channel=1&subtype=0',
-    uniview: '宇视格式：rtsp://{ip}:554/Streaming/Channels/101'
+    // 🚫 品牌格式提示已删除，强制使用 ONVIF 协议获取真实 RTSP 地址
   };
   return tips[protocol] || '';
 });
@@ -1480,13 +1500,18 @@ function saveCameraChanges() {
     return;
   }
 
+  // 清理 URL 中的反引号和多余空格
+  editingCameraData.value.streamUrl = cleanUrl(editingCameraData.value.streamUrl);
+
   // 如果是编辑已添加的信号源
   if (editingSource.value) {
     const updatedSource = {
       ...editingSource.value,
       protocol: editingCameraData.value.protocol,
       streamUrl: editingCameraData.value.streamUrl,
-      onvifUrl: editingCameraData.value.protocol === 'onvif' ? editingCameraData.value.streamUrl : editingSource.value.onvifUrl,
+      onvifUrl: editingCameraData.value.protocol === 'onvif'
+        ? editingCameraData.value.streamUrl
+        : editingSource.value.onvifUrl,
       needAuth: editingCameraData.value.needAuth,
       username: editingCameraData.value.username,
       password: editingCameraData.value.password
@@ -1566,9 +1591,9 @@ const form = ref({
   cameraIp: '', // 摄像机IP地址（ONVIF专用）
   onvifUrl: '', // ONVIF设备服务地址
   onvifPort: 2000, // ONVIF端口，默认2000（不同品牌可能不同）
-  needAuth: false,
-  username: '',
-  password: '',
+  needAuth: true, // 🎯 默认开启认证，防止 FFmpeg 连接失败
+  username: 'admin',
+  password: 'admin',
   authToken: '',
   bufferTime: 1000,
 
@@ -1618,8 +1643,9 @@ const rules = {
           return;
         }
 
-        // 网络摄像机和RTSP协议需要验证streamUrl
-        if (form.value.type === 'networkCamera' || form.value.protocol === 'rtsp') {
+        // 🎯 只有当类型是网络摄像机时才强制验证streamUrl
+        // 避免在切换类型时因protocol默认为rtsp而误触发验证
+        if (form.value.type === 'networkCamera') {
           if (!value) {
             callback(new Error('请输入流媒体地址'));
           } else if (!/^(rtsp|rtmp|hls|http|ws|srt):\/\//.test(value)) {
@@ -1737,17 +1763,17 @@ function handleEditNetworkCamera(source) {
   const protocol = source.protocol || 'rtsp';
   let streamUrl = '';
 
-  // 根据协议获取流地址
+  // 根据协议获取流地址，并清理反引号和空格
   if (protocol === 'onvif') {
-    streamUrl = source.onvifUrl || '';
+    streamUrl = cleanUrl(source.onvifUrl || '');
   } else {
-    streamUrl = source.streamUrl || '';
+    streamUrl = cleanUrl(source.streamUrl || '');
   }
 
   // 打开编辑对话框
   editingCameraData.value = {
     originalAddress: source.id, // 使用source.id作为原始标识
-    address: source.streamUrl ? getIpFromUrl(source.streamUrl) : '',
+    address: source.streamUrl ? getIpFromUrl(streamUrl) : '',
     streamUrl: streamUrl,
     protocol: protocol,
     needAuth: source.needAuth || (protocol === 'onvif'),
@@ -1871,6 +1897,18 @@ async function handleSubmit() {
     submitting.value = true;
 
     await formRef.value?.validate();
+
+    // 清理 URL 中的反引号和多余空格
+    if (form.value.streamUrl) {
+      form.value.streamUrl = cleanUrl(form.value.streamUrl);
+    }
+    if (form.value.onvifUrl) {
+      form.value.onvifUrl = cleanUrl(form.value.onvifUrl);
+    }
+
+    // 🎯 直接提交，不在添加时验证RTSP地址
+    // RTSP地址的有效性会在预览区域播放时自然验证
+    console.log('[AddSourceDialog] ✅ 提交信号源配置');
 
     emit('submit-source-form', { ...form.value });
 
@@ -2043,14 +2081,14 @@ function selectDiscoveredCamera(camera) {
     // ONVIF协议使用服务地址
     const onvifPort = 2000;
     const ip = camera.address;
-    form.value.onvifUrl = camera.streamUrl || `http://${ip}:${onvifPort}/onvif/device_service`;
+    form.value.onvifUrl = cleanUrl(camera.streamUrl || `http://${ip}:${onvifPort}/onvif/device_service`);
     form.value.streamUrl = ''; // ONVIF协议不需要RTSP流地址
   }
   // 处理RTSP及其他协议
   else {
     // 如果摄像机已经有流地址，直接使用
     if (camera.streamUrl) {
-      form.value.streamUrl = camera.streamUrl;
+      form.value.streamUrl = cleanUrl(camera.streamUrl);
     } else {
       // 根据设备类型智能推荐RTSP URL
       const port = camera.port || 554;
@@ -2188,48 +2226,11 @@ function handleCameraFromDiscovery(cameraData) {
 /**
  * 选择RTSP URL模板
  */
+// 🚫 selectRtspTemplate 函数已禁用，不再使用品牌模板
+// 强制使用 ONVIF 协议获取真实的 RTSP 地址
 function selectRtspTemplate(brand) {
-  // 尝试从现有 URL 中提取 IP 和端口，如果没有则使用默认值
-  const ipMatch = form.value.streamUrl.match(/rtsp:\/\/([^:/]+)/)?.[1] || form.value.streamUrl.match(/\d+\.\d+\.\d+\.\d+/)?.[0];
-  const ip = ipMatch || '192.168.1.100';
-
-  // 尝试提取端口，默认为 554
-  let port = '554';
-  const portMatch = form.value.streamUrl.match(/:(\d+)\//);
-  if (portMatch) {
-    port = portMatch[1];
-  } else if (form.value.streamUrl.includes(':')) {
-     // 简单处理一些非标准情况，通常 rtsp://ip:port/path
-     const parts = form.value.streamUrl.split(':')[2]; // split by : after rtsp://
-     if (parts) {
-         port = parts.split('/')[0];
-     }
-  }
-
-  let urlTemplate;
-
-  switch (brand) {
-    case 'hikvision':
-      urlTemplate = `rtsp://${ip}:${port}/h264/ch1/main/av_stream`;
-      break;
-    case 'dahua':
-      urlTemplate = `rtsp://${ip}:${port}/cam/realmonitor?channel=1&subtype=0`;
-      break;
-    case 'axis':
-      urlTemplate = `rtsp://${ip}:${port}/axis-media/media.amp`;
-      break;
-    case 'uniview':
-      urlTemplate = `rtsp://${ip}:${port}/media/video1`;
-      break;
-    case 'generic':
-      urlTemplate = `rtsp://${ip}:${port}/stream`;
-      break;
-    default:
-      urlTemplate = `rtsp://${ip}:${port}/stream`;
-  }
-
-  form.value.streamUrl = urlTemplate;
-  ElMessage.info(`已应用${getBrandName(brand)} RTSP格式`);
+  console.warn('[AddSourceDialog] 🚫 品牌模板已禁用，请使用 ONVIF 协议获取真实 RTSP 地址')
+  ElMessage.warning('品牌模板已禁用，请使用 ONVIF 协议自动获取 RTSP 地址')
 }
 
 /**
@@ -2237,11 +2238,7 @@ function selectRtspTemplate(brand) {
  */
 function getBrandName(brand) {
   const brands = {
-    'hikvision': '海康威视',
-    'dahua': '大华',
-    'axis': '安讯士',
-    'uniview': '宇视',
-    'generic': '通用格式'
+    // 🚫 品牌标签已删除
   };
   return brands[brand] || brand;
 }
@@ -2267,27 +2264,8 @@ function setOnvifExample(type) {
   // 尝试从现有 URL 中提取 IP，如果没有则使用默认值
   const ipMatch = form.value.onvifUrl?.match(/https?:\/\/([^:/]+)/)?.[1] || '192.168.1.100';
 
-  let urlTemplate;
-
-  switch (type) {
-    case 'default':
-      urlTemplate = `http://${ipMatch}:2000/onvif/device_service`;
-      break;
-    case 'hikvision':
-      urlTemplate = `http://${ipMatch}:80/onvif/device_service`;
-      break;
-    case 'dahua':
-      urlTemplate = `http://${ipMatch}:80/onvif/device_service`;
-      break;
-    case 'axis':
-      urlTemplate = `http://${ipMatch}/onvif/device_service`;
-      break;
-    default:
-      urlTemplate = `http://${ipMatch}:2000/onvif/device_service`;
-  }
-
-  form.value.onvifUrl = urlTemplate;
-  ElMessage.info(`已应用${getOnvifBrandName(type)} ONVIF格式`);
+  // 🚫 品牌示例已删除，只保留默认格式
+  form.value.onvifUrl = `http://${ipMatch}:80/onvif/device_service`;
 }
 
 /**
@@ -2296,9 +2274,7 @@ function setOnvifExample(type) {
 function getOnvifBrandName(type) {
   const brands = {
     'default': '默认',
-    'hikvision': '海康威视',
-    'dahua': '大华',
-    'axis': '安讯士'
+    // 🚫 品牌标签已删除
   };
   return brands[type] || type;
 }
@@ -2368,7 +2344,7 @@ function resetForm() {
     cameraIp: '', // 摄像机IP地址（ONVIF专用）
     onvifUrl: '', // ONVIF设备服务地址
     onvifPort: 2000, // ONVIF端口，默认2000（不同品牌可能不同）
-    needAuth: false,
+    needAuth: false, // 默认不需要认证，用户可根据实际情况勾选
     username: '',
     password: '',
     authToken: '',
@@ -2587,8 +2563,6 @@ async function fetchOnvifStreamUrl() {
   fetchingOnvifStream.value = true;
 
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
-
     // 解析 IP 和端口
     let ip = form.value.cameraIp;
     let port = parseInt(form.value.onvifPort, 10) || 80;
@@ -2601,53 +2575,31 @@ async function fetchOnvifStreamUrl() {
     }
 
     console.log('[ONVIF获取] 开始获取RTSP流地址...');
-    console.log('[ONVIF获取] IP:', ip, '端口:', port);
-    console.log('[ONVIF获取] 品牌:', form.value.brand);
+    console.log('[ONVIF获取] IP:', ip, '端口:', port, '模式: 手动(仅指定端口)');
 
-    // 调用 Tauri API 获取 RTSP 流地址
-    const result = await invoke('get_onvif_stream_uri', {
-      onvifUrl: `http://${ip}:${port}/onvif/device_service`,
+    // 🎯 使用统一的 resolveRtsp 解析器（手动模式，仅用用户指定端口）
+    const { resolveRtsp } = await import('@/utils/rtsp-resolver');
+    const result = await resolveRtsp({
+      manufacturer: form.value.brand || 'generic',
+      host: ip,
+      port: 554,
       username: form.value.username,
-      password: form.value.password
+      password: form.value.password,
+      onvifUri: form.value.protocol === 'onvif' ? form.value.onvifUrl : undefined,
+      onvifPort: port,
+      scanMode: false  // 🎯 手动模式：用户已明确指定端口，不遍历
     });
 
-    if (result && result.rtspUrl) {
-      // 成功获取到 RTSP 地址
-      form.value.streamUrl = result.rtspUrl;
-      console.log('[ONVIF获取] ✅ 成功获取RTSP地址:', result.rtspUrl);
-      ElMessage.success(`成功获取RTSP地址！\n${result.rtspUrl}`);
+    if (result && result.uri) {
+      form.value.streamUrl = result.uri;
+      console.log('[ONVIF获取] ✅ 成功获取RTSP地址:', result.uri);
+      ElMessage.success('成功获取RTSP地址: ' + result.uri);
     } else {
-      // 获取失败，尝试备选方案
-      console.warn('[ONVIF获取] ⚠️ ONVIF标准方法失败，尝试备选方案...');
-
-      try {
-        const fallbackResult = await invoke('try_common_rtsp_templates', {
-          ip,
-          port,
-          username: form.value.username,
-          password: form.value.password,
-          brand: form.value.brand || null
-        });
-
-        if (fallbackResult) {
-          form.value.streamUrl = fallbackResult;
-          console.log('[ONVIF获取] ✅ 备选方案成功:', fallbackResult);
-          ElMessage.success(`通过备选方案获取RTSP地址！\n${fallbackResult}`);
-        } else {
-          console.error('[ONVIF获取] ❌ 所有方法均失败');
-          ElMessage.error({
-            message: '无法获取RTSP流地址，请检查：\n1. 摄像机是否支持ONVIF协议\n2. 用户名密码是否正确\n3. 网络连接是否正常\n4. 或手动输入RTSP地址',
-            duration: 5000
-          });
-        }
-      } catch (fallbackErr) {
-        console.error('[ONVIF获取] ❌ 备选方案也失败:', fallbackErr);
-        ElMessage.error('获取RTSP地址失败，请手动输入');
-      }
+      ElMessage.error('无法自动获取RTSP地址，请手动输入');
     }
   } catch (error) {
     console.error('[ONVIF获取] 错误:', error);
-    ElMessage.error(`获取失败: ${error.message || error}`);
+    ElMessage.error('获取RTSP地址失败: ' + (error.message || error));
   } finally {
     fetchingOnvifStream.value = false;
   }
@@ -2755,7 +2707,8 @@ watch(
 
       // 如果 onvifUrl 为空，或者包含旧的 IP 地址，则更新
       if (!oldUrl || !oldUrl.includes(newIp)) {
-        form.value.onvifUrl = `http://${newIp}:${newPort}/onvif/device_service`;
+        const newUrl = `http://${newIp}:${newPort}/onvif/device_service`;
+        form.value.onvifUrl = cleanUrl(newUrl);
         console.log('[AddSourceDialog] 自动更新 ONVIF URL:', form.value.onvifUrl);
       }
     }

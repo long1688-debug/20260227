@@ -58,9 +58,9 @@
             <!-- 网络摄像头预览 -->
             <template v-else-if="source.type === 'networkCamera'">
               <div class="camera-preview-wrapper">
-                <!-- 🎯 缩略图显示（加载前） -->
+                <!-- 🎯 缩略图显示（加载前，播放后隐藏） -->
                 <img
-                  v-if="thumbnails[source.id]"
+                  v-if="thumbnails[source.id] && !isPlaying[source.id]"
                   :src="thumbnails[source.id]"
                   class="thumbnail-image"
                   alt="缩略图"
@@ -192,12 +192,18 @@ import { useSourceStore } from '@/stores/sourceStore'
 import PptContent from '@/components/teacher-window/canvas/contents/PptContent.vue'
 import WordContent from '@/components/teacher-window/canvas/contents/WordContent.vue'
 import ExcelContent from '@/components/teacher-window/canvas/contents/ExcelContent.vue'
-import flvjs from 'flv.js'  // 🎯 导入 flv.js 播放器
+import { useRtspPlayer } from '@/composables/useRtspPlayer'
 
 const sourceStore = useSourceStore()
 
+// 🎯 初始化 RTSP 播放器 Composable
+const rtspPlayer = useRtspPlayer()
+
 // 🎯 缩略图缓存 { sourceId: base64Image }
 const thumbnails = ref({})
+
+// 🎯 播放状态 { sourceId: boolean } - 用于控制缩略图显示
+const isPlaying = ref({})
 
 // 🎯 定义 emit 事件
 const emit = defineEmits([
@@ -213,6 +219,14 @@ const emit = defineEmits([
   'pause',
   'seeked'
 ])
+
+/**
+ * 清理 URL 中的反引号和多余空格
+ */
+function cleanUrl(url) {
+  if (!url) return url;
+  return url.trim().replace(/^`\s*/, '').replace(/\s*`$/, '');
+}
 
 // 状态定义
 const selectedSourceId = ref(null)
@@ -232,6 +246,9 @@ const selectSource = (source) => {
   selectedSourceId.value = source.id
 }
 
+// 🎯 存储拖拽图像引用，用于在 dragend 时清理
+let dragImageElement = null
+
 // 🎯 HTML5 拖拽开始
 const onDragStart = (event, source) => {
   console.log('[SourcePreviewBar] HTML5 拖拽开始:', source.name, source.type, source.id)
@@ -248,12 +265,11 @@ const onDragStart = (event, source) => {
 
   // 设置拖拽图像（可选）
   if (event.currentTarget) {
-    const dragImage = event.currentTarget.cloneNode(true)
-    dragImage.style.opacity = '0.8'
-    dragImage.style.width = '180px'
-    document.body.appendChild(dragImage)
-    event.dataTransfer.setDragImage(dragImage, 90, 60)
-    setTimeout(() => document.body.removeChild(dragImage), 0)
+    dragImageElement = event.currentTarget.cloneNode(true)
+    dragImageElement.style.opacity = '0.8'
+    dragImageElement.style.width = '180px'
+    document.body.appendChild(dragImageElement)
+    event.dataTransfer.setDragImage(dragImageElement, 90, 60)
   }
 
   // 🎯 发出事件给父组件
@@ -265,6 +281,18 @@ const onDragEnd = () => {
   console.log('[SourcePreviewBar] HTML5 拖拽结束')
   isDragging.value = false
   draggingSourceId.value = null
+
+  // 🎯 关键修复：确保清理拖拽图像（防止拖拽取消时残留）
+  if (dragImageElement && dragImageElement.parentNode) {
+    try {
+      document.body.removeChild(dragImageElement)
+      console.log('[SourcePreviewBar] 清理拖拽图像元素')
+    } catch (e) {
+      console.warn('[SourcePreviewBar] 清理拖拽图像失败:', e)
+    } finally {
+      dragImageElement = null
+    }
+  }
 
   // 🎯 发出事件给父组件
   emit('drag-end')
@@ -364,6 +392,7 @@ const initCameraStream = async (source, videoEl) => {
     }
 
     let constraints = { video: true }
+    let detectedDeviceId = source.deviceId
 
     // 如果有 deviceId，使用指定设备
     if (source.deviceId) {
@@ -372,9 +401,12 @@ const initCameraStream = async (source, videoEl) => {
       // 没有 deviceId，自动检测并使用第一个可用摄像头
       const cameras = await getAvailableCameras()
       if (cameras.length > 0) {
-        // 更新 source 的 deviceId
-        source.deviceId = cameras[0].deviceId
+        // 🎯 修复：不直接修改 source 对象，使用局部变量
+        detectedDeviceId = cameras[0].deviceId
         constraints = { video: { deviceId: cameras[0].deviceId } }
+
+        // 🎯 通过 store 更新 deviceId，保持单向数据流
+        sourceStore.updateSource(source.id, { deviceId: cameras[0].deviceId })
       }
     }
 
@@ -391,283 +423,27 @@ const initCameraStream = async (source, videoEl) => {
     console.log(`[SourcePreviewBar] 摄像头 "${source.name}" 流初始化成功`)
   } catch (error) {
     console.error('初始化摄像头流失败:', error)
-    // 不显示错误消息，因为这可能是正常的（用户拒绝权限等）
+    // 🎯 显示错误图标提示用户
+    rtspPlayer.showFailedOverlay(source.id, '摄像头初始化失败')
+    // 仅在用户拒绝权限时不显示消息，其他错误显示提示
+    if (error.name !== 'NotAllowedError') {
+      ElMessage.error(`摄像头初始化失败: ${error.message}`)
+    }
   }
 }
 
-// 初始化网络摄像头RTSP流（预览栏显示画面，参考本地摄像机实现）
+// 初始化网络摄像头RTSP流（委托给 useRtspPlayer Composable）
 const initNetworkCameraStream = async (source, videoEl) => {
-  try {
-    if (!videoEl || !source) return
+  if (!videoEl || !source) return
 
-    //  防止重复初始化
-    if (videoEl._flvPlayer) {
-      console.log(`[SourcePreviewBar] 网络摄像头 "${source.name}" 已初始化，跳过`)
-      return
+  await rtspPlayer.initNetworkCameraStream(source, videoEl, {
+    onPlaying: (src) => {
+      isPlaying.value[src.id] = true
+    },
+    onError: (src) => {
+      isPlaying.value[src.id] = false
     }
-
-    console.log(`[SourcePreviewBar] 正在初始化网络摄像头预览: ${source.name}`)
-    console.log('[SourcePreviewBar] 信号源完整数据:', JSON.stringify(source, null, 2))
-
-    // 🎯 构建RTSP URL（兼容多种字段名）
-    let rtspUrl = source.streamUrl || source.rtspUrl || source.url
-    if (source.needAuth && source.username && source.password) {
-      // 添加认证信息
-      if (!rtspUrl.includes('@')) {
-        rtspUrl = rtspUrl.replace('rtsp://', `rtsp://${source.username}:${source.password}@`)
-      }
-    }
-
-    // 🎯 关键修复：ONVIF服务端点（http://*/onvif/*）不是真实视频流地址
-    // 需要先通过 Tauri ONVIF GetStreamUri 解析出真实 RTSP uri
-    if (/^https?:\/\/[^/]+\/onvif\//i.test(rtspUrl)) {
-      console.log('[SourcePreviewBar] 检测到ONVIF服务端点，正在解析RTSP地址...');
-      try {
-        const addrMatch = rtspUrl.match(/^https?:\/\/([^:/]+)(?::(\d+))?/);
-        if (addrMatch) {
-          const ip = addrMatch[1];
-          const port = parseInt(addrMatch[2] || '80', 10);
-          const creds = source.credentials || source;
-          const uriResult = await invoke('get_onvif_stream_uri', {
-            ip,
-            port,
-            username: creds.username || '',
-            password: creds.password || '',
-          });
-          if (uriResult?.uri) {
-            rtspUrl = uriResult.uri;
-            // 如果需要认证且URL中没有认证信息，添加认证
-            if ((source.needAuth || creds.username) && creds.username && creds.password && !rtspUrl.includes('@')) {
-              rtspUrl = rtspUrl.replace('rtsp://', `rtsp://${creds.username}:${creds.password}@`)
-            }
-            console.log(`[SourcePreviewBar] ONVIF→RTSP解析成功: ${rtspUrl}`);
-          }
-        }
-      } catch (e) {
-        console.warn('[SourcePreviewBar] ONVIF RTSP解析失败，尝试直接使用原地址:', e.message);
-      }
-    }
-
-    // 🎯 调用RTSP Proxy服务
-    const { invoke } = await import('@tauri-apps/api/core')
-
-    try {
-      // 🎯 关键修复：先通过HTTP健康检查确保RTSP代理服务正在运行
-      console.log('[SourcePreviewBar] 开始检查RTSP代理服务状态...');
-      let serviceRunning = false;
-
-      try {
-        const response = await fetch('http://127.0.0.1:8081/health', {
-          method: 'GET',
-          mode: 'cors',
-          timeout: 2000
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log('[SourcePreviewBar] ✅ RTSP代理服务已通过HTTP健康检查:', data);
-          serviceRunning = true;
-        } else {
-          console.warn('[SourcePreviewBar] ⚠️ RTSP代理服务健康检查失败，HTTP状态:', response.status);
-        }
-      } catch (e) {
-        console.warn('[SourcePreviewBar] ⚠️ RTSP代理服务HTTP检查异常:', e.message);
-        console.warn('[SourcePreviewBar] 将尝试直接调用Tauri API启动服务...');
-      }
-
-      // 如果HTTP检查失败，尝试通过Tauri API启动服务
-      if (!serviceRunning) {
-        console.log('[SourcePreviewBar] 尝试通过Tauri API启动RTSP代理服务...');
-        try {
-          await invoke('start_rtsp_proxy');
-          console.log('[SourcePreviewBar] ✅ Tauri API启动成功');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        } catch (apiError) {
-          console.error('[SourcePreviewBar] ❌ Tauri API启动失败:', apiError);
-          // 即使启动失败，也继续尝试（可能服务已在外部运行）
-          console.warn('[SourcePreviewBar] 警告：服务启动失败，但仍将尝试连接...');
-        }
-      }
-
-      // 🎯 使用统一的streamId格式（与VideoPreview保持一致）
-      const streamId = `camera_${source.id.split('_').pop()}`  // 例如: camera_cqkfezgf5
-      console.log('[SourcePreviewBar] 使用streamId:', streamId)
-
-      const proxyResult = await invoke('start_rtsp_stream_proxy', {
-        rtspUrl: rtspUrl,
-        streamId: streamId
-      })
-
-      if (proxyResult) {
-        console.log('[SourcePreviewBar] RTSP代理返回结果:', JSON.stringify(proxyResult, null, 2))
-
-        // 获取缩略图（异步，不阻塞播放）
-        fetchThumbnail(streamId, source.id)
-
-        // 兼容不同的字段名格式
-        const flvUrl = proxyResult.flvUrl || proxyResult.flv_url
-
-        if (flvUrl) {
-          console.log('[SourcePreviewBar] RTSP代理启动成功, FLV URL:', flvUrl)
-
-          // 使用flv.js播放FLV流
-          console.log('[SourcePreviewBar] 🔍 flvjs.isSupported():', flvjs.isSupported())
-          console.log('[SourcePreviewBar] 📺 MediaSource支持:', typeof window.MediaSource !== 'undefined')
-          console.log('[SourcePreviewBar] 🎯 User Agent:', navigator.userAgent)
-
-          if (flvjs.isSupported()) {
-            console.log('[SourcePreviewBar] ✅ 创建FLV播放器...')
-
-            const flvPlayer = flvjs.createPlayer({
-              type: 'flv',
-              url: flvUrl,
-              isLive: true,
-              hasAudio: true,
-              hasVideo: true
-            }, {
-              // 🎯 关键配置：修复flushStashedSamples错误，同时优化延迟
-              enableWorker: false,              // 禁用Worker避免跨线程错误
-              enableStashBuffer: true,          // ✅ 必须启用，否则会导致flushStashedSamples错误
-              stashInitialSize: 4096,           // 初始缓冲 4KB（有效覆盖单帧 FLV tag + 音频头，消除 flushStashedSamples 错误）
-              lazyLoad: false,                  // 禁用懒加载
-              lazyLoadMaxDuration: 0,           // 不限制最大持续时间
-              deferLoadAfterSourceOpen: false,  // 不延迟加载
-              //  自动清理策略 - 控制内存和延迟
-              autoCleanupSourceBuffer: true,    // 自动清理SourceBuffer
-              autoCleanupMaxBackwardDuration: 2, // 最大向后保留2秒
-              autoCleanupMinBackwardDuration: 1,  // 最小向后保留1秒
-              // 🎯 直播同步配置 - 降低延迟（0.5秒覆盖窗口，接近实时）
-              liveSyncDuration: 0.5,            // 直播同步时长0.5秒
-              liveSyncDurationCount: 1,         // 直播同步帧数
-              fixAudioTimestampGap: true        // 修正音频时间戳间隙
-            })
-
-            flvPlayer.attachMediaElement(videoEl)
-            videoEl._flvPlayer = flvPlayer  // 保存播放器实例
-
-            // 🎯 关键配置：进一步优化低延迟播放 + 自动重连（借鉴MCX框架）
-            let retryCount = 0;
-            const MAX_RETRIES = 3;
-
-            flvPlayer.on(flvjs.Events.ERROR, (errorType, errorDetail, errorInfo) => {
-              console.error('[SourcePreviewBar] ❌ FLV播放错误:', errorType, errorDetail, errorInfo)
-
-              // 🎯 网络错误时自动重连（借鉴MCX框架的自动重连机制）
-              if (errorType === 'NetworkError' && retryCount < MAX_RETRIES) {
-                retryCount++;
-                const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000); // 指数退避
-                console.warn(`[SourcePreviewBar] 网络错误，第${retryCount}次重试（延迟${delay}ms）...`);
-
-                setTimeout(() => {
-                  try {
-                    if (videoEl && videoEl._flvPlayer) {
-                      // 🎯 销毁旧播放器并重建（借鉴MCX的错误恢复机制）
-                      console.log('[SourcePreviewBar] 销毁旧的FLV播放器并重建...');
-                      const oldPlayer = videoEl._flvPlayer;
-                      oldPlayer.pause();
-                      oldPlayer.unload();
-                      oldPlayer.detachMediaElement();
-                      oldPlayer.destroy();
-                      videoEl._flvPlayer = null;
-
-                      // 重新创建播放器
-                      const newFlvPlayer = flvjs.createPlayer({
-                        type: 'flv',
-                        url: flvUrl,
-                        isLive: true,
-                        hasAudio: true,
-                        hasVideo: true
-                      }, {
-                        enableWorker: false,
-                        enableStashBuffer: true,
-                        stashInitialSize: 4096,            // 初始缓冲 4KB
-                        lazyLoad: false,
-                        lazyLoadMaxDuration: 0,
-                        deferLoadAfterSourceOpen: false,
-                        autoCleanupSourceBuffer: true,
-                        autoCleanupMaxBackwardDuration: 2, // 最大向后保留2秒
-                        autoCleanupMinBackwardDuration: 1,  // 最小向后保留1秒
-                        liveSyncDuration: 1,               // 直播同步时长1秒
-                        liveSyncDurationCount: 1,          // 直播同步帧数
-                        fixAudioTimestampGap: true
-                      });
-
-                      videoEl._flvPlayer = newFlvPlayer;
-                      newFlvPlayer.attachMediaElement(videoEl);
-                      newFlvPlayer.load();
-                      newFlvPlayer.play().catch(err => {
-                        console.warn('[SourcePreviewBar] FLV重播失败:', err);
-                      });
-                    }
-                  } catch (e) {
-                    console.error('[SourcePreviewBar] FLV重加载失败:', e);
-                  }
-                }, delay);
-              } else if (retryCount >= MAX_RETRIES) {
-                console.error('[SourcePreviewBar] 达到最大重试次数，停止重试');
-                ElMessage.warning('预览区域视频加载失败，请拖拽到画布查看');
-              }
-            })
-
-            flvPlayer.load()
-            await flvPlayer.play()
-
-            console.log(`[SourcePreviewBar] 🎉 网络摄像头 "${source.name}" 预览播放成功`)
-          } else {
-            // 🎯 备用方案：flv.js不支持时，尝试直接使用原生 video 元素
-            console.warn('[SourcePreviewBar] ⚠️ flv.js 不支持当前环境')
-            console.log('[SourcePreviewBar] 尝试原生 video 播放 FLV:', flvUrl)
-            videoEl.src = flvUrl
-            videoEl.load()
-
-            videoEl.onerror = (e) => {
-              console.error('[SourcePreviewBar] ❌ 原生 video 播放失败:', e)
-              ElMessage.error('网络摄像头播放失败：浏览器不支持FLV格式')
-            }
-
-            try {
-              await videoEl.play()
-              console.log(`[SourcePreviewBar]  网络摄像头 "${source.name}" 原生播放启动`)
-            } catch (playError) {
-              console.error('[SourcePreviewBar] ❌ 播放失败:', playError)
-              ElMessage.error(`网络摄像头播放失败: ${playError.message}`)
-            }
-          }
-        } else {
-          console.error('[SourcePreviewBar] RTSP代理启动失败: 未找到FLV URL', proxyResult)
-          ElMessage.error('RTSP代理启动失败: 未找到FLV URL')
-        }
-      } else {
-        console.error('[SourcePreviewBar] RTSP代理返回结果为空')
-        ElMessage.error('RTSP代理返回结果为空')
-      }
-    } catch (error) {
-      console.error('[SourcePreviewBar] 调用RTSP代理失败:', error)
-      // 预览栏失败不影响用户继续操作
-      console.warn('[SourcePreviewBar] 预览栏RTSP播放失败，拖拽到画布后VideoPreview会重新尝试')
-    }
-  } catch (error) {
-    console.error('[SourcePreviewBar] 初始化网络摄像头失败:', error)
-  }
-}
-
-// 🎯 获取缩略图
-const fetchThumbnail = async (streamId, sourceId) => {
-  try {
-    console.log(`[Thumbnail] 请求缩略图: ${streamId}`)
-
-    const response = await fetch(`http://127.0.0.1:8081/api/thumbnail/${streamId}`)
-    const data = await response.json()
-
-    if (data.success && data.thumbnail) {
-      thumbnails.value[sourceId] = data.thumbnail
-      console.log(`[Thumbnail] ✅ 缩略图加载成功: ${sourceId}, cached: ${data.cached}`)
-    } else {
-      console.warn(`[Thumbnail] ⚠️ 缩略图加载失败: ${streamId}`, data.error)
-    }
-  } catch (error) {
-    console.error(`[Thumbnail] ❌ 请求失败: ${streamId}`, error.message)
-  }
+  })
 }
 
 // 设置 video 引用到 Map 中
@@ -675,32 +451,107 @@ const setVideoRef = (sourceId, el) => {
   if (el) {
     videoRefMap.value[sourceId] = el
   } else {
+    // 当元素被移除时，先清理资源
+    cleanupSourceResources(sourceId)
     delete videoRefMap.value[sourceId]
   }
 }
 
-// 监听预览源变化，初始化视频元素
+// 🎯 清理指定源的资源（播放器、流等）
+const cleanupSourceResources = (sourceId) => {
+  console.log(`[SourcePreviewBar] cleanupSourceResources: ${sourceId}`)
+
+  // 1. 使用 Composable 销毁 FLV 播放器
+  rtspPlayer.destroyPlayerBySourceId(sourceId)
+
+  // 2. 清理 videoRefMap 中的视频元素引用
+  const videoEl = videoRefMap.value[sourceId]
+  if (videoEl) {
+    // 停止 srcObject 流
+    if (videoEl.srcObject) {
+      console.log(`[SourcePreviewBar] 停止 MediaStream: ${sourceId}`)
+      videoEl.srcObject.getTracks().forEach(track => track.stop())
+      videoEl.srcObject = null
+    }
+
+    // 清除 src
+    if (videoEl.src) {
+      videoEl.src = ''
+    }
+  }
+
+  // 3. 清理 cameraStreams 中的流
+  if (cameraStreams.value[sourceId]) {
+    console.log(`[SourcePreviewBar] 停止摄像头流: ${sourceId}`)
+    cameraStreams.value[sourceId].getTracks().forEach(track => track.stop())
+    delete cameraStreams.value[sourceId]
+  }
+
+  // 4. 从 videoRefMap 中移除引用
+  delete videoRefMap.value[sourceId]
+
+  // 5. 清理缩略图缓存
+  delete thumbnails.value[sourceId]
+
+  // 6. 清理播放状态
+  delete isPlaying.value[sourceId]
+
+  // 7. 清理覆盖层
+  rtspPlayer.hideOverlay(sourceId)
+}
+
+// 🎯 存储上一次的预览源列表，用于检测被移除的源
+let previousPreviewSources = []
+
+// 🎯 防抖定时器引用
+let previewSourcesDebounceTimer = null
+
+// 🎯 防抖处理预览源变化
+const handlePreviewSourcesChange = async (newSources) => {
+  await nextTick()
+
+  // 🎯 找出被移除的源并清理资源
+  const newSourceIds = new Set(newSources.map(s => s.id))
+  const removedSources = previousPreviewSources.filter(s => !newSourceIds.has(s.id))
+
+  removedSources.forEach((removedSource) => {
+    console.log(`[SourcePreviewBar] 检测到源被移除，清理资源: ${removedSource.name}`)
+    cleanupSourceResources(removedSource.id)
+  })
+
+  // 更新之前的源列表
+  previousPreviewSources = [...newSources]
+
+  // 初始化新添加的源
+  newSources.forEach((source) => {
+    const videoEl = videoRefMap.value[source.id]
+
+    if (source.type === 'screen' && source.stream && videoEl) {
+      videoEl.srcObject = source.stream
+    } else if (['localCamera', 'localDevice', 'camera', 'usb'].includes(source.type) && videoEl) {
+      //  修复：只有当视频元素还没有流时才初始化，避免重复初始化导致闪烁
+      if (!videoEl.srcObject) {
+        initCameraStream(source, videoEl)
+      }
+    } else if (source.type === 'networkCamera' && videoEl) {
+      // 🎯 新增：处理网络摄像头RTSP流
+      console.log('[SourcePreviewBar] 检测到网络摄像头，加载RTSP流:', source.name)
+      initNetworkCameraStream(source, videoEl)
+    }
+  })
+}
+
+// 监听预览源变化，初始化视频元素并清理被移除源的资源
 watch(
   () => previewSources.value,
-  async (newSources) => {
-    await nextTick()
-
-    newSources.forEach((source) => {
-      const videoEl = videoRefMap.value[source.id]
-
-      if (source.type === 'screen' && source.stream && videoEl) {
-        videoEl.srcObject = source.stream
-      } else if (['localCamera', 'localDevice', 'camera', 'usb'].includes(source.type) && videoEl) {
-        //  修复：只有当视频元素还没有流时才初始化，避免重复初始化导致闪烁
-        if (!videoEl.srcObject) {
-          initCameraStream(source, videoEl)
-        }
-      } else if (source.type === 'networkCamera' && videoEl) {
-        // 🎯 新增：处理网络摄像头RTSP流
-        console.log('[SourcePreviewBar] 检测到网络摄像头，加载RTSP流:', source.name)
-        initNetworkCameraStream(source, videoEl)
-      }
-    })
+  (newSources) => {
+    // 🎯 防抖处理：避免频繁变化时重复初始化
+    if (previewSourcesDebounceTimer) {
+      clearTimeout(previewSourcesDebounceTimer)
+    }
+    previewSourcesDebounceTimer = setTimeout(() => {
+      handlePreviewSourcesChange(newSources)
+    }, 200)  // 🎯 200ms防抖延迟
   },
   { deep: true }
 )
@@ -709,22 +560,14 @@ watch(
 onUnmounted(() => {
   console.log('[SourcePreviewBar] 组件卸载，清理所有播放器')
 
-  // 🎯 销毁所有flv.js播放器实例
-  const videoElements = document.querySelectorAll('.source-preview-bar video.video-element')
-  videoElements.forEach(videoEl => {
-    if (videoEl._flvPlayer) {
-      console.log('[SourcePreviewBar] 销毁FLV播放器:', videoEl._flvPlayer)
-      try {
-        videoEl._flvPlayer.pause()
-        videoEl._flvPlayer.unload()
-        videoEl._flvPlayer.detachMediaElement()
-        videoEl._flvPlayer.destroy()
-      } catch (e) {
-        console.warn('[SourcePreviewBar] 销毁播放器时出错:', e)
-      }
-      videoEl._flvPlayer = null
-    }
-  })
+  // 🎯 清理防抖定时器
+  if (previewSourcesDebounceTimer) {
+    clearTimeout(previewSourcesDebounceTimer)
+    previewSourcesDebounceTimer = null
+  }
+
+  // 🎯 委托给 RTSP 播放器 Composable 进行清理
+  rtspPlayer.onUnmount()
 
   // 停止所有摄像头流
   Object.values(cameraStreams.value).forEach(stream => {
@@ -732,6 +575,8 @@ onUnmounted(() => {
   })
   cameraStreams.value = {}
 })
+
+
 
 
 </script>
@@ -1002,8 +847,13 @@ onUnmounted(() => {
     height: 100%;
 
     .video-element {
-      position: relative;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       z-index: 2;
+      object-fit: contain;
     }
   }
 }

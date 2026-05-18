@@ -1,6 +1,6 @@
 <template>
-  <div v-if="hasSubtitles && currentSubtitleText" class="global-subtitle-overlay">
-    <div class="global-subtitle-text">{{ currentSubtitleText }}</div>
+  <div v-if="showSubtitle" class="global-subtitle-overlay">
+    <div class="global-subtitle-text">{{ subtitleText }}</div>
   </div>
 </template>
 
@@ -9,8 +9,24 @@ import { computed } from 'vue'
 import { useSubtitleStore } from '@/stores/subtitleStore'
 
 const subtitleStore = useSubtitleStore()
-const hasSubtitles = computed(() => subtitleStore.subtitles.length > 0)
-const currentSubtitleText = computed(() => subtitleStore.currentSubtitle)
+
+// 计算属性：决定显示哪种字幕
+const hasRegularSubtitles = computed(() => subtitleStore.subtitles.length > 0)
+const showSubtitle = computed(() => {
+  // 如果启用了实时字幕，则显示实时字幕；否则显示常规字幕
+  if (subtitleStore.isRealtimeSubtitleEnabled && subtitleStore.realtimeSubtitleText) {
+    return true
+  }
+  return hasRegularSubtitles.value && subtitleStore.currentSubtitle
+})
+
+const subtitleText = computed(() => {
+  // 如果启用了实时字幕，则显示实时字幕；否则显示常规字幕
+  if (subtitleStore.isRealtimeSubtitleEnabled && subtitleStore.realtimeSubtitleText) {
+    return subtitleStore.realtimeSubtitleText
+  }
+  return subtitleStore.currentSubtitle
+})
 </script>
 
 <style lang="scss" scoped>

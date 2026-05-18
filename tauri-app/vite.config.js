@@ -31,6 +31,16 @@ export default defineConfig({
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, '')  // 移除 /api 前缀，因为后端不需要
       },
+      '/index/api': {
+        target: 'http://127.0.0.1:801',
+        changeOrigin: true,
+        secure: false
+      },
+      '/live': {
+        target: 'http://127.0.0.1:801',
+        changeOrigin: true,
+        secure: false
+      },
       '/webrtc': {
         target: process.env.VUE_APP_WS_BASE_URL || 'ws://localhost:8080',
         ws: true,  // 启用 WebSocket 代理

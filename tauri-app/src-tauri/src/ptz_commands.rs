@@ -3,6 +3,8 @@ use crate::ptz::PtzDeviceManager;
 use crate::ptz::discovery::DiscoveredOnvifDevice;
 use crate::ptz::onvif::{OnvifCamera, StreamUri};
 use std::time::Duration;
+use tokio::io::{AsyncWriteExt, AsyncReadExt};
+use roxmltree::Document;
 
 /// 绝对位置移动（点击画面控制）
 #[command]
@@ -159,6 +161,8 @@ pub async fn update_camera_config(
         let new_password = password.unwrap_or_else(|| camera.password().to_string());
         let new_name = name.unwrap_or_else(|| camera.id.clone());
 
+        let preserved_rtsp_url = manager.get_rtsp_url(&device_id).await;
+
         // 注销旧设备
         manager.unregister(&device_id).await;
 
@@ -174,6 +178,10 @@ pub async fn update_camera_config(
 
         let new_id = new_camera.id.clone();
         manager.register(new_camera).await;
+
+        if let Some(rtsp_url) = preserved_rtsp_url {
+            let _ = manager.set_rtsp_url(&new_id, rtsp_url).await;
+        }
 
         log::info!("✅ 设备配置已更新: {} -> {}", device_id, new_id);
         Ok(format!("设备配置已更新，新ID: {}", new_id))
@@ -223,13 +231,16 @@ pub async fn get_camera_details(
     let camera = manager.get(&device_id).await
         .ok_or_else(|| format!("设备未找到: {}", device_id))?;
 
+    let rtsp_url = manager.get_rtsp_url(&device_id).await;
+
     Ok(serde_json::json!({
         "id": camera.id,
         "ip": camera.ip(),
         "port": camera.port(),
         "username": camera.username(),
         "profile_token": camera.profile_token(),
-        "xaddr": format!("http://{}:{}/onvif/device_service", camera.ip(), camera.port())
+        "xaddr": format!("http://{}:{}/onvif/device_service", camera.ip(), camera.port()),
+        "rtsp_url": rtsp_url
     }))
 }
 
@@ -433,28 +444,39 @@ pub fn get_active_rtsp_sessions() -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// 🎯 通过 ONVIF 协议获取摄像机的 RTSP 流地址
+/// 🎯 通过 ONVIF 协议获取摄像机的 RTSP 流地址（基于已注册设备）
+/// 支持多种 RTSP 路径格式，自动适配不同品牌摄像机
 #[command]
 pub async fn get_onvif_stream_uri(
-    ip: String,
-    port: u16,
-    username: String,
-    password: String,
-    device_id: Option<String>,
+    device_id: String,
+    manager: State<'_, PtzDeviceManager>,
 ) -> Result<StreamUri, String> {
-    log::info!("🎬 通过 ONVIF 获取流地址: {}:{}", ip, port);
-    log::info!("🔐 认证信息: username='{}', password='{}'",
-        if username.is_empty() { "空" } else { "***" },
-        if password.is_empty() { "空" } else { "***" }
-    );
+    log::info!("🚀 [设备模式] 尝试获取设备 {} 的 RTSP 地址", device_id);
 
-    let cam_id = device_id.unwrap_or_else(|| format!("onvif_{}_{}", ip, port));
-    let camera = OnvifCamera::new(&cam_id, &ip, port, &username, &password, "");
-
-    camera
-        .get_stream_uri()
+    // 从设备管理器获取已注册的设备
+    let camera = manager
+        .get(&device_id)
         .await
-        .map_err(|e| format!("获取流地址失败: {}", e))
+        .ok_or_else(|| format!("设备未注册: {}", device_id))?;
+
+    // 使用设备内部的IP、端口、用户名和密码信息
+    log::info!("🔍 [设备模式] 使用设备信息 - IP: {}, 端口: {}, 用户名: {}",
+               camera.ip(), camera.port(), camera.username());
+
+    // 直接调用设备的get_stream_uri方法
+    match camera.get_stream_uri().await {
+        Ok(mut uri) => {
+            // 标准化URI，确保IP和端口正确
+            uri.uri = camera.normalize_rtsp_uri(&uri.uri);
+
+            log::info!("✅ [设备模式] 成功获取RTSP地址: {}", uri.uri);
+            Ok(uri)
+        }
+        Err(e) => {
+            log::error!("❌ [设备模式] 获取RTSP地址失败: {}", e);
+            Err(format!("获取RTSP地址失败: {}", e))
+        }
+    }
 }
 
 /// 🎯 尝试使用通用RTSP模板获取流地址（当ONVIF失败时的备选方案）
@@ -487,34 +509,50 @@ pub async fn try_common_rtsp_templates(
 }
 
 /// 生成常见的RTSP URL模板
-fn generate_rtsp_templates(ip: &str, port: u16, brand: &Option<String>, username: &str, password: &str) -> Vec<String> {
+fn generate_rtsp_templates(ip: &str, port: u16, _brand: &Option<String>, username: &str, password: &str) -> Vec<String> {
     let mut templates = Vec::new();
 
-    // 基础模板
-    templates.push(format!("rtsp://{}:{}/stream", ip, port));
-    templates.push(format!("rtsp://{}:{}/live", ip, port));
-    templates.push(format!("rtsp://{}:{}/video", ip, port));
+    // 🎯 优先尝试已验证的成功格式 (参考 192.168.5.165)
+    templates.push(format!("rtsp://{}:{}/live/av0", ip, port));
+    templates.push(format!("rtsp://{}:554/live/av0", ip));
 
-    // 根据品牌添加特定模板
-    match brand.as_deref() {
-        Some("hikvision") | Some("hik") => {
-            templates.push(format!("rtsp://{}:{}/h264/ch1/main/av_stream", ip, port));
-            templates.push(format!("rtsp://{}:{}/h264/ch1/sub/av_stream", ip, port));
-            templates.push(format!("rtsp://{}:{}/mpeg4/ch1/main/av_stream", ip, port));
-        }
-        Some("dahua") => {
-            templates.push(format!("rtsp://{}:{}/cam/realmonitor?channel=1&subtype=0", ip, port));
-            templates.push(format!("rtsp://{}:{}/cam/realmonitor?channel=1&subtype=1", ip, port));
-        }
-        Some("axis") => {
-            templates.push(format!("rtsp://{}:{}/axis-media/media.amp", ip, port));
-            templates.push(format!("rtsp://{}:{}/axis-media/media.3gp", ip, port));
-        }
-        _ => {
-            // 默认模板
-            templates.push(format!("rtsp://{}:{}/h264/ch1/main/av_stream", ip, port));
-            templates.push(format!("rtsp://{}:{}/cam/realmonitor?channel=1&subtype=0", ip, port));
-        }
+    // 尝试多个常见 RTSP 端口
+    let ports_to_try = if port != 554 && port != 2000 && port != 8554 {
+        vec![port, 554, 2000, 8554]
+    } else if port == 2000 {
+        vec![2000, 554, 8554, port]
+    } else {
+        vec![port, 2000, 554, 8554]
+    };
+
+    for &try_port in &ports_to_try {
+        // 🎯 基础通用模板
+        templates.push(format!("rtsp://{}:{}/stream1", ip, try_port));
+        templates.push(format!("rtsp://{}:{}/stream2", ip, try_port));
+        templates.push(format!("rtsp://{}:{}/h264", ip, try_port));
+        templates.push(format!("rtsp://{}:{}/video.mp4", ip, try_port));
+
+        //  海康威视 (Hikvision)
+        templates.push(format!("rtsp://{}:{}/h264/ch1/main/av_stream", ip, try_port));
+        templates.push(format!("rtsp://{}:{}/Streaming/Channels/101", ip, try_port));
+        templates.push(format!("rtsp://{}:{}/Streaming/Channels/102", ip, try_port)); // 子码流
+
+        // 🎯 大华 (Dahua)
+        templates.push(format!("rtsp://{}:{}/cam/realmonitor?channel=1&subtype=0", ip, try_port));
+        templates.push(format!("rtsp://{}:{}/cam/realmonitor?channel=1&subtype=1", ip, try_port)); // 子码流
+        templates.push(format!("rtsp://{}:{}/cgi-bin/mjpeg?channel=1&subtype=0", ip, try_port));
+
+        // 🎯 宇视 (Uniview)
+        templates.push(format!("rtsp://{}:{}/media/video1", ip, try_port));
+        templates.push(format!("rtsp://{}:{}/live/main", ip, try_port));
+
+        // 🎯 Axis
+        templates.push(format!("rtsp://{}:{}/axis-media/media.amp", ip, try_port));
+        templates.push(format!("rtsp://{}:{}/axis-media/media.amp?videocodec=h264", ip, try_port));
+
+        // 🎯 其他常见格式
+        templates.push(format!("rtsp://{}:{}/mpeg4", ip, try_port));
+        templates.push(format!("rtsp://{}:{}/h264", ip, try_port));
     }
 
     // 添加带认证的URL（如果需要）
@@ -528,14 +566,144 @@ fn generate_rtsp_templates(ip: &str, port: u16, brand: &Option<String>, username
         templates.extend(auth_templates);
     }
 
+    // 去重
+    templates.sort();
+    templates.dedup();
+
     templates
 }
 
-/// 简单的RTSP连接测试
-async fn test_rtsp_connection_simple(_url: &str) -> bool {
-    // 在实际实现中，这里应该进行TCP连接测试
-    // 目前只是模拟成功，实际项目中需要实现真正的连接测试
-    true
+/// 简单的RTSP连接测试 - 尝试建立TCP连接验证地址是否有效
+async fn test_rtsp_connection_simple(url: &str) -> bool {
+    // 简单的字符串解析，避免对 url crate 的依赖
+    let url_lower = url.to_lowercase();
+
+    // 提取主机和端口
+    let (host, port) = if let Some(rest) = url_lower.strip_prefix("rtsp://") {
+        let parts: Vec<&str> = rest.split('/').next().unwrap_or("").split(':').collect();
+        let host = parts.first().unwrap_or(&"").to_string();
+        let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(554);
+        (host, port)
+    } else {
+        // 不合法的URL，返回 false
+        log::warn!("⚠️ RTSP URL格式不正确: {}", url);
+        return false;
+    };
+
+    if host.is_empty() {
+        log::warn!("⚠️ 无法从RTSP URL中提取主机: {}", url);
+        return false;
+    }
+
+    //  关键修复：先验证RTSP端口是否开放（只检查554、8554等标准RTSP端口）
+    // 如果端口是2000（ONVIF HTTP端口），直接跳过，因为HTTP端口不会响应RTSP协议
+    if port == 2000 || port == 80 || port == 443 || port == 8080 {
+        log::info!("ℹ️ 跳过非RTSP端口: {}:{} (HTTP端口不响应RTSP协议)", host, port);
+        return false;
+    }
+
+    // 尝试TCP连接
+    match tokio::net::TcpStream::connect((&host[..], port)).await {
+        Ok(_) => {
+            log::info!("✅ RTSP连接测试成功: {}:{}", host, port);
+            true
+        }
+        Err(e) => {
+            log::warn!("⚠️ RTSP连接测试失败: {}:{} - {}", host, port, e);
+            false
+        }
+    }
+}
+
+/// 🎯 轻量级 RTSP 探测 - 使用 OPTIONS 请求验证连接
+/// 这是一个轻量级的验证方式，不会真正拉流，只是验证地址是否有效
+#[command]
+pub async fn probe_rtsp_connection(
+    uri: String,
+    timeout: Option<f64>,
+) -> Result<bool, String> {
+    let timeout_duration = Duration::from_secs_f64(timeout.unwrap_or(3.0));
+
+    log::info!("🔍 开始 RTSP 探测: {}, 超时: {}s", uri, timeout_duration.as_secs_f64());
+
+    // 解析 URL
+    let url_lower = uri.to_lowercase();
+    let (host, port) = if let Some(rest) = url_lower.strip_prefix("rtsp://") {
+        let parts: Vec<&str> = rest.split('/').next().unwrap_or("").split(':').collect();
+        let host = parts.first().unwrap_or(&"").to_string();
+        let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(554);
+        (host, port)
+    } else {
+        return Err("无效的 RTSP URL，必须以 rtsp:// 开头".to_string());
+    };
+
+    if host.is_empty() {
+        return Err("无法从 URL 中提取主机地址".to_string());
+    }
+
+    let result = tokio::time::timeout(timeout_duration, async {
+        // 建立 TCP 连接
+        let mut stream = match tokio::net::TcpStream::connect((&host[..], port)).await {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("❌ TCP 连接失败: {}", e);
+                return false;
+            }
+        };
+
+        // 发送 OPTIONS 请求
+        let request = format!(
+            "OPTIONS rtsp://{}/ RTSP/1.0\r\n\
+             CSeq: 1\r\n\
+             User-Agent: VideoCapture\r\n\
+             \r\n",
+            host
+        );
+
+        if let Err(e) = stream.write_all(request.as_bytes()).await {
+            log::warn!("❌ 发送 OPTIONS 请求失败: {}", e);
+            return false;
+        }
+
+        // 读取响应
+        let mut buf = [0u8; 512];
+        let n = match stream.read(&mut buf).await {
+            Ok(n) => n,
+            Err(e) => {
+                log::warn!("❌ 读取响应失败: {}", e);
+                return false;
+            }
+        };
+
+        if n == 0 {
+            log::warn!("❌ 响应为空");
+            return false;
+        }
+
+        let response = String::from_utf8_lossy(&buf[..n]);
+        log::debug!("📨 RTSP 响应: {}", response.trim());
+
+        // 检查是否包含 RTSP 200 OK 响应
+        if response.contains("RTSP/1.0 200") {
+            log::info!("✅ RTSP OPTIONS 验证成功");
+            true
+        } else if response.contains("RTSP/1.0 401") {
+            // 401 表示需要认证，但至少说明设备存在
+            log::info!("✅ RTSP OPTIONS 验证成功（需要认证）");
+            true
+        } else {
+            log::warn!("❌ RTSP 响应不是 200 或 401");
+            false
+        }
+    }).await;
+
+    match result {
+        Ok(success) => Ok(success),
+        Err(_) => {
+            log::warn!("❌ RTSP 探测超时");
+            Ok(false)
+        }
+    }
 }
 
 /// 🎯 ONVIF 设备完整配置信息
@@ -663,8 +831,18 @@ pub async fn detect_onvif_services(
             let url = format!("{}://{}:{}{}", protocol, ip, port, path);
             let start = Instant::now();
 
-            let soap = format!(
+            // 当用户名为空时不添加认证头
+            let soap = if username.is_empty() {
                 r#"<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+  <s:Body>
+    <tds:GetCapabilities/>
+  </s:Body>
+</s:Envelope>"#.to_string()
+            } else {
+                format!(
+                    r#"<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
             xmlns:tds="http://www.onvif.org/ver10/device/wsdl"
             xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
@@ -680,8 +858,9 @@ pub async fn detect_onvif_services(
     <tds:GetCapabilities/>
   </s:Body>
 </s:Envelope>"#,
-                username, password
-            );
+                    username, password
+                )
+            };
 
             match client
                 .post(&url)
@@ -764,8 +943,18 @@ pub async fn detect_onvif_services(
                 let url = format!("{}://{}:{}{}", protocol, ip, port, path);
                 let start = Instant::now();
 
-                let soap = format!(
+                // 当用户名为空时不添加认证头
+                let soap = if username.is_empty() {
                     r#"<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+  <s:Body>
+    <trt:GetProfiles />
+  </s:Body>
+</s:Envelope>"#.to_string()
+                } else {
+                    format!(
+                        r#"<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
             xmlns:trt="http://www.onvif.org/ver10/media/wsdl"
             xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
@@ -781,8 +970,9 @@ pub async fn detect_onvif_services(
     <trt:GetProfiles />
   </s:Body>
 </s:Envelope>"#,
-                    username, password
-                );
+                        username, password
+                    )
+                };
 
                 match client
                     .post(&url)
@@ -887,6 +1077,22 @@ pub async fn detect_onvif_services(
         &service_tests
     );
 
+    // 如果 ONVIF 没有获取到 RTSP 地址，直接尝试常见 RTSP 模板
+    if rtsp_stream_url.is_none() {
+        log::info!("🔍 [ONVIF检测] ONVIF未获取到RTSP地址，直接尝试常见模板...");
+
+        // 先尝试不指定品牌，遍历所有模板
+        let templates = generate_rtsp_templates(&ip, port, &None, &username, &password);
+
+        for template in templates {
+            if test_rtsp_connection_simple(&template).await {
+                log::info!("✅ [ONVIF检测] 找到可用RTSP地址: {}", template);
+                rtsp_stream_url = Some(template);
+                break;
+            }
+        }
+    }
+
     let config = OnvifDeviceConfig {
         ip,
         port,
@@ -906,33 +1112,68 @@ pub async fn detect_onvif_services(
 }
 
 /// 从XML响应中解析Media服务地址
+/// 🎯 使用 roxmltree 解析 Media Service URL，正确处理命名空间
 fn parse_media_service_url_from_xml(xml: &str) -> Option<String> {
-    // 查找 <tt:Media> 或 <trt:Media> 块中的 <tt:XAddr>
-    if let Some(media_start) = xml.find("<tt:Media>") {
-        if let Some(media_end) = xml[media_start..].find("</tt:Media>") {
-            let media_block = &xml[media_start..media_start + media_end + 11];
+    log::debug!("🔍 解析 Media Service URL，响应长度: {}", xml.len());
 
-            if let Some(xaddr_start) = media_block.find("<tt:XAddr>") {
-                if let Some(xaddr_end) = media_block[xaddr_start..].find("</tt:XAddr>") {
-                    let url = media_block[xaddr_start + 10..xaddr_start + xaddr_end].trim();
-                    if !url.is_empty() {
-                        return Some(url.to_string());
+    match Document::parse(xml) {
+        Ok(doc) => {
+            // 查找任意命名空间的 Media 元素
+            if let Some(media) = doc.descendants().find(|n| n.has_tag_name("Media")) {
+                // 在 Media 元素下查找任意命名空间的 XAddr 元素
+                if let Some(xaddr) = media.descendants().find(|n| n.has_tag_name("XAddr")) {
+                    if let Some(url) = xaddr.text() {
+                        let url_trimmed = url.trim();
+                        if !url_trimmed.is_empty() && url_trimmed.starts_with("http") {
+                            log::info!("✅ 成功解析 Media 服务地址: {}", url_trimmed);
+                            return Some(url_trimmed.to_string());
+                        }
                     }
                 }
             }
+
+            // 备选：直接查找所有 XAddr 元素
+            for node in doc.descendants() {
+                if node.has_tag_name("XAddr") {
+                    if let Some(url) = node.text() {
+                        let url_trimmed = url.trim();
+                        if !url_trimmed.is_empty() && url_trimmed.starts_with("http") {
+                            log::info!("✅ 通过全局查找解析到 Media 服务地址: {}", url_trimmed);
+                            return Some(url_trimmed.to_string());
+                        }
+                    }
+                }
+            }
+
+            None
+        }
+        Err(e) => {
+            log::warn!("⚠️ roxmltree 解析失败: {}，使用备用方法", e);
+            parse_media_service_url_from_xml_fallback(xml)
         }
     }
+}
 
-    // 尝试其他命名空间格式
-    if let Some(media_start) = xml.find("<trt:Media>") {
-        if let Some(media_end) = xml[media_start..].find("</trt:Media>") {
-            let media_block = &xml[media_start..media_start + media_end + 12];
+/// 备用解析方法（当 roxmltree 失败时使用）
+fn parse_media_service_url_from_xml_fallback(xml: &str) -> Option<String> {
+    let namespace_prefixes = ["tt", "trt", "wsnt", "ns1", "ns2", "tan", "tas", ""];
 
-            if let Some(xaddr_start) = media_block.find("<tt:XAddr>") {
-                if let Some(xaddr_end) = media_block[xaddr_start..].find("</tt:XAddr>") {
-                    let url = media_block[xaddr_start + 10..xaddr_start + xaddr_end].trim();
-                    if !url.is_empty() {
-                        return Some(url.to_string());
+    for prefix in &namespace_prefixes {
+        let media_start_tag = if prefix.is_empty() { "<Media>".to_string() } else { format!("<{}:Media>", prefix) };
+        let media_end_tag = if prefix.is_empty() { "</Media>".to_string() } else { format!("</{}:Media>", prefix) };
+        let xaddr_start_tag = if prefix.is_empty() { "<XAddr>".to_string() } else { format!("<{}:XAddr>", prefix) };
+        let xaddr_end_tag = if prefix.is_empty() { "</XAddr>".to_string() } else { format!("</{}:XAddr>", prefix) };
+
+        if let Some(media_start) = xml.find(&media_start_tag) {
+            if let Some(media_end) = xml[media_start..].find(&media_end_tag) {
+                let media_block = &xml[media_start..media_start + media_end + media_end_tag.len()];
+
+                if let Some(xaddr_start) = media_block.find(&xaddr_start_tag) {
+                    if let Some(xaddr_end) = media_block[xaddr_start..].find(&xaddr_end_tag) {
+                        let url = media_block[xaddr_start + xaddr_start_tag.len()..xaddr_start + xaddr_end].trim();
+                        if !url.is_empty() && url.starts_with("http") {
+                            return Some(url.to_string());
+                        }
                     }
                 }
             }
@@ -942,29 +1183,75 @@ fn parse_media_service_url_from_xml(xml: &str) -> Option<String> {
     None
 }
 
-/// 从XML响应中解析Profile Tokens
+/// 🎯 从XML响应中解析Profile Tokens（使用 roxmltree）
 fn parse_profile_tokens_from_xml(xml: &str) -> Vec<String> {
+    log::debug!("🔍 解析 Profile Tokens，响应长度: {}", xml.len());
+
+    match Document::parse(xml) {
+        Ok(doc) => {
+            let mut tokens = Vec::new();
+
+            // 查找所有 Profile 元素，获取 token 属性
+            for node in doc.descendants() {
+                if node.has_tag_name("Profile") {
+                    if let Some(token) = node.attribute("token") {
+                        let token_str = token.trim().to_string();
+                        if !token_str.is_empty() && !tokens.contains(&token_str) {
+                            tokens.push(token_str);
+                        }
+                    }
+                }
+            }
+
+            // 备选：查找 ProfileToken 标签
+            if tokens.is_empty() {
+                for node in doc.descendants() {
+                    if node.has_tag_name("ProfileToken") {
+                        if let Some(token) = node.text() {
+                            let token_str = token.trim().to_string();
+                            if !token_str.is_empty() && !tokens.contains(&token_str) {
+                                tokens.push(token_str);
+                            }
+                        }
+                    }
+                }
+            }
+
+            log::info!("✅ 解析到 {} 个 Profile Tokens: {:?}", tokens.len(), tokens);
+            tokens
+        }
+        Err(e) => {
+            log::warn!("⚠️ roxmltree 解析失败: {}，使用备用方法", e);
+            parse_profile_tokens_from_xml_fallback(xml)
+        }
+    }
+}
+
+/// 备用解析方法（当 roxmltree 失败时使用）
+fn parse_profile_tokens_from_xml_fallback(xml: &str) -> Vec<String> {
     let mut tokens = Vec::new();
 
-    // 查找所有 <tt:Profile token="...">
-    let mut search_start = 0;
-    while let Some(profile_start) = xml[search_start..].find("<tt:Profile") {
-        let profile_block_start = search_start + profile_start;
+    // 尝试匹配 token 属性
+    let pattern = regex::Regex::new(r#"(?i)token\s*=\s*["']([^"']+)["']"#).unwrap();
+    for cap in pattern.captures_iter(xml) {
+        if let Some(token) = cap.get(1) {
+            let t = token.as_str().to_string();
+            if !t.is_empty() && !tokens.contains(&t) {
+                tokens.push(t);
+            }
+        }
+    }
 
-        // 查找token属性
-        if let Some(token_start) = xml[profile_block_start..].find("token=\"") {
-            let token_value_start = profile_block_start + token_start + 7;
-            if let Some(token_end) = xml[token_value_start..].find('"') {
-                let token = xml[token_value_start..token_value_start + token_end].to_string();
+    // 备选：匹配 ProfileToken 标签
+    if tokens.is_empty() {
+        let tag_pattern = regex::Regex::new(r"<[^>]*:ProfileToken[^>]*>([^<]+)</[^>]*:ProfileToken>").unwrap();
+        for cap in tag_pattern.captures_iter(xml) {
+            if let Some(t) = cap.get(1) {
+                let token = t.as_str().to_string();
                 if !token.is_empty() && !tokens.contains(&token) {
                     tokens.push(token);
                 }
             }
-        }
-
-        search_start = profile_block_start + 1;
-        if search_start >= xml.len() {
-            break;
         }
     }
 
@@ -976,7 +1263,7 @@ fn determine_recommended_config(
     device_service_url: &Option<String>,
     media_service_url: &Option<String>,
     profiles: &[String],
-    service_tests: &[OnvifServiceTestResult],
+    _service_tests: &[OnvifServiceTestResult],
 ) -> OnvifRecommendedConfig {
     // 提取路径
     let device_path = device_service_url.as_ref()
@@ -1022,6 +1309,347 @@ fn determine_recommended_config(
         profile_token,
         confidence,
     }
+}
+
+/// 🎯 ONVIF 完整流程诊断命令
+/// 按标准 ONVIF 流程逐步执行：GetCapabilities -> GetProfiles -> GetStreamUri
+/// 输出每一步的详细日志，帮助定位问题
+#[tauri::command]
+pub async fn diagnose_onvif_flow(
+    ip: String,
+    port: u16,
+    username: String,
+    password: String,
+) -> Result<serde_json::Value, String> {
+    log::info!("{}", "=".repeat(60));
+    log::info!("🔍 [ONVIF诊断] 开始诊断 {}:{}", ip, port);
+    log::info!("{}", "=".repeat(60));
+
+    let mut diagnostics = serde_json::json!({
+        "ip": ip,
+        "port": port,
+        "username": if username.is_empty() { "空(无认证)" } else { &username },
+        "steps": []
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+
+    // ========== 步骤 1: GetCapabilities ==========
+    log::info!("\n📋 [步骤1/4] GetCapabilities - 获取设备服务地址");
+    let _step1 = serde_json::json!({
+        "step": 1,
+        "name": "GetCapabilities",
+        "description": "获取设备服务地址",
+        "request_url": format!("http://{}:{}/onvif/device_service", ip, port),
+        "success": false,
+        "response": null,
+        "error": null
+    });
+
+    let device_url = format!("http://{}:{}/onvif/device_service", ip, port);
+
+    // 构建带认证的 SOAP 请求
+    let soap_with_auth = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:tds="http://www.onvif.org/ver10/device/wsdl"
+            xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+  <s:Header>
+    <wsse:Security s:mustUnderstand="1">
+      <wsse:UsernameToken>
+        <wsse:Username>{}</wsse:Username>
+        <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">{}</wsse:Password>
+      </wsse:UsernameToken>
+    </wsse:Security>
+  </s:Header>
+  <s:Body>
+    <tds:GetCapabilities/>
+  </s:Body>
+</s:Envelope>"#,
+        username, password
+    );
+
+    match client
+        .post(&device_url)
+        .header("Content-Type", "application/soap+xml; charset=utf-8")
+        .header("SOAPAction", "\"http://www.onvif.org/ver10/device/wsdl/GetCapabilities\"")
+        .body(soap_with_auth)
+        .send()
+        .await
+    {
+        Ok(res) => {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+
+            log::info!("📥 [步骤1] 响应状态: {}", status.as_u16());
+            log::info!("📄 [步骤1] 响应内容 (前1000字符):\n{}", &body[..body.len().min(1000)]);
+
+            if status.is_success() {
+                // 尝试解析 Media URL
+                let media_url = parse_media_service_url_from_xml(&body);
+                if let Some(url) = media_url {
+                    log::info!("✅ [步骤1] 成功解析 Media URL: {}", url);
+                    diagnostics["steps"].as_array_mut().unwrap().push(serde_json::json!({
+                        "step": 1,
+                        "name": "GetCapabilities",
+                        "success": true,
+                        "media_service_url": url
+                    }));
+                    diagnostics["media_service_url"] = serde_json::json!(url);
+
+                    // 继续步骤 2
+                    // ========== 步骤 2: GetProfiles ==========
+                    log::info!("\n📋 [步骤2/4] GetProfiles - 获取媒体配置");
+                    match client
+                        .post(&url)
+                        .header("Content-Type", "application/soap+xml; charset=utf-8")
+                        .header("SOAPAction", "\"http://www.onvif.org/ver10/media/wsdl/GetProfiles\"")
+                        .body(format!(
+                            r#"<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:trt="http://www.onvif.org/ver10/media/wsdl"
+            xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+  <s:Header>
+    <wsse:Security s:mustUnderstand="1">
+      <wsse:UsernameToken>
+        <wsse:Username>{}</wsse:Username>
+        <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">{}</wsse:Password>
+      </wsse:UsernameToken>
+    </wsse:Security>
+  </s:Header>
+  <s:Body>
+    <trt:GetProfiles/>
+  </s:Body>
+</s:Envelope>"#,
+                            username, password
+                        ))
+                        .send()
+                        .await
+                    {
+                        Ok(profiles_res) => {
+                            let profiles_status = profiles_res.status();
+                            let profiles_body = profiles_res.text().await.unwrap_or_default();
+
+                            log::info!("📥 [步骤2] 响应状态: {}", profiles_status.as_u16());
+
+                            if profiles_status.is_success() {
+                                // 解析 Profile Tokens
+                                let tokens = parse_profile_tokens_from_xml(&profiles_body);
+                                log::info!("📋 [步骤2] 找到 Profile Tokens: {:?}", tokens);
+
+                                if !tokens.is_empty() {
+                                    diagnostics["steps"].as_array_mut().unwrap().push(serde_json::json!({
+                                        "step": 2,
+                                        "name": "GetProfiles",
+                                        "success": true,
+                                        "profile_tokens": tokens
+                                    }));
+
+                                    // 继续步骤 3
+                                    // ========== 步骤 3: GetStreamUri ==========
+                                    for token in &tokens {
+                                        log::info!("\n📋 [步骤3/4] GetStreamUri - 获取RTSP地址 (Profile: {})", token);
+
+                                        match client
+                                            .post(&url)
+                                            .header("Content-Type", "application/soap+xml; charset=utf-8")
+                                            .header("SOAPAction", "\"http://www.onvif.org/ver10/media/wsdl/GetStreamUri\"")
+                                            .body(format!(
+                                                r#"<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:trt="http://www.onvif.org/ver10/media/wsdl"
+            xmlns:tt="http://www.onvif.org/ver10/schema"
+            xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+  <s:Header>
+    <wsse:Security s:mustUnderstand="1">
+      <wsse:UsernameToken>
+        <wsse:Username>{}</wsse:Username>
+        <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">{}</wsse:Password>
+      </wsse:UsernameToken>
+    </wsse:Security>
+  </s:Header>
+  <s:Body>
+    <trt:GetStreamUri>
+      <trt:StreamSetup>
+        <tt:Stream>RTP-Unicast</tt:Stream>
+        <tt:Transport>
+          <tt:Protocol>RTSP</tt:Protocol>
+        </tt:Transport>
+      </trt:StreamSetup>
+      <trt:ProfileToken>{}</trt:ProfileToken>
+    </trt:GetStreamUri>
+  </s:Body>
+</s:Envelope>"#,
+                                                username, password, token
+                                            ))
+                                            .send()
+                                            .await
+                                        {
+                                            Ok(uri_res) => {
+                                                let uri_status = uri_res.status();
+                                                let uri_body = uri_res.text().await.unwrap_or_default();
+
+                                                log::info!("📥 [步骤3] 响应状态: {}", uri_status.as_u16());
+
+                                                if uri_status.is_success() {
+                                                    // 解析 RTSP URI
+                                                    if let Some(rtsp_uri) = parse_stream_uri_from_xml(&uri_body) {
+                                                        log::info!("✅ [步骤3] 成功获取 RTSP 地址: {}", rtsp_uri);
+                                                        diagnostics["steps"].as_array_mut().unwrap().push(serde_json::json!({
+                                                            "step": 3,
+                                                            "name": "GetStreamUri",
+                                                            "success": true,
+                                                            "profile_token": token,
+                                                            "rtsp_uri": rtsp_uri
+                                                        }));
+                                                        diagnostics["rtsp_uri"] = serde_json::json!(rtsp_uri);
+                                                        diagnostics["success"] = serde_json::json!(true);
+
+                                                        log::info!("{}", "=".repeat(60));
+                                                        log::info!("🎉 [ONVIF诊断] 完整流程成功！");
+                                                        log::info!("📹 RTSP 地址: {}", rtsp_uri);
+                                                        log::info!("{}", "=".repeat(60));
+
+                                                        return Ok(diagnostics);
+                                                    } else {
+                                                        log::warn!("⚠️ [步骤3] 无法解析 RTSP URI");
+                                                    }
+                                                } else {
+                                                    log::warn!("⚠️ [步骤3] GetStreamUri 返回错误: {}", uri_status.as_u16());
+                                                }
+                                            }
+                                            Err(e) => {
+                                                log::warn!("⚠️ [步骤3] 请求失败: {}", e);
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    log::warn!("⚠️ [步骤2] 无法解析 Profile Tokens");
+                                    diagnostics["steps"].as_array_mut().unwrap().push(serde_json::json!({
+                                        "step": 2,
+                                        "name": "GetProfiles",
+                                        "success": false,
+                                        "error": "无法解析 Profile Tokens"
+                                    }));
+                                }
+                            } else {
+                                log::warn!("⚠️ [步骤2] GetProfiles 返回错误: {}", profiles_status.as_u16());
+                                diagnostics["steps"].as_array_mut().unwrap().push(serde_json::json!({
+                                    "step": 2,
+                                    "name": "GetProfiles",
+                                    "success": false,
+                                    "error": format!("HTTP {}", profiles_status.as_u16())
+                                }));
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("⚠️ [步骤2] 请求失败: {}", e);
+                            diagnostics["steps"].as_array_mut().unwrap().push(serde_json::json!({
+                                "step": 2,
+                                "name": "GetProfiles",
+                                "success": false,
+                                "error": e.to_string()
+                            }));
+                        }
+                    }
+                } else {
+                    log::warn!("⚠️ [步骤1] 无法解析 Media URL");
+                    diagnostics["steps"].as_array_mut().unwrap().push(serde_json::json!({
+                        "step": 1,
+                        "name": "GetCapabilities",
+                        "success": false,
+                        "error": "无法从响应中解析 Media URL"
+                    }));
+                }
+            } else {
+                log::warn!("⚠️ [步骤1] GetCapabilities 返回错误: {}", status.as_u16());
+                diagnostics["steps"].as_array_mut().unwrap().push(serde_json::json!({
+                    "step": 1,
+                    "name": "GetCapabilities",
+                    "success": false,
+                    "error": format!("HTTP {}", status.as_u16())
+                }));
+            }
+        }
+        Err(e) => {
+            log::error!("❌ [步骤1] 请求失败: {}", e);
+            diagnostics["steps"].as_array_mut().unwrap().push(serde_json::json!({
+                "step": 1,
+                "name": "GetCapabilities",
+                "success": false,
+                "error": e.to_string()
+            }));
+        }
+    }
+
+    diagnostics["success"] = serde_json::json!(false);
+    log::info!("{}", "=".repeat(60));
+    log::info!("❌ [ONVIF诊断] 流程失败");
+    log::info!("{}", "=".repeat(60));
+
+    Err(format!("ONVIF 流程失败，请检查日志"))
+}
+
+/// 🎯 解析 RTSP URI（使用 roxmltree）
+fn parse_stream_uri_from_xml(xml: &str) -> Option<String> {
+    log::debug!("🔍 解析 Stream URI，响应长度: {}", xml.len());
+
+    match Document::parse(xml) {
+        Ok(doc) => {
+            // 查找任意命名空间的 Uri 元素
+            for node in doc.descendants() {
+                if node.has_tag_name("Uri") {
+                    if let Some(uri_str) = node.text() {
+                        let uri = uri_str.trim().to_string();
+                        if !uri.is_empty() && (uri.starts_with("rtsp://") || uri.starts_with("rtsps://")) {
+                            log::info!("✅ 成功解析 Stream URI: {}", uri);
+                            return Some(uri);
+                        }
+                    }
+                }
+            }
+
+            None
+        }
+        Err(e) => {
+            log::warn!("⚠️ roxmltree 解析失败: {}，使用备用方法", e);
+            parse_stream_uri_from_xml_fallback(xml)
+        }
+    }
+}
+
+/// 备用解析方法（当 roxmltree 失败时使用）
+fn parse_stream_uri_from_xml_fallback(xml: &str) -> Option<String> {
+    let patterns = [
+        r"<tt:Uri>([^<]+)</tt:Uri>",
+        r"<trt:Uri>([^<]+)</trt:Uri>",
+        r"<Uri>([^<]+)</Uri>",
+    ];
+
+    for pattern in &patterns {
+        if let Ok(re) = regex::Regex::new(pattern) {
+            if let Some(cap) = re.captures(xml).and_then(|c| c.get(1)) {
+                let uri = cap.as_str().trim().to_string();
+                if uri.starts_with("rtsp://") || uri.starts_with("rtsps://") {
+                    return Some(uri);
+                }
+            }
+        }
+    }
+
+    if let Some(start) = xml.find("rtsp://") {
+        let end = xml[start..].find(|c| c == '"' || c == '<' || c == ' ' || c == '\n')
+            .unwrap_or(xml.len() - start);
+        let uri = xml[start..start + end].trim().to_string();
+        if uri.starts_with("rtsp://") {
+            return Some(uri);
+        }
+    }
+
+    None
 }
 
 #[tauri::command]
@@ -1230,3 +1858,48 @@ fn extract_xml_tag(xml: &str, tag: &str) -> Option<String> {
     None
 }
 
+/// 🎯 设备RTSP流地址管理命令
+/// 允许为已注册的ONVIF设备手动设置RTSP流地址
+#[command]
+pub async fn set_device_rtsp_url(
+    device_id: String,
+    rtsp_url: String,
+    manager: State<'_, PtzDeviceManager>,
+) -> Result<String, String> {
+    // 验证设备是否存在
+    if manager.get(&device_id).await.is_none() {
+        return Err(format!("设备未注册: {}", device_id));
+    }
+
+    // 验证RTSP URL格式
+    if !rtsp_url.starts_with("rtsp://") {
+        return Err("RTSP地址必须以 rtsp:// 开头".to_string());
+    }
+
+    log::info!("🎯 设置设备 {} 的RTSP地址: {}", device_id, rtsp_url);
+
+    manager
+        .set_rtsp_url(&device_id, rtsp_url.clone())
+        .await
+        .map_err(|e| format!("设置RTSP地址失败: {}", e))?;
+
+    Ok(rtsp_url)
+}
+
+/// 🎯 获取设备的RTSP流地址（如果已设置）
+#[command]
+pub async fn get_device_rtsp_url(
+    device_id: String,
+    manager: State<'_, PtzDeviceManager>,
+) -> Result<String, String> {
+    // 验证设备是否存在
+    if manager.get(&device_id).await.is_none() {
+        return Err(format!("设备未注册: {}", device_id));
+    }
+
+    if let Some(rtsp_url) = manager.get_rtsp_url(&device_id).await {
+        Ok(rtsp_url)
+    } else {
+        Err("未找到预设的RTSP地址，请使用 get_onvif_stream_uri 获取或手动配置".to_string())
+    }
+}

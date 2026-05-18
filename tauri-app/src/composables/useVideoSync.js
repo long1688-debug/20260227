@@ -58,15 +58,15 @@ class SyncStateReplicator {
     // 🎯 Slave 按 sourceId 分组：sourceId -> Map<canvasId, { video, syncEnabled, lastSyncedTime, registeredAt }>
     this.slaveGroups = new Map();
 
-    this.syncThreshold = 0.05; // 🎯 提高精度：时间偏差阈值 (秒),超过此值才同步
+    this.syncThreshold = 0.02; // 🎯 提高精度：时间偏差阈值从50ms降至20ms(秒),超过此值才同步
     this.isReplicating = false; // 防止循环同步标记
     this.enableStrictMode = true; // 启用严格模式：Slave 禁止自主播放/暂停
 
     // 🎯 新增：Slave 横向同步 - 当同一 sourceId 有多个 Slave 时，任意一个 Slave 的操作会同步到其他 Slave
     this.enableSlaveCrossSync = true;
 
-    // 🎯 新增：同步间隔配置
-    this.syncInterval = 100; // 定时同步间隔(ms)
+    // 🎯 新增：同步间隔配置 - 缩短同步周期提高响应速度
+    this.syncInterval = 50; // 定时同步间隔从100ms降至50ms(ms)
     this.maxSyncAttempts = 5; // 最大同步尝试次数
 
     // 🎯 新增：错误统计
@@ -80,6 +80,9 @@ class SyncStateReplicator {
     this.cleanupInterval = setInterval(() => {
       this.cleanupStaleSyncStates();
     }, 30000); // 每30秒清理一次
+
+    // 🎯 新增：实时流检测 - 对于RTSP等实时流采用不同的同步策略
+    this.realTimeSources = new Set(); // 实时流sourceId集合
   }
 
   /**
@@ -393,6 +396,9 @@ class SyncStateReplicator {
 
     if (!master || !slaves) return;
 
+    // 🎯 检测是否为实时流（直播流）
+    const isRealTimeSource = this.realTimeSources.has(sourceId);
+
     for (const [canvasId, slave] of slaves.entries()) {
       if (!slave.syncEnabled) continue;
 
@@ -420,9 +426,21 @@ class SyncStateReplicator {
         }
 
         // 🎯 同步播放时间
+        // 🎯 对于实时流，采用更宽松的同步策略（避免频繁seek导致卡顿）
         const timeDiff = Math.abs(master.video.currentTime - slave.video.currentTime);
-        if (timeDiff > this.syncThreshold) {
-          slave.video.currentTime = master.video.currentTime;
+        const currentThreshold = isRealTimeSource ? 0.1 : this.syncThreshold;
+
+        if (timeDiff > currentThreshold) {
+          // 🎯 对于大偏差，使用平滑seek
+          if (timeDiff > 1.0) {
+            // 大偏差直接跳转
+            slave.video.currentTime = master.video.currentTime;
+          } else {
+            // 小偏差逐步调整
+            const adjustment = timeDiff > 0 ? 0.05 : -0.05;
+            slave.video.currentTime = Math.max(0, slave.video.currentTime + adjustment);
+          }
+          slave.lastSyncedTime = Date.now();
         }
       }
     }
@@ -1642,11 +1660,30 @@ export function useVideoSync() {
    */
   const registerMasterVideo = (videoElement, source) => {
     // 🎯 兼容两种调用方式：传入 source 对象或 sourceId 字符串
-    const sourceId = typeof source === 'string' ? source : (source?.id || source);
+    let sourceId = typeof source === 'string' ? source : (source?.id || source);
     // 🎯 如果传入的是对象且有 audioEnabled 属性，使用它；否则默认 true（主控默认发声）
     const audioEnabled = typeof source === 'object' && source !== null
       ? (source.audioEnabled !== undefined ? source.audioEnabled : true)
       : true;
+
+    // 🎯 关键修复：处理网络摄像头类型 - 需要转换为streamId格式
+    // 网络摄像头的streamId格式是: camera_xxx (xxx是源ID的最后一部分)
+    if (typeof source === 'object' && source !== null) {
+      if (source.type === 'networkCamera' || source.type === 'camera') {
+        const idParts = sourceId.split('_');
+        const lastPart = idParts[idParts.length - 1];
+        sourceId = `camera_${lastPart}`;
+        console.log(`[useVideoSync] 主控视频-网络摄像头，转换为streamId格式: ${sourceId}`);
+      }
+    } else if (typeof sourceId === 'string') {
+      // 🎯 处理字符串形式的网络摄像头ID
+      if (sourceId.startsWith('source_') && sourceId.split('_').length >= 3) {
+        const idParts = sourceId.split('_');
+        const lastPart = idParts[idParts.length - 1];
+        sourceId = `camera_${lastPart}`;
+        console.log(`[useVideoSync] 主控视频-字符串形式的网络摄像头ID，转换为streamId格式: ${sourceId}`);
+      }
+    }
 
     console.log(`[useVideoSync] 注册主控视频: ${sourceId}, audioEnabled: ${audioEnabled}`);
 
@@ -1661,21 +1698,65 @@ export function useVideoSync() {
    */
   const registerSlaveVideo = (videoElement, canvasId, source) => {
     // 🎯 兼容两种调用方式：传入 source 对象或 sourceId 字符串
-    const sourceId = typeof source === 'string' ? source : (source?.id || source);
+    let sourceId = typeof source === 'string' ? source : (source?.id || source);
+
+    // 🎯 关键修复：处理克隆源 - 使用原始源ID进行同步
+    // 当source是克隆对象时（通过拖拽创建），需要使用原始源ID来查找Master
+    // 克隆源的ID格式为: originalId_canvas_timestamp
+    // 我们需要提取原始ID用于同步，同时保持克隆ID用于音频路由
+    let syncSourceId = sourceId; // 用于同步的源ID（找到Master）
+    let audioSourceId = sourceId; // 用于音频路由的源ID
+
+    if (typeof source === 'object' && source !== null) {
+      // 优先使用 originalStreamId（如果存在）
+      if (source.originalStreamId) {
+        syncSourceId = source.originalStreamId;
+        console.log(`[useVideoSync] 检测到克隆源，使用原始StreamId进行同步: ${syncSourceId}`);
+      }
+      // 其次检查是否为克隆（isClone标记）
+      else if (source.isClone && source.id && source.id.includes('_canvas_')) {
+        // 从ID中提取原始部分：originalId_canvas_timestamp -> originalId
+        syncSourceId = source.id.split('_canvas_')[0];
+        console.log(`[useVideoSync] 检测到克隆源，从ID提取原始ID进行同步: ${syncSourceId}`);
+      }
+
+      // 🎯 关键修复：处理网络摄像头类型 - 需要转换为streamId格式
+      // 网络摄像头的streamId格式是: camera_xxx (xxx是源ID的最后一部分)
+      // 如果源类型是网络摄像头，需要将源ID转换为streamId格式
+      if (source.type === 'networkCamera' || source.type === 'camera') {
+        const idParts = syncSourceId.split('_');
+        const lastPart = idParts[idParts.length - 1];
+        const streamId = `camera_${lastPart}`;
+        console.log(`[useVideoSync] 检测到网络摄像头，转换为streamId格式: ${streamId}`);
+        syncSourceId = streamId;
+      }
+    } else if (typeof sourceId === 'string') {
+      // 🎯 处理字符串形式的网络摄像头ID
+      // 如果源ID以 'source_' 开头且长度足够，尝试转换为streamId格式
+      if (sourceId.startsWith('source_') && sourceId.split('_').length >= 3) {
+        const idParts = sourceId.split('_');
+        const lastPart = idParts[idParts.length - 1];
+        const streamId = `camera_${lastPart}`;
+        console.log(`[useVideoSync] 字符串形式的网络摄像头ID，转换为streamId格式: ${streamId}`);
+        syncSourceId = streamId;
+      }
+    }
+
     // 🎯 从属视频默认静音（audioEnabled=false）
     const audioEnabled = typeof source === 'object' && source !== null
       ? (source.audioEnabled !== undefined ? source.audioEnabled : false)
       : false;
 
-    console.log(`[useVideoSync] 注册从属视频: canvasId=${canvasId}, sourceId=${sourceId}, audioEnabled: ${audioEnabled}`);
+    console.log(`[useVideoSync] 注册从属视频: canvasId=${canvasId}, sourceId=${sourceId}, syncSourceId=${syncSourceId}, audioEnabled: ${audioEnabled}`);
 
     // 🎯 关键修复：先更新源的音频状态，确保音频路由知道该源默认不发声
     // 这是解决多个视频同时发声的关键步骤
-    audioRouter.updateSourceAudioState(sourceId, { enabled: audioEnabled, volume: 100 });
+    audioRouter.updateSourceAudioState(audioSourceId, { enabled: audioEnabled, volume: 100 });
 
-    stateReplicator.registerSlave(videoElement, canvasId, sourceId);
+    // 🎯 使用 syncSourceId 进行同步（找到正确的Master）
+    stateReplicator.registerSlave(videoElement, canvasId, syncSourceId);
     // 🎯 修复：audioRouter.register 参数顺序应为 (videoElement, id, sourceId, isPreview)
-    audioRouter.register(videoElement, canvasId, sourceId, false);
+    audioRouter.register(videoElement, canvasId, audioSourceId, false);
 
     // 🎯 立即执行音频去重，确保同一源只有一个实例发声
     setTimeout(() => {
@@ -1686,14 +1767,59 @@ export function useVideoSync() {
   /**
    * 移除从属视频 - 🎯 需要指定 sourceId
    */
-  const unregisterSlaveVideo = (canvasId, sourceId) => {
+  const unregisterSlaveVideo = (canvasId, source) => {
+    // 🎯 兼容两种调用方式：传入 source 对象或 sourceId 字符串
+    let sourceId = typeof source === 'string' ? source : (source?.id || source);
+
+    // 🎯 关键修复：处理克隆源 - 使用原始源ID进行移除
+    if (typeof source === 'object' && source !== null) {
+      if (source.originalStreamId) {
+        sourceId = source.originalStreamId;
+      } else if (source.isClone && source.id && source.id.includes('_canvas_')) {
+        sourceId = source.id.split('_canvas_')[0];
+      }
+
+      // 🎯 关键修复：处理网络摄像头类型 - 需要转换为streamId格式
+      if (source.type === 'networkCamera' || source.type === 'camera') {
+        const idParts = sourceId.split('_');
+        const lastPart = idParts[idParts.length - 1];
+        sourceId = `camera_${lastPart}`;
+      }
+    } else if (typeof sourceId === 'string') {
+      // 🎯 处理字符串形式的网络摄像头ID
+      if (sourceId.startsWith('source_') && sourceId.split('_').length >= 3) {
+        const idParts = sourceId.split('_');
+        const lastPart = idParts[idParts.length - 1];
+        sourceId = `camera_${lastPart}`;
+      }
+    }
+
     stateReplicator.removeSlave(canvasId, sourceId);
   };
 
   /**
    * 清除主控视频 - 🎯 需要指定 sourceId
    */
-  const clearMasterVideo = (sourceId) => {
+  const clearMasterVideo = (source) => {
+    // 🎯 兼容两种调用方式：传入 source 对象或 sourceId 字符串
+    let sourceId = typeof source === 'string' ? source : (source?.id || source);
+
+    // 🎯 关键修复：处理网络摄像头类型 - 需要转换为streamId格式
+    if (typeof source === 'object' && source !== null) {
+      if (source.type === 'networkCamera' || source.type === 'camera') {
+        const idParts = sourceId.split('_');
+        const lastPart = idParts[idParts.length - 1];
+        sourceId = `camera_${lastPart}`;
+      }
+    } else if (typeof sourceId === 'string') {
+      // 🎯 处理字符串形式的网络摄像头ID
+      if (sourceId.startsWith('source_') && sourceId.split('_').length >= 3) {
+        const idParts = sourceId.split('_');
+        const lastPart = idParts[idParts.length - 1];
+        sourceId = `camera_${lastPart}`;
+      }
+    }
+
     stateReplicator.clearMaster(sourceId);
   };
 

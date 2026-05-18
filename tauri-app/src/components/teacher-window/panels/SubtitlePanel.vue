@@ -307,12 +307,12 @@ import {
 
 // 标签页
 const tabs = [
+  { id: 'voice', label: '语音助手', icon: Microphone },
   { id: 'realtime', label: '实时字幕', icon: Microphone },
   { id: 'video', label: '视频转字幕', icon: VideoCamera },
-  { id: 'manage', label: '字幕管理', icon: Document },
-  { id: 'voice', label: '语音助手', icon: Microphone }
+  { id: 'manage', label: '字幕管理', icon: Document }
 ];
-const activeTab = ref('realtime');
+const activeTab = ref('voice');
 
 // 实时字幕
 const subtitleEnabled = ref(false);

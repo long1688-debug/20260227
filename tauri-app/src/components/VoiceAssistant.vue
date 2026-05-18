@@ -167,6 +167,22 @@
             <el-icon><Delete /></el-icon>
             <span>清空记录</span>
           </button>
+          <button
+            class="action-btn"
+            :class="{ active: subtitleStore.showSubtitles }"
+            @click="toggleSubtitleDisplay"
+          >
+            <el-icon><Monitor /></el-icon>
+            <span>{{ subtitleStore.showSubtitles ? '隐藏字幕' : '显示字幕' }}</span>
+          </button>
+          <button
+            class="action-btn"
+            :class="{ active: subtitleStore.isRealtimeSubtitleEnabled }"
+            @click="toggleRealtimeSubtitle"
+          >
+            <el-icon><Microphone /></el-icon>
+            <span>{{ subtitleStore.isRealtimeSubtitleEnabled ? '关闭实时字幕' : '开启实时字幕' }}</span>
+          </button>
         </div>
       </div>
     </div>
@@ -195,6 +211,8 @@ import {
   Warning, Setting, Delete, Volume
 } from '@/components/icons';
 import { ttsService, TTSService } from '@/services/ttsService';
+import { useSubtitleStore } from '@/stores/subtitleStore';
+import { useRealtimeSubtitle } from '@/composables/useRealtimeSubtitle';
 
 // 状态
 const isListening = ref(false);
@@ -226,6 +244,9 @@ const ttsVoices = ref([]);
 
 // TTS 实例
 let tts = null;
+
+// 📝 字幕 Store
+const subtitleStore = useSubtitleStore();
 
 // 最近执行的命令
 const recentCommands = ref([]);
@@ -329,10 +350,18 @@ const initRecognition = () => {
 
       if (interimTranscript) {
         currentSpeech.value = interimTranscript;
+        // 📝 实时更新字幕（临时字幕）
+        subtitleStore.updateCurrentSubtitle(interimTranscript);
       }
 
       if (finalTranscript) {
         currentSpeech.value = '';
+        // 📝 添加最终字幕到字幕列表
+        subtitleStore.addSubtitle({
+          text: finalTranscript,
+          startTime: new Date().toISOString(),
+          endTime: new Date().toISOString()
+        });
         processVoiceCommand(finalTranscript);
       }
     };
@@ -686,6 +715,25 @@ const addRecentCommand = (command, success) => {
 const clearHistory = () => {
   recentCommands.value = [];
   ElMessage.info('历史记录已清空');
+};
+
+// 获取实时字幕功能
+const { toggleRealtimeSubtitle: toggleRealtimeSubtitleInternal } = useRealtimeSubtitle();
+
+// 📝 切换实时字幕
+const toggleRealtimeSubtitle = async () => {
+  await toggleRealtimeSubtitleInternal();
+
+  // 动态获取store以更新消息
+  const { useSubtitleStore } = await import('@/stores/subtitleStore');
+  const localSubtitleStore = useSubtitleStore();
+  ElMessage.success(localSubtitleStore.isRealtimeSubtitleEnabled ? '实时字幕已开启' : '实时字幕已关闭');
+};
+
+// 📝 切换字幕显示
+const toggleSubtitleDisplay = () => {
+  subtitleStore.toggleSubtitles();
+  ElMessage.success(subtitleStore.showSubtitles ? '字幕已显示' : '字幕已隐藏');
 };
 
 // 显示提示消息
@@ -1146,6 +1194,16 @@ onUnmounted(() => {
 
     &:hover {
       background: #415A77;
+    }
+
+    &.active {
+      background: #4CC9F0;
+      border-color: #4CC9F0;
+      color: #0D1B2A;
+
+      &:hover {
+        background: #3db8e0;
+      }
     }
 
     .el-icon {

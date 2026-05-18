@@ -10,6 +10,7 @@ const { WebSocketServer } = require('ws');
 const crypto = require('crypto');
 const cocoDataset = require('./coco-dataset');
 const serverMonitor = require('./services/server-monitor');
+const { whisperService } = require('./services/whisper-service');
 
 // ==================== 配置 ====================
 const CONFIG = {
@@ -702,14 +703,67 @@ async function handleRequest(req, res, pathname, url) {
         }
         // ========== Whisper 语音识别相关 ==========
         else if (pathname === '/api/whisper/status' && req.method === 'GET') {
-            // 检查 Whisper 模型是否可用（暂时返回未实现）
-            console.log('[Whisper API] 功能待实现');
-            sendJSON(res, {
-                available: false,
-                ffmpeg: await checkFfmpegAvailable(),
-                model: CONFIG.subtitle?.model || 'N/A',
-                message: 'Whisper 功能尚未在后端实现，请使用 Tauri 应用的 Whisper 功能'
-            });
+            console.log('[Whisper API] 获取状态');
+            try {
+                const status = await whisperService.getStatus();
+                sendJSON(res, {
+                    success: true,
+                    ...status,
+                    ffmpeg: await checkFfmpegAvailable()
+                });
+            } catch (error) {
+                sendJSON(res, {
+                    success: false,
+                    message: error.message
+                }, 500);
+            }
+        }
+        else if (pathname === '/api/whisper/recognize' && req.method === 'POST') {
+            console.log('[Whisper API] 开始识别');
+            try {
+                // 读取请求体
+                const body = await parseRequestBody(req);
+                const { audioPath, model, language, translate } = body;
+
+                if (!audioPath) {
+                    return sendJSON(res, {
+                        success: false,
+                        message: '缺少音频文件路径'
+                    }, 400);
+                }
+
+                const result = await whisperService.recognizeFile(audioPath, {
+                    model: model || 'base',
+                    language: language || 'zh',
+                    translate: translate || false
+                });
+
+                sendJSON(res, {
+                    success: true,
+                    ...result
+                });
+            } catch (error) {
+                console.error('[Whisper API] 识别失败:', error);
+                sendJSON(res, {
+                    success: false,
+                    message: error.message
+                }, 500);
+            }
+        }
+        else if (pathname === '/api/whisper/models' && req.method === 'GET') {
+            console.log('[Whisper API] 获取模型列表');
+            try {
+                const models = await whisperService.getStatus();
+                sendJSON(res, {
+                    success: true,
+                    models: models.models
+                });
+            } catch (error) {
+                sendJSON(res, {
+                    success: false,
+                    message: error.message
+                }, 500);
+            }
         }
         // 视频上传
         else if (pathname === '/api/upload/video' && req.method === 'POST') {
@@ -1393,17 +1447,34 @@ if (!fs.existsSync(CONFIG.dataDir)) {
     const ffmpegAvailable = await checkFfmpegAvailable();
     console.log(ffmpegAvailable ? '  ✓ FFmpeg 可用' : '  ✗ FFmpeg 不可用');
 
-    // 检查 Whisper（暂时禁用，等待 subtitleGenerator 模块实现）
-    // const whisperAvailable = await subtitleGenerator.checkWhisperAvailable();
-    // console.log(whisperAvailable.available ? '  ✓ Whisper 可用' : '  ✗ Whisper 不可用');
-    console.log('  ⚠️  Whisper 功能待实现');
+    // 检查 Whisper
+    const whisperStatus = await whisperService.getStatus();
+    console.log(whisperStatus.available ? '  ✓ Whisper 可用' : '  ✗ Whisper 不可用');
+    if (!whisperStatus.available) {
+        console.log('     💡 请安装 Python 和 whisper 库: pip install openai-whisper');
+    }
 
     console.log();
 })();
 
 // 启动 HTTP 服务器
 const httpServer = createHttpServer();
-httpServer.listen(CONFIG.httpPort, '0.0.0.0', () => {
+
+httpServer.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+        console.error(`❌ 错误: 端口 ${CONFIG.httpPort} 已被占用`);
+        console.log('请尝试以下操作:');
+        console.log(`1. 使用环境变量指定其他端口: HTTP_PORT=8081 npm start`);
+        console.log('2. 停止占用该端口的程序');
+        console.log('3. 修改配置中的默认端口号');
+        process.exit(1);
+    } else {
+        console.error('服务器启动错误:', error);
+        process.exit(1);
+    }
+});
+
+httpServer.listen(CONFIG.httpPort, '0.0.0.0', async () => {
     console.log(`✓ HTTP 服务器运行在 http://${CONFIG.httpPort === 80 ? 'localhost' : 'localhost:' + CONFIG.httpPort}`);
     console.log(`  API 状态：http://${CONFIG.httpPort === 80 ? 'localhost' : 'localhost:' + CONFIG.httpPort}/api/status`);
     console.log();
@@ -1425,11 +1496,22 @@ httpServer.listen(CONFIG.httpPort, '0.0.0.0', () => {
     console.log(`  清空日志：POST http://${CONFIG.httpPort === 80 ? 'localhost' : 'localhost:' + CONFIG.httpPort}/api/monitor/logs/clear`);
     console.log(`  导出日志：GET http://${CONFIG.httpPort === 80 ? 'localhost' : 'localhost:' + CONFIG.httpPort}/api/monitor/logs/export`);
     console.log(`  刷新状态：POST http://${CONFIG.httpPort === 80 ? 'localhost' : 'localhost:' + CONFIG.httpPort}/api/monitor/refresh`);
+    console.log();
+    console.log('🎤 Whisper API:');
+    console.log(`  获取状态：GET http://${CONFIG.httpPort === 80 ? 'localhost' : 'localhost:' + CONFIG.httpPort}/api/whisper/status`);
+    console.log(`  识别音频：POST http://${CONFIG.httpPort === 80 ? 'localhost' : 'localhost:' + CONFIG.httpPort}/api/whisper/recognize`);
+    console.log(`  获取模型列表：GET http://${CONFIG.httpPort === 80 ? 'localhost' : 'localhost:' + CONFIG.httpPort}/api/whisper/models`);
 });
 
 // 启动 WebSocket 服务器
 const wsServer = createWebSocketServer();
 console.log(`✓ WebSocket 服务器运行在 ws://localhost:${CONFIG.wsPort}/ws`);
+
+// 初始化 Whisper 服务
+(async () => {
+    const whisperStatus = await whisperService.initialize();
+    serverMonitor.updateService('whisper', whisperStatus.available ? 'online' : 'offline', '-');
+})();
 
 // 初始化服务监控
 serverMonitor.log('success', '系统启动', '系统监控模块已加载');

@@ -23,6 +23,7 @@
       @move="handleMoveSource"
       @resize="handleResizeSource"
       @context-menu="handleContextMenu"
+      @fullscreen="handleFullscreen"
     />
 
     <!-- 全屏模式下的控制栏 -->
@@ -31,13 +32,37 @@
         <el-button
           size="small"
           type="primary"
-          :icon="FullScreen"
           @click="exitFullscreen"
         >
           退出全屏 (ESC)
         </el-button>
       </el-button-group>
       <span class="fullscreen-title">{{ fullscreenSource.name }}</span>
+      <!-- 文档翻页控制 -->
+      <el-button-group v-if="isDocumentType" class="fullscreen-pagination">
+        <el-button
+          size="small"
+          :icon="ArrowLeft"
+          @click="handlePageChange('prev')"
+          :disabled="currentDocPage <= 1"
+        >
+          上一页
+        </el-button>
+        <el-button
+          size="small"
+          @click="exitFullscreen"
+        >
+          {{ currentDocPage }} / {{ totalDocPages }}
+        </el-button>
+        <el-button
+          size="small"
+          :icon="ArrowRight"
+          @click="handlePageChange('next')"
+          :disabled="currentDocPage >= totalDocPages"
+        >
+          下一页
+        </el-button>
+      </el-button-group>
     </div>
 
     <!-- 右键菜单 -->
@@ -58,7 +83,7 @@
 <script setup>
 import { computed, ref, reactive, onMounted, onUnmounted } from 'vue';
 import { ElMessage } from 'element-plus';
-import { FullScreen } from '@element-plus/icons-vue';
+import { FullScreen, ArrowLeft, ArrowRight } from '@element-plus/icons-vue';
 import { useCanvasStore } from '@/stores/canvasStore';
 import CanvasSourceItem from './CanvasSourceItem.vue';
 import ContextMenu from './CanvasContextMenu.vue';
@@ -74,6 +99,31 @@ const isDragOver = ref(false);
 
 // 全屏状态
 const fullscreenSource = ref(null);
+
+// 文档类型标识
+const documentTypes = ['ppt', 'word', 'pdf', 'mindmap', 'webpage', 'document', 'text', 'image'];
+const isDocumentType = computed(() => {
+  return fullscreenSource.value && documentTypes.includes(fullscreenSource.value.type);
+});
+
+// 文档翻页状态（用于全屏控制栏显示）
+const currentDocPage = ref(1);
+const totalDocPages = ref(1);
+
+// 文档翻页处理
+const handlePageChange = (direction) => {
+  if (!fullscreenSource.value) return;
+  // 向子组件发送翻页事件
+  const canvasEl = document.querySelector('.free-canvas');
+  if (canvasEl) {
+    canvasEl.dispatchEvent(new CustomEvent('doc-page-change', {
+      detail: {
+        sourceId: fullscreenSource.value.id,
+        direction
+      }
+    }));
+  }
+};
 
 // 解构 Store
 const {
@@ -396,7 +446,7 @@ const showPropertiesPanel = (source) => {
   // 全屏模式
   &.fullscreen-mode {
     z-index: 9999;
-    
+
     // 隐藏网格背景
     &::before {
       display: none;
@@ -430,7 +480,7 @@ const showPropertiesPanel = (source) => {
   backdrop-filter: blur(10px);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  
+
   .fullscreen-title {
     color: #fff;
     font-size: 14px;

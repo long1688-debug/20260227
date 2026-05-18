@@ -18,7 +18,7 @@ impl ZLMediaKitState {
             process: Mutex::new(None),
             host: "127.0.0.1".to_string(),
             port: 801, // ZLMediaKit HTTP 端口
-            secret: "035c73f7-bb6b-4889-a715-d9eb2d1925cc".to_string(), // 默认密钥
+            secret: "8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3".to_string(), // ZLMediaKit 配置的密钥
         }
     }
 }
@@ -46,13 +46,31 @@ pub async fn start_zlmediakit(app_handle: AppHandle) -> Result<String, String> {
 
     println!("[ZLMediaKit] 启动服务: {}", zlmediakit_path);
 
+    // 🎯 关键修复：确保必要的目录存在
+    // ZLMediaKit 需要 log 和 data 目录来存储日志和运行时数据
+    let zlmediakit_dir = std::path::Path::new(&zlmediakit_path)
+        .parent()
+        .unwrap_or(std::path::Path::new("."));
+
+    // 创建日志目录
+    let log_dir = zlmediakit_dir.join("log");
+    if !log_dir.exists() {
+        std::fs::create_dir_all(&log_dir)
+            .map_err(|e| format!("创建日志目录失败: {}", e))?;
+        println!("[ZLMediaKit] 创建日志目录: {}", log_dir.display());
+    }
+
+    // 创建数据目录（ZLMediaKit 可能需要）
+    let data_dir = zlmediakit_dir.join("data");
+    if !data_dir.exists() {
+        std::fs::create_dir_all(&data_dir)
+            .map_err(|e| format!("创建数据目录失败: {}", e))?;
+        println!("[ZLMediaKit] 创建数据目录: {}", data_dir.display());
+    }
+
     // 启动 ZLMediaKit 进程
     let mut child = Command::new(&zlmediakit_path)
-        .current_dir(
-            std::path::Path::new(&zlmediakit_path)
-                .parent()
-                .unwrap_or(std::path::Path::new("."))
-        )
+        .current_dir(zlmediakit_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -118,14 +136,18 @@ fn find_zlmediakit_binary() -> Result<String, String> {
         // Windows 根目录（直接安装）
         "C:\\ZLMediaKit\\MediaServer.exe".to_string(),
         "D:\\ZLMediaKit\\MediaServer.exe".to_string(),
+        "F:\\ZLMediaKit\\MediaServer.exe".to_string(),
         // Windows 常见路径
         "C:\\ZLMediaKit\\release\\windows\\Debug\\MediaServer.exe".to_string(),
         "C:\\ZLMediaKit\\release\\windows\\Release\\MediaServer.exe".to_string(),
         "D:\\ZLMediaKit\\release\\windows\\Debug\\MediaServer.exe".to_string(),
         "D:\\ZLMediaKit\\release\\windows\\Release\\MediaServer.exe".to_string(),
+        "F:\\ZLMediaKit\\release\\windows\\Debug\\MediaServer.exe".to_string(),
+        "F:\\ZLMediaKit\\release\\windows\\Release\\MediaServer.exe".to_string(),
         // 相对路径（开发环境）
         "../ZLMediaKit/release/windows/Debug/MediaServer.exe".to_string(),
         "../ZLMediaKit/release/windows/Release/MediaServer.exe".to_string(),
+        "../../ZLMediaKit/MediaServer.exe".to_string(),
         // Linux/macOS 路径
         "/usr/local/bin/MediaServer".to_string(),
         "/opt/ZLMediaKit/MediaServer".to_string(),

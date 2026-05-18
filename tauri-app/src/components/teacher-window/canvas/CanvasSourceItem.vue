@@ -9,26 +9,27 @@
     :style="itemStyle"
     @mousedown="handleMouseDown"
     @contextmenu="handleContextMenu"
+    @dblclick="handleDoubleClick"
   >
     <!-- 标题栏 -->
     <div v-if="source.showTitle" class="source-header">
       <span class="source-title">{{ source.name }}</span>
       <div class="source-controls" v-if="isSelected">
-        <el-button 
-          size="small" 
+        <el-button
+          size="small"
           text
           @click.stop="toggleVisibility"
           :icon="source.visible ? 'View' : 'Hide'"
         />
-        <el-button 
-          size="small" 
+        <el-button
+          size="small"
           text
           @click.stop="toggleLock"
           :icon="source.locked ? 'Lock' : 'Unlock'"
         />
       </div>
     </div>
-    
+
     <!-- 内容区域 -->
     <div class="source-content" :style="{ filter: filterCSS }">
       <!-- 根据类型渲染不同内容 -->
@@ -41,26 +42,14 @@
       <MindmapContent v-else-if="source.type === 'mindmap'" :source="source" />
       <RemoteDesktopContent v-else-if="source.type === 'remote_desktop'" :source="source" />
       <CameraContent v-else-if="source.type === 'camera'" :source="source" />
-      <!-- PDF 使用 iframe 直接加载 -->
-      <div v-else-if="source.type === 'pdf'" class="pdf-content-wrapper">
-        <iframe
-          v-if="source.properties?.url"
-          :src="source.properties.url"
-          class="pdf-iframe"
-          frameborder="0"
-        ></iframe>
-        <div v-else class="pdf-placeholder">
-          <el-icon><Document /></el-icon>
-          <span>{{ source.name }}</span>
-        </div>
-      </div>
+      <PdfContent v-else-if="source.type === 'pdf'" :source="source" />
     </div>
-    
+
     <!-- 选中边框和控制点 -->
     <div v-if="isSelected && !source.locked" class="selection-border">
       <!-- 8个控制点 -->
-      <div 
-        v-for="handle in resizeHandles" 
+      <div
+        v-for="handle in resizeHandles"
         :key="handle.position"
         class="resize-handle"
         :class="handle.position"
@@ -79,6 +68,7 @@ import ImageContent from './contents/ImageContent.vue';
 import WebpageContent from './contents/WebpageContent.vue';
 import PptContent from './contents/PptContent.vue';
 import WordContent from './contents/WordContent.vue';
+import PdfContent from './contents/PdfContent.vue';
 import MindmapContent from './contents/MindmapContent.vue';
 import RemoteDesktopContent from './contents/RemoteDesktopContent.vue';
 import CameraContent from './contents/CameraContent.vue';
@@ -98,7 +88,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['select', 'move', 'resize', 'context-menu']);
+const emit = defineEmits(['select', 'move', 'resize', 'context-menu', 'fullscreen']);
 
 // 拖拽状态
 const isDragging = ref(false);
@@ -145,17 +135,17 @@ const itemStyle = computed(() => ({
  */
 const handleMouseDown = (e) => {
   if (props.source.locked) return;
-  
+
   // 如果点击的是控制点,不触发拖拽
   if (e.target.classList.contains('resize-handle')) return;
-  
+
   e.stopPropagation();
   emit('select', props.source.id);
-  
+
   isDragging.value = true;
   dragStart.value = { x: e.clientX, y: e.clientY };
   sourceStart.value = { x: props.source.x, y: props.source.y };
-  
+
   // 添加全局事件监听
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', handleMouseUp);
@@ -166,23 +156,23 @@ const handleMouseDown = (e) => {
  */
 const handleMouseMove = (e) => {
   if (!isDragging.value) return;
-  
+
   const deltaX = e.clientX - dragStart.value.x;
   const deltaY = e.clientY - dragStart.value.y;
-  
+
   // 将像素偏移转换为百分比
   const containerWidth = e.target.parentElement?.offsetWidth || window.innerWidth;
   const containerHeight = e.target.parentElement?.offsetHeight || window.innerHeight;
-  
+
   const percentX = (deltaX / containerWidth) * 100;
   const percentY = (deltaY / containerHeight) * 100;
-  
+
   emit('move', {
     sourceId: props.source.id,
     deltaX: percentX,
     deltaY: percentY
   });
-  
+
   dragStart.value = { x: e.clientX, y: e.clientY };
 };
 
@@ -200,7 +190,7 @@ const handleMouseUp = () => {
  */
 const startResize = (e, handlePosition) => {
   if (props.source.locked) return;
-  
+
   e.stopPropagation();
   isResizing.value = true;
   resizeHandle.value = handlePosition;
@@ -210,7 +200,7 @@ const startResize = (e, handlePosition) => {
     width: props.source.width,
     height: props.source.height
   };
-  
+
   document.addEventListener('mousemove', handleResizeMove);
   document.addEventListener('mouseup', handleResizeEnd);
 };
@@ -220,28 +210,28 @@ const startResize = (e, handlePosition) => {
  */
 const handleResizeMove = (e) => {
   if (!isResizing.value) return;
-  
+
   const containerWidth = e.target.parentElement?.parentElement?.offsetWidth || window.innerWidth;
   const containerHeight = e.target.parentElement?.parentElement?.offsetHeight || window.innerHeight;
-  
+
   const deltaX = ((e.clientX - resizeStart.value.x) / containerWidth) * 100;
   const deltaY = ((e.clientY - resizeStart.value.y) / containerHeight) * 100;
-  
+
   let deltaWidth = 0;
   let deltaHeight = 0;
-  
+
   // 根据不同控制点计算尺寸变化
   if (resizeHandle.value.includes('e')) deltaWidth = deltaX;
   if (resizeHandle.value.includes('w')) deltaWidth = -deltaX;
   if (resizeHandle.value.includes('s')) deltaHeight = deltaY;
   if (resizeHandle.value.includes('n')) deltaHeight = -deltaY;
-  
+
   emit('resize', {
     sourceId: props.source.id,
     deltaWidth,
     deltaHeight
   });
-  
+
   resizeStart.value.x = e.clientX;
   resizeStart.value.y = e.clientY;
 };
@@ -276,6 +266,17 @@ const toggleVisibility = () => {
 const toggleLock = () => {
   console.log('[CanvasSourceItem] 切换锁定');
 };
+
+/**
+ * 双击全屏
+ */
+const handleDoubleClick = () => {
+  // 只对文档类型（全屏后需要翻页的）触发全屏
+  const fullscreenableTypes = ['ppt', 'word', 'pdf', 'mindmap', 'webpage', 'document', 'text', 'image'];
+  if (fullscreenableTypes.includes(props.source.type)) {
+    emit('fullscreen', props.source);
+  }
+};
 </script>
 
 <style scoped lang="scss">
@@ -286,17 +287,17 @@ const toggleLock = () => {
   border-radius: 8px;
   overflow: hidden;
   transition: border-color 0.2s, box-shadow 0.2s;
-  
+
   &.selected {
     border-color: #4299e1;
     box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.3);
   }
-  
+
   &.locked {
     opacity: 0.7;
     cursor: default;
   }
-  
+
   .source-header {
     display: flex;
     justify-content: space-between;
@@ -305,62 +306,26 @@ const toggleLock = () => {
     background: rgba(0, 0, 0, 0.6);
     color: white;
     font-size: 12px;
-    
+
     .source-title {
       flex: 1;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    
+
     .source-controls {
       display: flex;
       gap: 4px;
     }
   }
-  
+
   .source-content {
     width: 100%;
     height: calc(100% - 28px);
     overflow: hidden;
-
-    // PDF 内容样式
-    .pdf-content-wrapper {
-      width: 100%;
-      height: 100%;
-      background: #fff;
-      position: relative;
-
-      .pdf-iframe {
-        width: 100%;
-        height: 100%;
-        border: none;
-      }
-
-      .pdf-placeholder {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        background: #1a202c;
-        color: #a0aec0;
-
-        .el-icon {
-          font-size: 48px;
-          margin-bottom: 8px;
-        }
-
-        span {
-          font-size: 14px;
-          text-align: center;
-          padding: 0 8px;
-        }
-      }
-    }
   }
-  
+
   .selection-border {
     position: absolute;
     top: 0;
@@ -368,7 +333,7 @@ const toggleLock = () => {
     right: 0;
     bottom: 0;
     pointer-events: none;
-    
+
     .resize-handle {
       position: absolute;
       width: 10px;
@@ -378,7 +343,7 @@ const toggleLock = () => {
       border-radius: 50%;
       pointer-events: all;
       cursor: pointer;
-      
+
       &.nw { top: -5px; left: -5px; cursor: nw-resize; }
       &.n { top: -5px; left: 50%; transform: translateX(-50%); cursor: n-resize; }
       &.ne { top: -5px; right: -5px; cursor: ne-resize; }
