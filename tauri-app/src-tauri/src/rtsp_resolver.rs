@@ -239,16 +239,23 @@ pub async fn resolve_rtsp(req: RtspResolveRequest) -> Result<RtspResolveResult, 
         false
     }
 
-    // 并行验证候选：使用并发探针并验证 SDP 内容（确保是视频/ H264）
-    log::info!("[RTSP解析] 并行探测回退候选并验证 SDP");
+    // 并行验证候选：使用并发探针并验证 SDP 内容（确保是视频/ H264），带并发速率限制与重试策略
+    log::info!("[RTSP解析] 并行探测回退候选并验证 SDP（并发限制 + 重试）");
 
     use futures_util::future::join_all;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use base64::{engine::general_purpose, Engine as _};
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
 
-    async fn probe_and_validate(uri: String, username: String, password: String) -> Option<String> {
-        // 返回 Some(sdp) 表示验证通过并包含 SDP
-        if let Ok(parsed) = Url::parse(&uri) {
+    // 并发/重试参数
+    let concurrency_limit: usize = 4; // 同时探测的最大候选数
+    let retries: usize = 2; // 每个候选的重试次数
+    let base_backoff_ms: u64 = 300; // 指数退避基数（毫秒）
+
+    // 单次探针实现（不含重试）
+    async fn probe_once(uri: &str, username: &str, password: &str) -> Option<String> {
+        if let Ok(parsed) = Url::parse(uri) {
             if let Some(host) = parsed.host_str() {
                 let port = parsed.port_or_known_default().unwrap_or(554);
                 let addr = format!("{}:{}", host, port);
@@ -259,22 +266,15 @@ pub async fn resolve_rtsp(req: RtspResolveRequest) -> Result<RtspResolveResult, 
                         if let Ok(Ok(n)) = timeout(Duration::from_secs(3), stream.read(&mut buf)).await {
                             let resp = String::from_utf8_lossy(&buf[..n]).to_string();
                             if resp.contains("RTSP/1.0 200") {
-                                // 提取 SDP（若存在）并做简单校验
-                                let sdp = if let Some(idx) = resp.find("\r\n\r\n") {
-                                    resp[idx+4..].to_string()
-                                } else if let Some(idx) = resp.find("\n\n") {
-                                    resp[idx+2..].to_string()
-                                } else {
-                                    String::new()
-                                };
+                                // 提取 SDP 并做简单校验
+                                let sdp = if let Some(idx) = resp.find("\r\n\r\n") { resp[idx+4..].to_string() } else { String::new() };
                                 let sdp_lower = sdp.to_lowercase();
                                 if sdp_lower.contains("m=video") && (sdp_lower.contains("h264") || sdp_lower.contains("rtpmap")) {
                                     return Some(sdp);
                                 }
-                                // 若没有 SDP 或不含视频信息，则仍然认为失败
                             }
-                            // 若返回401并提供用户名，则尝试 Basic Auth
                             if resp.contains("RTSP/1.0 401") && !username.is_empty() {
+                                // Basic Auth 尝试
                                 drop(stream);
                                 if let Ok(Ok(mut s2)) = timeout(Duration::from_secs(3), tokio::net::TcpStream::connect(&addr)).await {
                                     let creds = format!("{}:{}", username, password);
@@ -303,22 +303,41 @@ pub async fn resolve_rtsp(req: RtspResolveRequest) -> Result<RtspResolveResult, 
         None
     }
 
-    // 并发启动所有探针
-    let mut probe_futures = Vec::new();
-    for c in &candidates {
-        probe_futures.push(probe_and_validate(c.clone(), req.username.clone(), req.password.clone()));
+    // 使用信号量限制并发，并为每个候选实现重试
+    let sem = Arc::new(Semaphore::new(concurrency_limit));
+    let mut futures = Vec::new();
+    for candidate in &candidates {
+        let uri = candidate.clone();
+        let user = req.username.clone();
+        let pass = req.password.clone();
+        let sem_clone = sem.clone();
+        futures.push(async move {
+            // 获取许可证
+            let _permit = sem_clone.acquire().await.unwrap();
+            // 重试机制
+            for attempt in 0..=retries {
+                if let Some(sdp) = probe_once(&uri, &user, &pass).await {
+                    return Some((uri, sdp));
+                }
+                if attempt < retries {
+                    let backoff = base_backoff_ms * (2u64.pow(attempt as u32));
+                    tokio::time::sleep(Duration::from_millis(backoff)).await;
+                }
+            }
+            None
+        });
     }
 
-    let probe_results = join_all(probe_futures).await;
-    for (i, res) in probe_results.into_iter().enumerate() {
-        if let Some(_sdp) = res {
-            let cand = candidates.get(i).cloned().unwrap_or_default();
-            log::info!("[RTSP解析] 并行探测找到可用候选: {}", cand);
+    // 并发执行并在结果中选第一个成功项
+    let results = join_all(futures).await;
+    for res in results.into_iter() {
+        if let Some((uri, _sdp)) = res {
+            log::info!("[RTSP解析] 并行探测找到可用候选: {}", uri);
             return Ok(RtspResolveResult {
-                uri: cand.clone(),
+                uri: uri.clone(),
                 source: "fallback_probe_parallel".into(),
                 valid: true,
-                media_urls: cand.clone(),
+                media_urls: uri.clone(),
             });
         }
     }
