@@ -570,7 +570,8 @@ export function isWebRTCSupported() {
  */
 export async function checkZLMWebRTCAvailable(host = ZLM_DEFAULT_HOST, port = ZLM_DEFAULT_HTTP_PORT) {
   try {
-    const response = await fetch(`/index/api/getServerInfo`, {
+    // 使用 getApiList 代替 getServerInfo（新版ZLMediaKit API）
+    const response = await fetch(`/index/api/getApiList`, {
       method: 'GET',
       signal: AbortSignal.timeout(3000)
     })

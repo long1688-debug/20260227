@@ -11,6 +11,28 @@ const util = require('util');
 const execPromise = util.promisify(exec);
 
 /**
+ * 获取 ffmpeg 可执行文件路径
+ * 如果在 PATH 中找不到，尝试常见安装位置
+ */
+function getFfmpegCommand() {
+  // 先检查 PATH 中是否有 ffmpeg
+  const pathEnv = process.env.Path || process.env.PATH || '';
+  const pathSep = process.platform === 'win32' ? ';' : ':';
+  const ffmpegDirs = [
+    'C:\\ffmpeg\\bin',
+  ];
+
+  // 确保 ffmpeg 目录在 PATH 中
+  for (const dir of ffmpegDirs) {
+    if (fs.existsSync(dir) && !pathEnv.split(pathSep).includes(dir)) {
+      process.env.Path = dir + pathSep + process.env.Path;
+    }
+  }
+
+  return 'ffmpeg';
+}
+
+/**
  * Whisper 配置
  */
 const WHISPER_CONFIG = {
@@ -162,7 +184,8 @@ async function convertToWav(inputPath) {
     const outputPath = path.join(WHISPER_CONFIG.tempDir, `audio_${Date.now()}.wav`);
 
     // 使用 ffmpeg 转换
-    const process = spawn('ffmpeg', [
+    const ffmpegCmd = getFfmpegCommand();
+    const process = spawn(ffmpegCmd, [
       '-i', inputPath,
       '-ar', '16000',
       '-ac', '1',

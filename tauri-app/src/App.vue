@@ -15,11 +15,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { 
-  initDeviceDetection, 
-  setupBreakpointListener, 
+import {
+  initDeviceDetection,
+  setupBreakpointListener,
   getDeviceInfo,
-  DeviceType 
+  DeviceType
 } from '@/utils/device';
 
 const backendLoading = ref(false);
@@ -30,7 +30,7 @@ onMounted(async () => {
   // 初始化设备检测（必须在应用挂载前完成）
   initDeviceDetection();
   setupBreakpointListener();
-  
+
   // 获取设备信息并暴露到全局
   const deviceInfo = getDeviceInfo();
   window.__DEVICE_INFO__ = deviceInfo;
@@ -85,10 +85,10 @@ function setupDeviceSpecificBehavior(deviceInfo) {
 function setupTouchOptimizations() {
   // 添加触控优化类
   document.documentElement.classList.add('touch-optimized');
-  
+
   // 设置触摸动作支持
   document.documentElement.style.touchAction = 'manipulation';
-  
+
   // 增加按钮点击区域
   document.documentElement.style.setProperty('--button-min-width', '48px');
   document.documentElement.style.setProperty('--button-min-height', '48px');
@@ -106,7 +106,7 @@ function setupMaterialDesignStyles() {
  */
 function setupXinchuangOptimizations() {
   document.documentElement.classList.add('xinchuang-optimized');
-  
+
   // 信创系统字体优化
   document.documentElement.style.fontFamily = 'Noto Sans SC, Microsoft YaHei, sans-serif';
 }
@@ -116,89 +116,46 @@ function setupXinchuangOptimizations() {
  */
 async function initTauriFeatures() {
   try {
-    const appModule = await import('@tauri-apps/api/app');
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-
     // 获取应用信息
     try {
+      const appModule = await import('@tauri-apps/api/app');
       const name = await appModule.getName();
       const version = await appModule.getVersion();
       window.__APP_INFO__ = { name, version };
       console.log(`[App] 应用: ${name} v${version}`);
     } catch {}
 
-    // 🎯 关键修复：动态调整窗口尺寸以排除任务栏
+    // 🎯 获取显示器信息用于 CSS 变量（窗口最大化由后端 main.rs 处理）
     try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
       const { primaryMonitor } = await import('@tauri-apps/api/window');
-      const { LogicalSize, LogicalPosition } = await import('@tauri-apps/api/dpi');
 
-      const appWindow = getCurrentWindow();
+      if (typeof primaryMonitor === 'function') {
+        const monitor = await primaryMonitor();
 
-      // 获取主显示器信息
-      const monitor = await primaryMonitor();
+        if (monitor) {
+          const screenSize = monitor.size;
+          const workArea = monitor.workArea || monitor.size;
 
-      if (monitor) {
-        // Tauri v2: monitor.workArea 和 monitor.size 都是 { width, height } 对象
-        // workArea 可能包含 position: { x, y }
-        const screenSize = monitor.size;
-        const workArea = monitor.workArea || monitor.size;
+          const screenH = screenSize?.height ?? 0;
+          const workH = workArea?.height ?? screenH;
 
-        // 安全获取尺寸值（兼容不同返回格式）
-        const screenW = screenSize?.width ?? 0;
-        const screenH = screenSize?.height ?? 0;
-        const workW = workArea?.width ?? screenW;
-        const workH = workArea?.height ?? screenH;
-        const workX = workArea?.position?.x ?? 0;
-        const workY = workArea?.position?.y ?? 0;
+          // 计算任务栏高度
+          const taskbarHeight = screenH - workH;
+          console.log(`[App] 任务栏高度: ${taskbarHeight}px`);
 
-        console.log(`[App] 屏幕尺寸: ${screenW}x${screenH}`);
-        console.log(`[App] 工作区域: ${workW}x${workH}`);
-
-        // 计算任务栏高度
-        const taskbarHeight = screenH - workH;
-        console.log(`[App] 任务栏高度: ${taskbarHeight}px`);
-
-        // 设置 CSS 变量供组件使用（仅在有效值时设置）
-        if (taskbarHeight > 0 && !isNaN(taskbarHeight)) {
-          document.documentElement.style.setProperty('--taskbar-height', `${taskbarHeight}px`);
-        } else {
-          document.documentElement.style.setProperty('--taskbar-height', '0px');
-        }
-        if (workH > 0 && !isNaN(workH)) {
-          document.documentElement.style.setProperty('--safe-viewport-height', `${workH}px`);
-        }
-
-        console.log(`[App] 已设置CSS变量: --taskbar-height=${taskbarHeight}px, --safe-viewport-height=${workH}px`);
-
-        // 🎯 关键：强制调整窗口大小以匹配工作区域
-        try {
-          const currentSize = await appWindow.outerSize();
-          const currentPosition = await appWindow.outerPosition();
-
-          console.log(`[App] 当前窗口: ${currentSize.width}x${currentSize.height} @ (${currentPosition.x}, ${currentPosition.y})`);
-
-          // 🎯 修复：Tauri v2 使用 LogicalSize 和 LogicalPosition（从 @tauri-apps/api/dpi 导入）
-          if (workW > 0 && workH > 0) {
-            const sizeObj = new LogicalSize(workW, workH);
-            await appWindow.setSize(sizeObj);
-
-            const positionObj = new LogicalPosition(workX, workY);
-            await appWindow.setPosition(positionObj);
-
-            console.log(`[App] 已调整窗口到工作区域: ${workW}x${workH} @ (${workX}, ${workY})`);
+          // 设置 CSS 变量供组件使用
+          if (taskbarHeight > 0 && !isNaN(taskbarHeight)) {
+            document.documentElement.style.setProperty('--taskbar-height', `${taskbarHeight}px`);
           } else {
-            console.warn('[App] 工作区域尺寸无效，跳过窗口调整');
+            document.documentElement.style.setProperty('--taskbar-height', '0px');
           }
-        } catch (resizeError) {
-          console.warn('[App] 调整窗口尺寸失败:', resizeError);
+          if (workH > 0 && !isNaN(workH)) {
+            document.documentElement.style.setProperty('--safe-viewport-height', `${workH}px`);
+          }
         }
-      } else {
-        console.warn('[App] 无法获取显示器信息');
       }
-
     } catch (error) {
-      console.warn('[App] 窗口尺寸调整失败:', error);
+      console.warn('[App] 获取显示器信息失败:', error);
     }
 
     // 监听应用就绪事件

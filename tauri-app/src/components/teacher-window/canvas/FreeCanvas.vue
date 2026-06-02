@@ -240,6 +240,9 @@ const handleDrop = (e) => {
       const x = ((e.clientX - rect.left) / rect.width) * 100;
       const y = ((e.clientY - rect.top) / rect.height) * 100;
 
+      // 🎯 获取视频状态（从预览区域克隆）
+      const videoState = source.videoState || {};
+
       // 添加到画布
       addSource(canvasSourceType, {
         name: source.name,
@@ -251,11 +254,13 @@ const handleDrop = (e) => {
           sourceId: source.id,
           originalType: source.type,
           url: source.url,
-          file: source.file
+          file: source.file,
+          // 🎯 传递视频状态，实现预览状态克隆
+          videoState: videoState
         }
       });
 
-      ElMessage.success(`已添加 ${source.name} 到自由画布`);
+      ElMessage.success(`已添加 ${source.name} 到自由画布（已克隆预览状态）`);
     }
   } catch (error) {
     console.error('[FreeCanvas] 拖放处理失败:', error);

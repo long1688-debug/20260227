@@ -243,8 +243,6 @@ pub async fn resolve_rtsp(req: RtspResolveRequest) -> Result<RtspResolveResult, 
     log::info!("[RTSP解析] 并行探测回退候选并验证 SDP（并发限制 + 重试）");
 
     use futures_util::future::join_all;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use base64::{engine::general_purpose, Engine as _};
     use std::sync::Arc;
     use tokio::sync::Semaphore;
 

@@ -29,7 +29,8 @@ pub async fn start_rtsp_proxy(app_handle: AppHandle) -> Result<String, String> {
 
     // 🎯 先检查 ZLMediaKit 是否已在运行
     let client = reqwest::Client::new();
-    let health_url = format!("http://{}:{}/index/api/getServerInfo", state.host, state.port);
+    // 使用 getApiList 代替 getServerInfo 进行健康检查（新版ZLMediaKit API）
+    let health_url = format!("http://{}:{}/index/api/getApiList", state.host, state.port);
 
     match client.get(&health_url).timeout(std::time::Duration::from_secs(3)).send().await {
         Ok(resp) if resp.status().is_success() => {
@@ -165,7 +166,8 @@ pub async fn check_rtsp_proxy_status(app_handle: AppHandle) -> Result<serde_json
 
     // 通过 ZLMediaKit HTTP API 健康检查判断服务是否运行
     let client = reqwest::Client::new();
-    let health_url = format!("http://{}:{}/index/api/getServerInfo", state.host, state.port);
+    // 使用 getApiList 代替 getServerInfo 进行健康检查（新版ZLMediaKit API）
+    let health_url = format!("http://{}:{}/index/api/getApiList", state.host, state.port);
 
     let is_running = match client.get(&health_url).timeout(std::time::Duration::from_secs(3)).send().await {
         Ok(resp) => resp.status().is_success(),
@@ -196,7 +198,8 @@ pub async fn start_rtsp_stream_proxy(
         .build()
         .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
 
-    let health_url = format!("http://{}:{}/index/api/getServerInfo", state.host, state.port);
+    // 使用 getApiList 代替 getServerInfo 进行健康检查（新版ZLMediaKit API）
+    let health_url = format!("http://{}:{}/index/api/getApiList", state.host, state.port);
 
     // 检查 ZLMediaKit 是否运行
     let is_running = match client.get(&health_url).send().await {
@@ -227,7 +230,7 @@ pub async fn start_rtsp_stream_proxy(
     let add_url = format!("http://{}:{}/index/api/addStreamProxy", state.host, state.port);
 
     let params = serde_json::json!({
-        "secret": "035c73f7-bb6b-4889-a715-d9eb2d1925cc",
+        "secret": "8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3",
         "vhost": "__defaultVhost__",
         "app": "live",
         "stream": id,
@@ -256,12 +259,14 @@ pub async fn start_rtsp_stream_proxy(
     println!("[ZLMediaKit] addStreamProxy 响应: {:?}", result);
 
     if result["code"].as_i64().unwrap_or(-1) == 0 {
+        let flv_url = format!("http://{}:{}/live/{}.live.flv", state.host, state.port, id);
         Ok(serde_json::json!({
             "success": true,
             "streamId": id,
-            "flvUrl": format!("http://{}:{}/live/{}.flv", state.host, state.port, id),
-            "wsUrl": format!("ws://{}:{}/live/{}.flv", state.host, state.port, id),
-            "wsFlvUrl": format!("ws://{}:{}/live/{}.flv", state.host, state.port, id),
+            "streamUrl": flv_url.clone(),
+            "flvUrl": flv_url,
+            "wsUrl": format!("ws://{}:{}/live/{}.live.flv", state.host, state.port, id),
+            "wsFlvUrl": format!("ws://{}:{}/live/{}.live.flv", state.host, state.port, id),
             "rtspUrl": format!("rtsp://{}:554/live/{}", state.host, id),
             "hlsUrl": format!("http://{}:{}/live/{}/hls.m3u8", state.host, state.port, id),
             "webrtcUrl": format!("http://{}:{}/index/api/webrtc?app=live&stream={}&type=play", state.host, state.port, id),
@@ -287,7 +292,7 @@ pub async fn stop_rtsp_stream_proxy(
     let del_url = format!("http://{}:{}/index/api/delStreamProxy", state.host, state.port);
 
     let params = serde_json::json!({
-        "secret": "035c73f7-bb6b-4889-a715-d9eb2d1925cc",
+        "secret": "8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3",
         "key": format!("__defaultVhost__/live/{}", stream_id)
     });
 
@@ -319,7 +324,7 @@ pub async fn get_rtsp_streams(app_handle: AppHandle) -> Result<serde_json::Value
     let api_url = format!("http://{}:{}/index/api/getMediaList", state.host, state.port);
 
     let params = serde_json::json!({
-        "secret": "035c73f7-bb6b-4889-a715-d9eb2d1925cc",
+        "secret": "8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3",
         "app": "live"
     });
 
@@ -344,6 +349,7 @@ fn find_zlmediakit_binary() -> Result<String, String> {
         // Windows 根目录（直接安装）
         "C:\\ZLMediaKit\\MediaServer.exe".to_string(),
         "D:\\ZLMediaKit\\MediaServer.exe".to_string(),
+        "F:\\ZLMediaKit\\MediaServer.exe".to_string(),
         // Windows 常见路径
         "C:\\ZLMediaKit\\release\\windows\\Debug\\MediaServer.exe".to_string(),
         "C:\\ZLMediaKit\\release\\windows\\Release\\MediaServer.exe".to_string(),

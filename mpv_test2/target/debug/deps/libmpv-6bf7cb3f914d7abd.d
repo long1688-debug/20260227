@@ -1,0 +1,12 @@
+F:\20260227\mpv_test2\target\debug\deps\libmpv-6bf7cb3f914d7abd.d: C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\lib.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\errors.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\events.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\protocol.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\render.rs
+
+F:\20260227\mpv_test2\target\debug\deps\liblibmpv-6bf7cb3f914d7abd.rlib: C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\lib.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\errors.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\events.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\protocol.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\render.rs
+
+F:\20260227\mpv_test2\target\debug\deps\liblibmpv-6bf7cb3f914d7abd.rmeta: C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\lib.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\errors.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\events.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\protocol.rs C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\render.rs
+
+C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\lib.rs:
+C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv.rs:
+C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\errors.rs:
+C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\events.rs:
+C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\protocol.rs:
+C:\Users\15719\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\libmpv-2.0.1\src\mpv\render.rs:

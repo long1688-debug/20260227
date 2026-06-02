@@ -1,13 +1,14 @@
-use tauri::{State, command};
+use tauri::State;
 use crate::ptz::PtzDeviceManager;
 use crate::ptz::discovery::DiscoveredOnvifDevice;
 use crate::ptz::onvif::{OnvifCamera, StreamUri};
+use crate::rtsp_resolver::{resolve_rtsp, RtspResolveRequest};
 use std::time::Duration;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use roxmltree::Document;
 
 /// 绝对位置移动（点击画面控制）
-#[command]
+#[tauri::command]
 pub async fn ptz_move_absolute(
     device_id: String,
     click_x: f64,
@@ -29,7 +30,7 @@ pub async fn ptz_move_absolute(
 }
 
 /// 相对移动
-#[command]
+#[tauri::command]
 pub async fn ptz_relative_move(
     device_id: String,
     pan: f64,
@@ -49,7 +50,7 @@ pub async fn ptz_relative_move(
 }
 
 /// 连续移动
-#[command]
+#[tauri::command]
 pub async fn ptz_continuous_move(
     device_id: String,
     pan: f64,
@@ -69,7 +70,7 @@ pub async fn ptz_continuous_move(
 }
 
 /// 停止移动
-#[command]
+#[tauri::command]
 pub async fn ptz_stop(device_id: String, manager: State<'_, PtzDeviceManager>) -> Result<String, String> {
     let cam = manager
         .get(&device_id)
@@ -83,7 +84,7 @@ pub async fn ptz_stop(device_id: String, manager: State<'_, PtzDeviceManager>) -
 }
 
 /// 预置位调用
-#[command]
+#[tauri::command]
 pub async fn ptz_goto_preset(
     device_id: String,
     preset_token: String,
@@ -101,7 +102,7 @@ pub async fn ptz_goto_preset(
 }
 
 /// 局域网 ONVIF 设备发现
-#[command]
+#[tauri::command]
 pub async fn onvif_discover_devices(
     timeout_secs: u64,
     manager: State<'_, PtzDeviceManager>,
@@ -111,7 +112,7 @@ pub async fn onvif_discover_devices(
 }
 
 /// 注册发现的设备
-#[command]
+#[tauri::command]
 pub async fn ptz_register_device(
     ip: String,
     username: String,
@@ -132,13 +133,13 @@ pub async fn ptz_register_device(
 }
 
 /// 列出所有已注册设备
-#[command]
+#[tauri::command]
 pub async fn ptz_list_devices(manager: State<'_, PtzDeviceManager>) -> Result<Vec<String>, String> {
     Ok(manager.list_devices().await)
 }
 
 /// 🎯 更新摄像机配置参数（支持注册新设备或更新已注册设备）
-#[command]
+#[tauri::command]
 pub async fn update_camera_config(
     device_id: String,
     name: Option<String>,
@@ -211,7 +212,7 @@ pub async fn update_camera_config(
 }
 
 /// 🎯 删除已注册的摄像机
-#[command]
+#[tauri::command]
 pub async fn remove_camera_device(
     device_id: String,
     manager: State<'_, PtzDeviceManager>,
@@ -223,7 +224,7 @@ pub async fn remove_camera_device(
 }
 
 /// 🎯 获取设备详细信息
-#[command]
+#[tauri::command]
 pub async fn get_camera_details(
     device_id: String,
     manager: State<'_, PtzDeviceManager>,
@@ -245,7 +246,7 @@ pub async fn get_camera_details(
 }
 
 /// 扫描网络摄像机（端口扫描）
-#[command]
+#[tauri::command]
 pub async fn scan_network_cameras(ips: Vec<String>, ports: Vec<u16>, timeout_secs: u64) -> Result<Vec<crate::camera_discovery::DiscoveredCamera>, String> {
     let discovery = crate::camera_discovery::CameraDiscovery::new();
     let result = discovery.scan_ports(ips, ports, timeout_secs).await;
@@ -253,7 +254,7 @@ pub async fn scan_network_cameras(ips: Vec<String>, ports: Vec<u16>, timeout_sec
 }
 
 /// 自动扫描本地子网（使用优化后的并发扫描）
-#[command]
+#[tauri::command]
 pub async fn scan_local_subnet(timeout_secs: u64) -> Result<Vec<crate::camera_discovery::DiscoveredCamera>, String> {
     log::info!("开始自动子网扫描，超时时间: {}秒", timeout_secs);
 
@@ -265,7 +266,7 @@ pub async fn scan_local_subnet(timeout_secs: u64) -> Result<Vec<crate::camera_di
 }
 
 /// 综合发现（ONVIF + SSDP + 子网扫描）
-#[command]
+#[tauri::command]
 pub async fn discover_all_cameras(timeout_secs: u64) -> Result<crate::camera_discovery::ScanResult, String> {
     log::info!("开始综合设备发现，超时时间: {}秒", timeout_secs);
 
@@ -277,14 +278,14 @@ pub async fn discover_all_cameras(timeout_secs: u64) -> Result<crate::camera_dis
 }
 
 /// 获取本地 IP 地址
-#[command]
+#[tauri::command]
 pub fn get_local_ip() -> Result<String, String> {
     crate::camera_discovery::get_local_ip()
         .ok_or_else(|| "Failed to get local IP".to_string())
 }
 
 /// 扫描本地子网（带实时进度）
-#[command]
+#[tauri::command]
 pub async fn scan_local_subnet_with_progress(
     timeout_secs: u64,
     app_handle: tauri::AppHandle
@@ -299,7 +300,7 @@ pub async fn scan_local_subnet_with_progress(
 }
 
 /// 扫描所有网络接口（多网卡支持）
-#[command]
+#[tauri::command]
 pub async fn scan_all_network_interfaces(
     timeout_secs: u64,
     app_handle: tauri::AppHandle
@@ -344,7 +345,7 @@ pub async fn scan_all_network_interfaces(
 }
 
 /// 🎯 扫描指定的网段列表（跨网段扫描）
-#[command]
+#[tauri::command]
 pub async fn scan_specific_subnets(
     subnets: Vec<String>,
     timeout_secs: u64,
@@ -372,7 +373,7 @@ pub async fn scan_specific_subnets(
 // 🎯 RTSP 流管理命令
 
 /// 获取所有网络接口信息（仅用于调试）
-#[command]
+#[tauri::command]
 pub fn get_network_interfaces_info() -> Result<serde_json::Value, String> {
     let interfaces = crate::camera_discovery::get_all_network_interfaces();
 
@@ -396,7 +397,7 @@ pub fn get_network_interfaces_info() -> Result<serde_json::Value, String> {
 }
 
 /// 启动 RTSP 流转换（RTSP → HTTP-MJPEG）
-#[command]
+#[tauri::command]
 pub async fn start_rtsp_stream(
     rtsp_url: String,
     username: Option<String>,
@@ -415,7 +416,7 @@ pub async fn start_rtsp_stream(
 }
 
 /// 停止 RTSP 流
-#[command]
+#[tauri::command]
 pub async fn stop_rtsp_stream(session_id: String) -> Result<String, String> {
     use crate::rtsp_stream::RtspStreamManager;
 
@@ -426,7 +427,7 @@ pub async fn stop_rtsp_stream(session_id: String) -> Result<String, String> {
 }
 
 /// 获取所有活跃的 RTSP 流会话
-#[command]
+#[tauri::command]
 pub fn get_active_rtsp_sessions() -> Vec<serde_json::Value> {
     use crate::rtsp_stream::RtspStreamManager;
 
@@ -446,7 +447,7 @@ pub fn get_active_rtsp_sessions() -> Vec<serde_json::Value> {
 
 /// 🎯 通过 ONVIF 协议获取摄像机的 RTSP 流地址（基于已注册设备）
 /// 支持多种 RTSP 路径格式，自动适配不同品牌摄像机
-#[command]
+#[tauri::command]
 pub async fn get_onvif_stream_uri(
     device_id: String,
     manager: State<'_, PtzDeviceManager>,
@@ -474,13 +475,41 @@ pub async fn get_onvif_stream_uri(
         }
         Err(e) => {
             log::error!("❌ [设备模式] 获取RTSP地址失败: {}", e);
-            Err(format!("获取RTSP地址失败: {}", e))
+            log::info!("🔄 尝试使用 RTSP 解析备选方案...");
+
+            let resolve_req = RtspResolveRequest {
+                manufacturer: "".to_string(),
+                host: camera.ip().to_string(),
+                port: camera.port(),
+                username: camera.username().to_string(),
+                password: camera.password().to_string(),
+                onvif_uri: None,
+                onvif_port: Some(camera.port()),
+                scan_mode: false,
+            };
+
+            match resolve_rtsp(resolve_req).await {
+                Ok(resolved) => {
+                    let resolved_uri = camera.normalize_rtsp_uri(&resolved.uri);
+                    log::info!("✅ [设备模式] ONVIF 失败，RTSP 解析备选成功: {}", resolved_uri);
+                    Ok(StreamUri {
+                        uri: resolved_uri,
+                        protocol: "rtsp".to_string(),
+                        timeout: "0".to_string(),
+                        media_urls: resolved.media_urls,
+                    })
+                }
+                Err(resolve_err) => {
+                    log::error!("❌ [设备模式] RTSP 解析备选方案失败: {}", resolve_err);
+                    Err(format!("获取RTSP地址失败: {}; 备选解析失败: {}", e, resolve_err))
+                }
+            }
         }
     }
 }
 
 /// 🎯 尝试使用通用RTSP模板获取流地址（当ONVIF失败时的备选方案）
-#[command]
+#[tauri::command]
 pub async fn try_common_rtsp_templates(
     ip: String,
     port: u16,
@@ -617,7 +646,7 @@ async fn test_rtsp_connection_simple(url: &str) -> bool {
 
 /// 🎯 轻量级 RTSP 探测 - 使用 OPTIONS 请求验证连接
 /// 这是一个轻量级的验证方式，不会真正拉流，只是验证地址是否有效
-#[command]
+#[tauri::command]
 pub async fn probe_rtsp_connection(
     uri: String,
     timeout: Option<f64>,
@@ -756,7 +785,7 @@ pub struct OnvifRecommendedConfig {
 
 /// 🎯 检测并测试所有ONVIF服务路径
 /// 返回完整的ONVIF设备配置信息，包括所有可用的服务路径和推荐配置
-#[command]
+#[tauri::command]
 pub async fn detect_onvif_services(
     ip: String,
     port: u16,
@@ -1708,7 +1737,7 @@ pub async fn test_onvif_connection(
 }
 
 /// 🎯 测试 TCP 连接（用于验证 RTSP 地址是否可达）
-#[command]
+#[tauri::command]
 pub async fn test_tcp_connection(
     host: String,
     port: u16,
@@ -1860,7 +1889,7 @@ fn extract_xml_tag(xml: &str, tag: &str) -> Option<String> {
 
 /// 🎯 设备RTSP流地址管理命令
 /// 允许为已注册的ONVIF设备手动设置RTSP流地址
-#[command]
+#[tauri::command]
 pub async fn set_device_rtsp_url(
     device_id: String,
     rtsp_url: String,
@@ -1887,7 +1916,7 @@ pub async fn set_device_rtsp_url(
 }
 
 /// 🎯 获取设备的RTSP流地址（如果已设置）
-#[command]
+#[tauri::command]
 pub async fn get_device_rtsp_url(
     device_id: String,
     manager: State<'_, PtzDeviceManager>,
@@ -1903,3 +1932,112 @@ pub async fn get_device_rtsp_url(
         Err("未找到预设的RTSP地址，请使用 get_onvif_stream_uri 获取或手动配置".to_string())
     }
 }
+
+/// 该命令会同时完成设备注册和RTSP地址获取，解决前端PTZ控制与RTSP流分离的问题
+#[tauri::command]
+pub async fn register_onvif_device_with_rtsp(
+    device_name: String,
+    ip: String,
+    port: u16,
+    username: String,
+    password: String,
+    profile_token: Option<String>,
+    manager: State<'_, PtzDeviceManager>,
+) -> Result<serde_json::Value, String> {
+    log::info!("🚀 开始注册ONVIF设备并获取RTSP地址: {} ({})", device_name, ip);
+
+    // 创建ONVIF相机实例
+    let profile_token = profile_token.unwrap_or_else(|| "profile_1".to_string());
+    let camera = OnvifCamera::new(
+        &device_name,
+        &ip,
+        port,
+        &username,
+        &password,
+        &profile_token,
+    );
+
+    let device_id = camera.id.clone();
+
+    // 首先测试连接 - 使用 GetDeviceInfo 更通用地验证设备可达性（部分设备不支持 PTZ stop 测试）
+    match camera.get_device_info().await {
+        Ok(info) => {
+            log::info!("✅ ONVIF 设备信息获取成功: {:?}", info);
+        }
+        Err(e) => {
+            // 仅记录警告，不阻塞注册流程。后续会尝试通过 ONVIF/GetStreamUri 或 RTSP 解析获取流地址。
+            log::warn!("⚠️ ONVIF 设备信息获取失败: {}（继续注册，后续尝试获取RTSP地址）", e);
+        }
+    }
+
+    // 注册设备到管理器
+    manager.register(camera).await;
+
+    // 尝试通过ONVIF协议获取RTSP流地址
+    let rtsp_result = match manager.get(&device_id).await {
+        Some(camera_ref) => {
+            match camera_ref.get_stream_uri().await {
+                Ok(stream_uri) => {
+                    let normalized_uri = camera_ref.normalize_rtsp_uri(&stream_uri.uri);
+
+                    // 保存RTSP地址到管理器
+                    if let Err(e) = manager.set_rtsp_url(&device_id, normalized_uri.clone()).await {
+                        log::warn!("⚠️ 保存RTSP地址失败: {}", e);
+                    }
+
+                    log::info!("✅ 成功获取RTSP地址: {}", normalized_uri);
+                    Some(normalized_uri)
+                },
+                Err(e) => {
+                    log::warn!("⚠️ 通过ONVIF获取RTSP地址失败: {}", e);
+
+                    // 尝试使用RTSP解析备选方案
+                    let resolve_req = RtspResolveRequest {
+                        manufacturer: "".to_string(),
+                        host: ip.clone(),
+                        port,
+                        username: username.clone(),
+                        password: password.clone(),
+                        onvif_uri: None,
+                        onvif_port: Some(port),
+                        scan_mode: false,
+                    };
+
+                    match resolve_rtsp(resolve_req).await {
+                        Ok(resolved) => {
+                            let normalized_uri = camera_ref.normalize_rtsp_uri(&resolved.uri);
+
+                            // 保存RTSP地址到管理器
+                            if let Err(e) = manager.set_rtsp_url(&device_id, normalized_uri.clone()).await {
+                                log::warn!("⚠️ 保存RTSP地址失败: {}", e);
+                            }
+
+                            log::info!("✅ 通过RTSP解析备选方案获取地址: {}", normalized_uri);
+                            Some(normalized_uri)
+                        },
+                        Err(resolve_err) => {
+                            log::warn!("⚠️ RTSP解析备选方案也失败: {}", resolve_err);
+                            None
+                        }
+                    }
+                }
+            }
+        },
+        None => {
+            log::error!("❌ 获取已注册设备失败");
+            None
+        }
+    };
+
+    // 返回包含设备ID和RTSP地址的JSON对象
+    Ok(serde_json::json!({
+        "device_id": device_id,
+        "registered": true,
+        "rtsp_url": rtsp_result,
+        "connection_test": "success",
+        "rtsp_resolution_status": if rtsp_result.is_some() { "success" } else { "failed" },
+        "message": format!("设备 {} 已成功注册{}", device_name,
+            if rtsp_result.is_some() { "并获取了RTSP地址" } else { "但未能获取RTSP地址" })
+    }))
+}
+

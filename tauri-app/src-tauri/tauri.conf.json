@@ -29,16 +29,14 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://cdn.jsdelivr.net; connect-src 'self' https://huggingface.co https://hf.co blob: asset: ws: wss:; worker-src 'self' blob:; media-src 'self' blob:;",
+      "csp": "default-src 'self' http://127.0.0.1:8080 http://localhost:8080 http://127.0.0.1:801 http://localhost:801; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://cdn.jsdelivr.net; connect-src 'self' https://huggingface.co https://hf.co blob: asset: ws: wss: http://127.0.0.1:8080 http://localhost:8080 http://127.0.0.1:801 http://localhost:801; frame-src 'self' http://127.0.0.1:8080 http://localhost:8080 http://127.0.0.1:801 http://localhost:801; child-src 'self' http://127.0.0.1:8080 http://localhost:8080 http://127.0.0.1:801 http://localhost:801; worker-src 'self' blob:; media-src 'self' blob:;",
       "dangerousDisableAssetCspModification": false
     }
   },
   "bundle": {
     "active": true,
     "targets": "msi",
-    "resources": {
-      "../rtsp-proxy/*": "rtsp-proxy/"
-    },
+    "resources": {},
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

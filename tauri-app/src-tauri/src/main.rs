@@ -33,6 +33,7 @@ mod camera_database;  // 🎯 网络摄像机数据库管理
 mod onvif_discovery;  // 🎯 ONVIF 设备发现和流地址探索
 mod webrtc_service;  // 🎯 WebRTC 实时传输服务
 mod vision_service;   // 🎯 视觉分析服务（COCO数据集 + 智能视觉分析 + AI评估）
+mod mpv_player;       // 🎯 mpv 媒体播放器服务（替代 FLV.js）
 
 use tauri::Manager;
 use commands::*;
@@ -73,11 +74,38 @@ use camera_database::*;  // 🎯 网络摄像机数据库管理
 use onvif_discovery::{get_onvif_device_info, get_onvif_profiles, test_rtsp_connection};  // 🎯 ONVIF 设备发现和流地址探索
 use webrtc_service::*;  // 🎯 WebRTC 实时传输服务
 use vision_service::*;  // 🎯 视觉分析服务
+use mpv_player::{
+    MpvPlayerState,
+    mpv_create_player,
+    mpv_destroy_player,
+    mpv_play_stream,
+    mpv_play_rtsp,
+    mpv_play_flv,
+    mpv_play_hls,
+    mpv_play_rtmp,
+    mpv_play_file,
+    mpv_stop,
+    mpv_pause,
+    mpv_resume,
+    mpv_set_volume,
+    mpv_set_mute,
+    mpv_get_position,
+    mpv_get_duration,
+    mpv_seek,
+    mpv_get_state,
+    mpv_get_stats,
+    mpv_screenshot,
+    mpv_start_recording,
+    mpv_stop_recording,
+    mpv_list_players,
+    mpv_is_available,
+    mpv_get_supported_protocols,
+};  // 🎯 mpv 媒体播放器服务
 
 fn main() {
     // 初始化日志系统
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
-    
+
     tauri::Builder::default()
         // 管理状态
         .manage(ServerState::default())
@@ -96,6 +124,7 @@ fn main() {
         .manage(AudioDeviceState::new())
         .manage(WebRTCServiceState::new())  // 🎯 WebRTC 服务状态
         .manage(VisionServiceState::new())  // 🎯 视觉分析服务状态
+        .manage(MpvPlayerState::default())  // 🎯 mpv 播放器状态管理
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -390,6 +419,32 @@ fn main() {
             start_batch_test,
             analyze_exam_results,
             get_vision_service_status,
+
+            // 🎯 mpv 媒体播放器服务（替代 FLV.js）
+            mpv_create_player,
+            mpv_destroy_player,
+            mpv_play_stream,
+            mpv_play_rtsp,
+            mpv_play_flv,
+            mpv_play_hls,
+            mpv_play_rtmp,
+            mpv_play_file,
+            mpv_stop,
+            mpv_pause,
+            mpv_resume,
+            mpv_set_volume,
+            mpv_set_mute,
+            mpv_get_position,
+            mpv_get_duration,
+            mpv_seek,
+            mpv_get_state,
+            mpv_get_stats,
+            mpv_screenshot,
+            mpv_start_recording,
+            mpv_stop_recording,
+            mpv_list_players,
+            mpv_is_available,
+            mpv_get_supported_protocols,
         ])
         .setup(|app| {
             // 🎯 初始化摄像机数据库

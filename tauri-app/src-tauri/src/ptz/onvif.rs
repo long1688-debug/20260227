@@ -3,6 +3,7 @@ use thiserror::Error;
 use std::time::{SystemTime, Duration};
 use roxmltree::Document;
 use sha1::Digest;
+use base64::Engine;
 
 /// XML 转义函数 - 防止用户名/密码中的特殊字符破坏 SOAP 请求
 fn xml_escape(s: &str) -> String {
@@ -182,11 +183,15 @@ impl OnvifCamera {
             }
         }
 
-        // 替换 0.0.0.0 为设备实际 IP
+        // 替换 0.0.0.0 / localhost / 127.0.0.1 / [::1] 为设备实际 IP
         result = result.replace("rtsp://0.0.0.0:", &format!("rtsp://{}:", self.ip));
-
-        // 替换 localhost 为设备实际 IP
+        result = result.replace("rtsp://0.0.0.0/", &format!("rtsp://{}/", self.ip));
         result = result.replace("rtsp://localhost:", &format!("rtsp://{}:", self.ip));
+        result = result.replace("rtsp://localhost/", &format!("rtsp://{}/", self.ip));
+        result = result.replace("rtsp://127.0.0.1:", &format!("rtsp://{}:", self.ip));
+        result = result.replace("rtsp://127.0.0.1/", &format!("rtsp://{}/", self.ip));
+        result = result.replace("rtsp://[::1]:", &format!("rtsp://{}:", self.ip));
+        result = result.replace("rtsp://[::1]/", &format!("rtsp://{}/", self.ip));
 
         // 不自动添加认证信息，保持原始URI格式
         // 认证信息应由调用方根据需要自行添加
@@ -405,7 +410,7 @@ impl OnvifCamera {
         log::error!("[{}] ONVIF RTSP地址获取失败", self.id);
         Err(OnvifError::DeviceResponse {
             status: 500,
-            body: "ONVIF获取RTSP地址失败，请检查：1.ONVIF是否启用 2.用户名密码 3.网络连接 4.ONVIF端口是否正确".to_string(),
+            body: "ONVIF获取RTSP地址失败，请检查：\n1. 摄像机ONVIF功能是否已启用\n2. 用户名和密码是否正确\n3. 网络连接是否正常\n4. ONVIF端口是否正确（通常为80、8080等）\n5. 摄像机型号是否支持ONVIF协议\n6. 摄像机是否在线且工作正常".to_string(),
         })
     }
 
@@ -758,7 +763,7 @@ impl OnvifCamera {
 
     /// 🎯 步骤1: 获取设备信息 (GetDeviceInfo)
     /// 验证设备可达性和认证信息
-    async fn get_device_info(&self) -> Result<DeviceInfo, OnvifError> {
+    pub async fn get_device_info(&self) -> Result<DeviceInfo, OnvifError> {
         // 尝试多个可能的路径和协议
         let protocols = ["http", "https"];
         let device_paths = [

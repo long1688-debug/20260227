@@ -1,6 +1,6 @@
 /**
  * Tauri API 统一封装
- * 
+ *
  * 提供统一的窗口控制和 IPC 调用接口，
  * 兼容 Tauri 运行时和浏览器开发模式。
  */
@@ -19,10 +19,39 @@ async function initTauri() {
 
   try {
     const core = await import('@tauri-apps/api/core');
-    const windowModule = await import('@tauri-apps/api/window');
     invokeFn = core.invoke;
-    getCurrentFn = windowModule.getCurrentWindow;
-    const appWindow = windowModule.getCurrentWindow();
+
+    // 🎯 Tauri v2 兼容性处理：尝试从多个模块获取窗口 API
+    let getCurrentWindow = null;
+
+    // 尝试从 @tauri-apps/api/webviewWindow 导入
+    try {
+      const webviewWindowModule = await import('@tauri-apps/api/webviewWindow');
+      getCurrentWindow = webviewWindowModule.getCurrentWindow ||
+        webviewWindowModule.WebviewWindow?.getCurrent ||
+        webviewWindowModule.default?.getCurrentWindow;
+    } catch (e) {
+      console.warn('[tauri-api] 无法从 webviewWindow 模块导入:', e.message);
+    }
+
+    // 如果从 webviewWindow 没找到，尝试从 @tauri-apps/api/window 导入
+    if (!getCurrentWindow) {
+      try {
+        const windowModule = await import('@tauri-apps/api/window');
+        getCurrentWindow = windowModule.getCurrentWindow ||
+          windowModule.default?.getCurrentWindow;
+      } catch (e) {
+        console.warn('[tauri-api] 无法从 window 模块导入:', e.message);
+      }
+    }
+
+    if (!getCurrentWindow || typeof getCurrentWindow !== 'function') {
+      throw new Error('无法获取 getCurrentWindow 方法');
+    }
+
+    getCurrentFn = getCurrentWindow;
+    const appWindow = getCurrentWindow();
+
     minimizeFn = appWindow.minimize.bind(appWindow);
     maximizeFn = appWindow.maximize.bind(appWindow);
     unmaximizeFn = appWindow.unmaximize.bind(appWindow);
@@ -33,9 +62,9 @@ async function initTauri() {
     console.warn('[tauri-api] 非 Tauri 环境，使用模拟模式:', e.message);
     // 浏览器环境的空操作 fallback
     invokeFn = () => Promise.resolve({});
-    minimizeFn = () => {};
-    maximizeFn = () => {};
-    unmaximizeFn = () => {};
+    minimizeFn = () => { };
+    maximizeFn = () => { };
+    unmaximizeFn = () => { };
     closeFn = () => { window.close(); };
     isMaximizedFn = () => Promise.resolve(false);
   }
@@ -69,6 +98,47 @@ export async function maximizeWindow() {
 export async function closeApp() {
   await ensureInit();
   return closeFn();
+}
+
+export async function openNativeWebviewWindow(label, url, title = '', options = {}) {
+  await ensureInit();
+
+  try {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    let webviewWindow = null;
+
+    if (typeof WebviewWindow.getByLabel === 'function') {
+      try {
+        webviewWindow = WebviewWindow.getByLabel(label);
+      } catch (err) {
+        webviewWindow = null;
+      }
+    }
+
+    if (webviewWindow) {
+      webviewWindow.show();
+      if (typeof webviewWindow.setFocus === 'function') {
+        webviewWindow.setFocus();
+      }
+      return webviewWindow;
+    }
+
+    return new WebviewWindow(label, {
+      url,
+      title,
+      width: options.width || 1280,
+      height: options.height || 860,
+      resizable: options.resizable !== false,
+      center: options.center !== false,
+      decorations: options.decorations !== false,
+      visible: true,
+      ...options
+    });
+  } catch (err) {
+    console.warn('[Tauri API] 无法创建本地 Webview 窗口，回退到浏览器打开:', err);
+    window.open(url, '_blank');
+    return null;
+  }
 }
 
 // ========== IPC 命令调用 ==========

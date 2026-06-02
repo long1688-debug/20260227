@@ -1,5 +1,5 @@
 // ONVIF 云台控制模块
-use tauri::command;
+
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -74,7 +74,7 @@ impl PtzAction {
 }
 
 /// PTZ 控制命令
-#[command]
+#[tauri::command]
 pub async fn onvif_ptz(
     device_url: String,
     username: String,
@@ -121,7 +121,7 @@ pub async fn onvif_ptz(
 }
 
 /// 停止 PTZ 移动
-#[command]
+#[tauri::command]
 pub async fn onvif_ptz_stop(
     device_url: String,
     username: String,
@@ -131,7 +131,7 @@ pub async fn onvif_ptz_stop(
 }
 
 /// 获取 PTZ 预设位
-#[command]
+#[tauri::command]
 pub async fn onvif_get_presets(
     device_url: String,
     username: String,
@@ -182,7 +182,7 @@ pub async fn onvif_get_presets(
 }
 
 /// 跳转到 PTZ 预设位
-#[command]
+#[tauri::command]
 pub async fn onvif_goto_preset(
     device_url: String,
     username: String,

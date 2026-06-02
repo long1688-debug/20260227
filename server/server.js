@@ -23,6 +23,72 @@ const CONFIG = {
 
 // ==================== 辅助函数 ====================
 /**
+ * 查找 FFmpeg 可执行文件路径
+ * 在 Windows 上会检查常见安装位置
+ */
+function findFfmpegPath() {
+    const path = require('path');
+    const fs = require('fs');
+
+    // Windows 上常见的 FFmpeg 安装路径
+    const commonPaths = [
+        'C:\\ffmpeg\\bin\\ffmpeg.exe',
+        'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+        'C:\\ProgramData\\ffmpeg\\bin\\ffmpeg.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'ffmpeg', 'bin', 'ffmpeg.exe'),
+        path.join(process.env.ProgramFiles || '', 'ffmpeg', 'bin', 'ffmpeg.exe'),
+    ];
+
+    for (const p of commonPaths) {
+        try {
+            if (fs.existsSync(p)) {
+                console.log('[系统检测] 找到 FFmpeg:', p);
+                return p;
+            }
+        } catch (e) {
+            // 忽略错误，继续搜索
+        }
+    }
+    return null;
+}
+
+/**
+ * 确保 FFmpeg 在 PATH 中可用
+ * 如果不在 PATH 中，自动添加已知安装目录
+ */
+function ensureFfmpegInPath() {
+    const path = require('path');
+
+    // 先检查 ffmpeg 是否已在 PATH 中
+    const currentPath = process.env.Path || process.env.PATH || '';
+    const pathSep = process.platform === 'win32' ? ';' : ':';
+    const pathDirs = currentPath.split(pathSep);
+
+    // 检查已知的 FFmpeg 目录是否在 PATH 中
+    const ffmpegDirs = [
+        'C:\\ffmpeg\\bin',
+    ];
+
+    for (const dir of ffmpegDirs) {
+        if (!pathDirs.includes(dir)) {
+            try {
+                const fs = require('fs');
+                if (fs.existsSync(dir)) {
+                    process.env.Path = dir + pathSep + process.env.Path;
+                    console.log('[系统检测] 已将 FFmpeg 目录添加到 PATH:', dir);
+                    return true;
+                }
+            } catch (e) {
+                // 忽略错误
+            }
+        } else {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * 检查 FFmpeg 是否可用
  */
 async function checkFfmpegAvailable() {
@@ -30,11 +96,39 @@ async function checkFfmpegAvailable() {
     const util = require('util');
     const execPromise = util.promisify(exec);
 
+    // 先尝试直接执行
     try {
         await execPromise('ffmpeg -version');
         return true;
     } catch (error) {
+        // 直接执行失败，尝试添加已知路径后再试
+        console.warn('[系统检测] FFmpeg 不在 PATH 中，尝试自动查找...');
+    }
+
+    // 确保 FFmpeg 目录在 PATH 中
+    ensureFfmpegInPath();
+
+    // 再次尝试
+    try {
+        await execPromise('ffmpeg -version');
+        console.log('[系统检测] FFmpeg 已可用');
+        return true;
+    } catch (error) {
+        // 尝试使用完整路径
+        const ffmpegPath = findFfmpegPath();
+        if (ffmpegPath) {
+            const ffmpegDir = path.dirname(ffmpegPath);
+            process.env.Path = ffmpegDir + ';' + process.env.Path;
+            console.log('[系统检测] 已通过完整路径添加 FFmpeg:', ffmpegDir);
+            try {
+                await execPromise('ffmpeg -version');
+                return true;
+            } catch (e) {
+                // 仍然失败
+            }
+        }
         console.warn('[系统检测] FFmpeg 不可用:', error.message);
+        console.warn('[系统检测] 请安装 FFmpeg 并添加到 PATH，或将其放在 C:\\ffmpeg\\bin\\ 目录下');
         return false;
     }
 }
@@ -978,6 +1072,10 @@ async function handleRequest(req, res, pathname, url) {
         else if (pathname === '/web/service-status.html') {
             // 服务状态页面
             serveStaticFile(res, path.join(__dirname, 'web', 'service-status.html'));
+        }
+        else if (pathname === '/web/subtitle-generator.html') {
+            // 字幕生成器页面
+            serveStaticFile(res, path.join(__dirname, 'web', 'subtitle-generator.html'));
         }
         else if (pathname === '/web/api-test.html') {
             // API测试页面

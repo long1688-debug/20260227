@@ -1,0 +1,7 @@
+[package]
+name = "mpv_test2"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+radiance-libmpv = "2.0.1"

@@ -1,6 +1,6 @@
 // 流媒体代理模块 - 基于 ZLMediaKit 的统一流管理
 // 支持：本地视频文件、RTSP/RTMP 网络流、WebRTC 推流
-use tauri::{command, AppHandle, Manager};
+use tauri::{AppHandle, Manager};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
@@ -79,7 +79,7 @@ impl StreamState {
 // ==================== 本地视频文件代理 ====================
 
 /// 代理本地视频文件到 ZLMediaKit
-#[command]
+#[tauri::command]
 pub async fn proxy_local_video(
     app: AppHandle,
     file_path: String,
@@ -115,7 +115,7 @@ pub async fn proxy_local_video(
 // ==================== 网络摄像头/RTSP 流代理 ====================
 
 /// 代理网络流（RTSP/RTMP）到 ZLMediaKit
-#[command]
+#[tauri::command]
 pub async fn proxy_network_stream(
     app: AppHandle,
     stream_url: String,
@@ -333,7 +333,7 @@ async fn add_stream_proxy(
 // ==================== 流控制 API ====================
 
 /// 停止流代理
-#[command]
+#[tauri::command]
 pub async fn stop_stream_proxy(
     app: AppHandle,
     stream_id: String,
@@ -405,7 +405,7 @@ pub async fn stop_stream_proxy(
 }
 
 /// 获取所有活跃流
-#[command]
+#[tauri::command]
 pub async fn get_active_streams(
     app: AppHandle,
 ) -> Result<Vec<StreamMeta>, String> {
@@ -416,7 +416,7 @@ pub async fn get_active_streams(
 }
 
 /// 检查流状态
-#[command]
+#[tauri::command]
 pub async fn check_stream_status(
     app: AppHandle,
     stream_id: String,
@@ -433,7 +433,7 @@ pub async fn check_stream_status(
 // ==================== 音频控制 API ====================
 
 /// 控制流的音频轨道（静音/恢复）
-#[command]
+#[tauri::command]
 pub async fn control_stream_audio(
     app: AppHandle,
     stream_id: String,
@@ -497,7 +497,7 @@ pub struct WebRTCPushOptions {
 ///
 /// 前端通过 WebRTC API 推送音视频流到 ZLMediaKit，
 /// ZLMediaKit 将流转换为 FLV/RTSP/RTMP 等多种格式供其他客户端播放。
-#[command]
+#[tauri::command]
 pub async fn proxy_webrtc_push(
     app: AppHandle,
     stream_id: String,
@@ -595,7 +595,7 @@ pub struct LocalCameraOptions {
 ///
 /// 使用 FFmpeg 捕获本地摄像头并推送到 ZLMediaKit，
 /// 实现低延迟 FLV/WebRTC 播放。
-#[command]
+#[tauri::command]
 pub async fn proxy_local_camera(
     app: AppHandle,
     stream_id: String,
@@ -771,7 +771,7 @@ pub async fn proxy_local_camera(
 // ==================== 旧版 RTSP 代理兼容接口 ====================
 
 /// 启动 RTSP 流代理（旧版兼容接口）
-#[command]
+#[tauri::command]
 pub async fn add_rtsp_proxy(
     app: AppHandle,
     stream_id: String,
@@ -787,7 +787,7 @@ pub async fn add_rtsp_proxy(
 }
 
 /// 停止 RTSP 流代理（旧版兼容接口）
-#[command]
+#[tauri::command]
 pub async fn remove_rtsp_proxy(
     app: AppHandle,
     stream_id: String,
@@ -815,7 +815,7 @@ pub struct MobileScreenOptions {
 /// 1. WiFi局域网：通过RTSP/WebRTC接收手机推流
 /// 2. USB数据线：通过ADB捕获手机屏幕
 /// 3. 二维码扫码：生成二维码供手机扫描连接
-#[command]
+#[tauri::command]
 pub async fn proxy_mobile_screen(
     app: AppHandle,
     stream_id: String,
@@ -1066,7 +1066,7 @@ async fn proxy_mobile_screen_qrcode(
 }
 
 /// 注册移动端连接（Web App调用）
-#[command]
+#[tauri::command]
 pub async fn register_mobile_connection(
     app: AppHandle,
     connection_id: String,
@@ -1108,7 +1108,7 @@ pub async fn register_mobile_connection(
 }
 
 /// 移动端心跳
-#[command]
+#[tauri::command]
 pub async fn mobile_heartbeat(
     app: AppHandle,
     connection_id: String,
@@ -1128,7 +1128,7 @@ pub async fn mobile_heartbeat(
 }
 
 /// 断开移动端连接
-#[command]
+#[tauri::command]
 pub async fn disconnect_mobile(
     app: AppHandle,
     connection_id: String,
@@ -1158,7 +1158,7 @@ pub async fn disconnect_mobile(
 }
 
 /// 获取移动端连接列表
-#[command]
+#[tauri::command]
 pub async fn get_mobile_connections(
     app: AppHandle,
 ) -> Result<Vec<MobileConnectionInfo>, String> {

@@ -63,14 +63,31 @@ if (import.meta.env.DEV) {
     originalWarn.apply(console, args);
   };
 
-  import('@tauri-apps/api/window').then(({ WebviewWindow }) => {
-    const currentWindow = WebviewWindow.getCurrent();
+  import('@tauri-apps/api/webviewWindow').then(({ getCurrentWindow }) => {
+    const currentWindow = getCurrentWindow();
     setTimeout(() => {
-      currentWindow.isDevToolsOpen().then(isOpen => {
-        if (!isOpen) {
-          currentWindow.openDevTools();
+      // 🎯 Tauri v2 兼容性：isDevToolsOpen 方法可能不存在，直接尝试打开
+      if (typeof currentWindow.openDevTools === 'function') {
+        try {
+          // 尝试检查是否已打开（Tauri v2 中此方法可能不存在）
+          if (typeof currentWindow.isDevToolsOpen === 'function') {
+            currentWindow.isDevToolsOpen().then(isOpen => {
+              if (!isOpen) {
+                currentWindow.openDevTools();
+              }
+            }).catch(() => {
+              // 如果检查失败，直接打开
+              currentWindow.openDevTools();
+            });
+          } else {
+            // Tauri v2 中 isDevToolsOpen 不存在，直接打开
+            console.log('[DevTools] isDevToolsOpen 方法不可用，直接打开开发者工具');
+            currentWindow.openDevTools();
+          }
+        } catch (error) {
+          console.warn('[DevTools] 打开开发者工具失败:', error);
         }
-      });
+      }
     }, 1500);
   }).catch(() => {
     console.log('[DevTools] 非 Tauri 环境，跳过打开开发者工具');

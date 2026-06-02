@@ -1,18 +1,36 @@
 import { ref, shallowRef } from 'vue'
 import { ElMessage } from 'element-plus'
 import flvjs from 'flv.js'
+import { MpvPlayer } from '@/utils/mpv-player'
 
 // 检查是否在 Tauri 环境中运行
 const isTauriEnv = typeof window !== 'undefined' && window.__TAURI__ !== undefined
 
 // 安全导入 Tauri API
 let invoke = undefined
-if (isTauriEnv) {
+
+// 使用动态 import 替代 require（ES Module 兼容）
+async function initTauriInvoke() {
+  if (invoke || !isTauriEnv) return
+
   try {
-    invoke = require('@tauri-apps/api/core').invoke
+    const core = await import('@tauri-apps/api/core')
+    invoke = core.invoke
+    console.log('[useRtspPlayer] Tauri API 初始化成功')
   } catch (e) {
-    console.warn('[useRtspPlayer] Tauri API 不可用')
+    console.warn('[useRtspPlayer] Tauri API 不可用:', e.message)
   }
+}
+
+// 立即调用初始化
+initTauriInvoke()
+
+// 确保 invoke 已初始化的辅助函数
+async function ensureInvoke() {
+  if (!invoke) {
+    await initTauriInvoke()
+  }
+  return invoke
 }
 
 /**
@@ -150,13 +168,24 @@ export function useRtspPlayer() {
   const destroyPlayer = async (videoEl) => {
     if (!videoEl) return
 
-    // 🎯 如果既没有 flvPlayer 也没有 webrtcPlayer，直接返回
-    if (!videoEl._flvPlayer && !videoEl._webrtcPlayer) return
+    // 🎯 如果既没有 flvPlayer、webrtcPlayer 也没有 mpvPlayer，直接返回
+    if (!videoEl._flvPlayer && !videoEl._webrtcPlayer && !videoEl._mpvPlayer) return
 
     videoEl._isDestroying = true
 
     // 标记播放状态为已暂停，避免 play() 被打断
     videoEl._playInterrupted = true
+
+    // 🎯 清理 mpv 播放器
+    if (videoEl._mpvPlayer) {
+      try {
+        await videoEl._mpvPlayer.destroy()
+        console.log('[useRtspPlayer] mpv 播放器已销毁')
+      } catch (e) {
+        console.warn('[useRtspPlayer] mpv销毁失败:', e)
+      }
+      videoEl._mpvPlayer = null
+    }
 
     // 🎯 清理 WebRTC 播放器
     if (videoEl._webrtcPlayer) {
@@ -226,6 +255,13 @@ export function useRtspPlayer() {
   const discoverOnvifDevice = async (ip, username, password) => {
     console.log(`[useRtspPlayer] 🔍 开始发现ONVIF设备 - IP: ${ip}`)
 
+    // 确保 Tauri API 已初始化
+    const invokeFn = await ensureInvoke()
+    if (!invokeFn) {
+      console.warn('[useRtspPlayer] Tauri API 不可用，无法发现ONVIF设备')
+      return { deviceInfo: null, profiles: [] }
+    }
+
     const onvifPorts = [80, 8080, 8899, 7001, 7002, 10000]
     let deviceInfo = null
     let profiles = []
@@ -233,7 +269,7 @@ export function useRtspPlayer() {
     for (const port of onvifPorts) {
       try {
         console.log(`[useRtspPlayer] 尝试连接 ONVIF 端口 ${port}...`)
-        const info = await invoke('get_onvif_device_info', {
+        const info = await invokeFn('get_onvif_device_info', {
           ip,
           port,
           username: username || '',
@@ -246,7 +282,7 @@ export function useRtspPlayer() {
 
           // 获取流配置文件
           try {
-            const profileList = await invoke('get_onvif_profiles', {
+            const profileList = await invokeFn('get_onvif_profiles', {
               ip,
               port,
               username: username || '',
@@ -301,10 +337,15 @@ export function useRtspPlayer() {
 
   // 检查单个 IP 是否为 ONVIF 设备
   const checkOnvifDevice = async (ip) => {
+    const invokeFn = await ensureInvoke()
+    if (!invokeFn) {
+      return null
+    }
+
     const ports = [80, 8080, 8899]
     for (const port of ports) {
       try {
-        const info = await invoke('get_onvif_device_info', {
+        const info = await invokeFn('get_onvif_device_info', {
           ip,
           port,
           username: '',
@@ -327,8 +368,15 @@ export function useRtspPlayer() {
   // 测试 RTSP 流地址是否可用
   const testRtspUrl = async (rtspUrl, timeout = 5000) => {
     console.log(`[useRtspPlayer] 🧪 测试 RTSP URL: ${rtspUrl}`)
+
+    const invokeFn = await ensureInvoke()
+    if (!invokeFn) {
+      console.warn('[useRtspPlayer] Tauri API 不可用，无法测试RTSP连接')
+      return { success: false, error: 'Tauri API 不可用' }
+    }
+
     try {
-      const result = await invoke('test_rtsp_connection', {
+      const result = await invokeFn('test_rtsp_connection', {
         rtspUrl,
         timeout
       })
@@ -353,6 +401,12 @@ export function useRtspPlayer() {
   const autoDiscoverRtspUrl = async (ip, username, password, options = {}) => {
     console.log(`[useRtspPlayer] 🤖 自动发现 RTSP 流地址 - IP: ${ip}`)
 
+    const invokeFn = await ensureInvoke()
+    if (!invokeFn) {
+      console.warn('[useRtspPlayer] Tauri API 不可用，无法自动发现RTSP地址')
+      return null
+    }
+
     const { timeout = 3000, maxTests = 20 } = options
 
     // 收集所有候选 URL（包括 ONVIF 返回的）
@@ -363,7 +417,7 @@ export function useRtspPlayer() {
     const onvifPorts = [80, 8080, 8899]
     for (const port of onvifPorts) {
       try {
-        const result = await invoke('get_onvif_stream_uri', {
+        const result = await invokeFn('get_onvif_stream_uri', {
           ip,
           port,
           username: username || '',
@@ -426,6 +480,12 @@ export function useRtspPlayer() {
   const resolveOnvifRtspUrl = async (rtspUrl, source, isUserConfiguredPort = false, userUrlPort = null) => {
     console.log(`[useRtspPlayer] 🔍 resolveOnvifRtspUrl 开始解析: ${rtspUrl}, 用户配置端口: ${isUserConfiguredPort}, URL端口: ${userUrlPort}`)
 
+    const invokeFn = await ensureInvoke()
+    if (!invokeFn) {
+      console.warn('[useRtspPlayer] Tauri API 不可用，无法解析ONVIF地址')
+      return null
+    }
+
     const addrMatch = rtspUrl.match(/^https?:\/\/([^:/]+)(?::(\d+))?/)
     if (!addrMatch) {
       console.warn(`[useRtspPlayer] ⚠️ 无法从URL提取IP地址: ${rtspUrl}`)
@@ -469,7 +529,7 @@ export function useRtspPlayer() {
         console.log(`[useRtspPlayer] 策略1: 尝试ONVIF GetStreamUri (端口: ${port})...`)
         console.log(`[useRtspPlayer] 调用参数 - IP: ${ip}, 端口: ${port}, 用户名: ${creds.username || '(空)'}, 密码: ${creds.password ? '***' : '(空)'}`)
 
-        const uriResult = await invoke('get_onvif_stream_uri', {
+        const uriResult = await invokeFn('get_onvif_stream_uri', {
           ip,
           port,
           username: creds.username || '',
@@ -507,7 +567,8 @@ export function useRtspPlayer() {
   // 检查 RTSP 代理服务状态
   const checkRtspProxyService = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:801/index/api/getServerInfo', {
+      // 使用 getApiList 代替 getServerInfo（新版ZLMediaKit API）
+      const response = await fetch('http://127.0.0.1:801/index/api/getApiList', {
         method: 'GET',
         mode: 'cors',
         timeout: 2000
@@ -525,8 +586,14 @@ export function useRtspPlayer() {
 
   // 启动 RTSP 代理
   const startRtspProxy = async () => {
+    const invokeFn = await ensureInvoke()
+    if (!invokeFn) {
+      console.warn('[useRtspPlayer] Tauri API 不可用，无法启动RTSP代理')
+      return false
+    }
+
     try {
-      await invoke('start_rtsp_proxy')
+      await invokeFn('start_rtsp_proxy')
       console.log('[useRtspPlayer] ✅ Tauri API启动ZLMediaKit成功')
       await new Promise(resolve => setTimeout(resolve, 2000))
       return true
@@ -540,19 +607,22 @@ export function useRtspPlayer() {
   const ensureZLMediaKitRunning = async () => {
     console.log('[useRtspPlayer] 检查ZLMediaKit状态...')
 
+    // 确保 Tauri API 已初始化
+    const invokeFn = await ensureInvoke()
+
     // 如果不在 Tauri 环境中，跳过检查（假设 ZLM 已手动启动）
-    if (!invoke) {
+    if (!invokeFn) {
       console.log('[useRtspPlayer] 非Tauri环境，跳过ZLMediaKit状态检查')
       return
     }
 
     try {
-      const status = await invoke('check_zlmediakit_status')
+      const status = await invokeFn('check_zlmediakit_status')
       console.log('[useRtspPlayer] ZLMediaKit状态:', status)
 
       if (!status.running) {
         console.log('[useRtspPlayer] ZLMediaKit未运行，尝试启动...')
-        const result = await invoke('start_zlmediakit')
+        const result = await invokeFn('start_zlmediakit')
         console.log('[useRtspPlayer] ZLMediaKit启动结果:', result)
 
         // 等待服务启动
@@ -592,13 +662,13 @@ export function useRtspPlayer() {
         enable_hls: 0,
         enable_mp4: 0
       }
-      
+
       // 🎯 详细日志：记录完整请求信息
       console.log(`[useRtspPlayer] 🚀 发送ZLMediaKit API请求:`)
       console.log(`  - URL: ${window.location.origin}${apiUrl}`)
       console.log(`  - Method: POST`)
       console.log(`  - Body:`, JSON.stringify(requestBody, null, 2))
-      
+
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -606,7 +676,7 @@ export function useRtspPlayer() {
         },
         body: JSON.stringify(requestBody)
       })
-      
+
       // 🎯 详细日志：记录响应状态
       console.log(`[useRtspPlayer] 📥 ZLMediaKit API响应状态: ${response.status} ${response.statusText}`)
 
@@ -663,18 +733,23 @@ export function useRtspPlayer() {
 
   // 启动 RTSP 流代理（优先使用 Tauri API，备用 HTTP API）
   const startRtspStreamProxy = async (rtspUrl, streamId, options = {}) => {
+    // 确保 Tauri API 已初始化
+    const invokeFn = await ensureInvoke()
+
     // 如果不在 Tauri 环境中，使用 HTTP API
-    if (!invoke) {
+    if (!invokeFn) {
       return startRtspStreamProxyViaHttp(rtspUrl, streamId, options)
     }
 
     try {
       console.log(`[useRtspPlayer] 启动RTSP代理 - streamId: ${streamId}, rtspUrl: ${rtspUrl}`)
 
-      const result = await invoke('start_rtsp_stream_proxy', {
-        rtspUrl,
-        streamId,
-        options
+      const result = await invokeFn('start_rtsp_stream_proxy', {
+        rtspUrl: rtspUrl,
+        streamId: streamId,
+        timeoutSec: options?.timeout_sec || 10,
+        retryCount: options?.retry_count || 2,
+        bufferSize: options?.buffer_size || 2048
       })
 
       // 检查是否有错误信息
@@ -830,6 +905,7 @@ export function useRtspPlayer() {
     NETWORK_ERROR: 'NetworkError',
     SERVER_ERROR: 'ServerError',
     ABORT_ERROR: 'AbortError',
+    CODEC_UNSUPPORTED: 'CodecUnsupported',
     PLAY_ERROR: 'PlayError',
     UNKNOWN: 'Unknown'
   }
@@ -851,6 +927,12 @@ export function useRtspPlayer() {
     // 网络错误
     if (errorDetail?.message?.includes('NetworkError') || errorDetail?.message?.includes('Failed to fetch')) {
       return ErrorTypes.NETWORK_ERROR
+    }
+    // 编解码器不支持错误
+    if (errorDetail?.message?.includes('CodecUnsupported') ||
+      errorInfo?.info?.includes('Unsupported codec') ||
+      errorInfo?.info?.includes('codec in video frame')) {
+      return ErrorTypes.CODEC_UNSUPPORTED
     }
     // FFmpeg 错误（从错误信息中检测）
     if (errorDetail?.message?.includes('ffmpeg') ||
@@ -940,6 +1022,19 @@ export function useRtspPlayer() {
             })
           }
         }, 500)
+        return
+      }
+
+      // 编解码器不支持错误：立即显示友好提示，不重试
+      if (parsedErrorType === ErrorTypes.CODEC_UNSUPPORTED) {
+        console.error('[useRtspPlayer] ❌ 编解码器不支持错误')
+        console.warn('[useRtspPlayer] 提示：当前视频流的编解码器格式不被浏览器支持')
+        ElMessage.warning({
+          message: `视频流编解码器不支持，可能的原因：\n1. 摄像头使用了H.265/HEVC编码，浏览器不支持\n2. 视频编码格式超出浏览器支持范围\n3. 音频编码格式不兼容\n\n建议：尝试切换摄像头码流设置为H.264编码，或联系管理员调整摄像头编码参数。`,
+          duration: 10000,
+          showClose: true
+        })
+        showFailedOverlay(sourceId, '编解码器不支持')
         return
       }
 
@@ -1073,9 +1168,11 @@ export function useRtspPlayer() {
 
         // 构建ONVIF服务端点URL用于解析
         let onvifEndpoint = rtspUrl
+        // 提前解析地址，供后续判断端口使用
+        const addrMatch = rtspUrl.match(/^https?:\/\/([^:/]+)(?::(\d+))?/)
+
         if (!/^https?:\/\/[^/]+\/onvif\//i.test(rtspUrl)) {
           // 如果rtspUrl不是ONVIF服务端点格式，尝试从IP和端口构建
-          const addrMatch = rtspUrl.match(/^https?:\/\/([^:/]+)(?::(\d+))?/)
           if (addrMatch) {
             const ip = addrMatch[1]
             // 优先从URL中提取端口，其次是用户配置的端口，最后是默认80
@@ -1122,8 +1219,8 @@ export function useRtspPlayer() {
       if (/^https?:\/\/[^/]+\/onvif\//i.test(rtspUrl)) {
         console.error('[useRtspPlayer] ❌ 无法使用 ONVIF 服务端点作为 RTSP 流地址')
         ElMessage.warning({
-          message: 'ONVIF解析失败，请手动输入RTSP地址。格式：rtsp://IP:554/路径',
-          duration: 10000,
+          message: `ONVIF解析失败，请参考以下故障排除指南后重试或手动输入RTSP地址（格式：rtsp://IP:554/路径）：\n1. 确认摄像头ONVIF功能已启用\n2. 检查用户名和密码是否正确\n3. 确认网络连接正常\n4. 验证ONVIF端口设置是否正确\n5. 确认摄像头型号支持ONVIF协议\n6. 确认摄像头在线且运行正常`,
+          duration: 12000, // 延长显示时间以便用户阅读
           showClose: true,
           offset: 60
         })
@@ -1285,9 +1382,72 @@ export function useRtspPlayer() {
     }
   }
 
+  // MPV 播放辅助函数（替代 FLV 播放器）
+  const _playWithMpv = async (videoEl, rtspUrl, sourceId, source, callbacks = {}) => {
+    const { onPlaying, onError } = callbacks
+
+    try {
+      // 检查 mpv 是否可用
+      const isMpvAvailable = await MpvPlayer.isAvailable()
+      if (!isMpvAvailable) {
+        console.warn('[useRtspPlayer] ⚠️ mpv 不可用，跳过此方案')
+        return false
+      }
+
+      console.log('[useRtspPlayer] 🎯 使用 mpv 播放器播放 RTSP 流')
+      console.log('[useRtspPlayer] RTSP URL:', rtspUrl)
+
+      // 生成唯一的播放器ID
+      const playerId = `mpv_${sourceId}_${Date.now()}`
+
+      // 创建 mpv 播放器实例
+      const mpvPlayer = new MpvPlayer(playerId, { autoCreate: true })
+
+      // 设置事件回调
+      mpvPlayer.on('play', () => {
+        console.log('[useRtspPlayer] ✅ mpv 播放开始')
+        hideOverlay(sourceId)
+        if (onPlaying) onPlaying(source)
+      })
+
+      mpvPlayer.on('error', (error) => {
+        console.error('[useRtspPlayer] ❌ mpv 播放错误:', error)
+        showFailedOverlay(sourceId, 'mpv播放失败')
+        if (onError) onError(source, error)
+      })
+
+      mpvPlayer.on('stop', () => {
+        console.log('[useRtspPlayer] ℹ️ mpv 播放停止')
+      })
+
+      // 播放 RTSP 流
+      await mpvPlayer.playRtsp(rtspUrl)
+
+      // 保存播放器引用
+      videoEl._mpvPlayer = mpvPlayer
+      players.value[sourceId] = { videoEl, mpvPlayer, flvPlayer: null }
+
+      return true
+    } catch (error) {
+      console.error('[useRtspPlayer] ❌ mpv 播放初始化失败:', error)
+      return false
+    }
+  }
+
   // FLV 播放辅助函数（WebRTC 降级时使用）
   const _playWithFlv = async (videoEl, flvUrl, sourceId, source, callbacks = {}) => {
     const { onPlaying, onError } = callbacks
+
+    // 🎯 优先尝试使用 mpv 播放器（更好的兼容性和更低延迟）
+    const rtspUrl = cleanUrl(source.streamUrl || source.rtspUrl || source.url)
+    if (rtspUrl && rtspUrl.startsWith('rtsp://')) {
+      const mpvSuccess = await _playWithMpv(videoEl, rtspUrl, sourceId, source, callbacks)
+      if (mpvSuccess) {
+        console.log('[useRtspPlayer] ✅ mpv 播放器成功启动')
+        return
+      }
+      console.warn('[useRtspPlayer] ⚠️ mpv 播放失败，回退到 FLV')
+    }
 
     // 创建 FLV 播放器
     const flvPlayer = createFlvPlayer(videoEl, flvUrl, sourceId)

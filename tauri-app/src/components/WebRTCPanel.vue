@@ -1,7 +1,7 @@
 <template>
   <div class="webrtc-panel">
     <h3 class="panel-title">WebRTC 视频会议</h3>
-    
+
     <!-- 状态显示 -->
     <div class="status-section">
       <span class="status-badge" :class="{ connected: isConnected }">
@@ -14,18 +14,18 @@
     <div class="config-section">
       <div class="form-group">
         <label>房间 ID:</label>
-        <input 
-          v-model="roomInput" 
-          type="text" 
+        <input
+          v-model="roomInput"
+          type="text"
           placeholder="输入房间ID"
           class="form-input"
         />
       </div>
       <div class="form-group">
         <label>您的名称:</label>
-        <input 
-          v-model="peerName" 
-          type="text" 
+        <input
+          v-model="peerName"
+          type="text"
           placeholder="输入您的名称"
           class="form-input"
         />
@@ -34,15 +34,15 @@
 
     <!-- 控制按钮 -->
     <div class="button-section">
-      <button 
-        class="btn btn-primary" 
+      <button
+        class="btn btn-primary"
         @click="joinRoom"
         :disabled="isConnected || !roomInput"
       >
         加入房间
       </button>
-      <button 
-        class="btn btn-danger" 
+      <button
+        class="btn btn-danger"
         @click="leaveRoom"
         :disabled="!isConnected"
       >
@@ -54,11 +54,11 @@
     <div class="video-section" v-if="localStream">
       <h4>本地预览</h4>
       <div class="video-container">
-        <video 
-          ref="localVideo" 
-          :srcObject="localStream" 
-          autoplay 
-          muted 
+        <video
+          ref="localVideo"
+          :srcObject="localStream"
+          autoplay
+          muted
           playsinline
           class="video-element"
         />
@@ -69,17 +69,17 @@
     <div class="remote-section" v-if="remotePeers.length > 0">
       <h4>远程参与者 ({{ remotePeers.length }})</h4>
       <div class="peers-grid">
-        <div 
-          v-for="peer in remotePeers" 
-          :key="peer.id" 
+        <div
+          v-for="peer in remotePeers"
+          :key="peer.id"
           class="peer-card"
         >
           <div class="peer-name">{{ peer.name }}</div>
           <div class="video-container small">
-            <video 
-              :ref="`remoteVideo-${peer.id}`" 
-              :srcObject="getRemoteStream(peer.id)" 
-              autoplay 
+            <video
+              :ref="`remoteVideo-${peer.id}`"
+              :srcObject="getRemoteStream(peer.id)"
+              autoplay
               playsinline
               class="video-element"
             />
@@ -103,15 +103,15 @@
 
     <!-- 静音控制 -->
     <div class="mute-controls" v-if="localStream">
-      <button 
-        class="btn btn-secondary" 
+      <button
+        class="btn btn-secondary"
         @click="toggleMute"
         :class="{ active: isAudioMuted }"
       >
         {{ isAudioMuted ? '🔇 取消静音' : '🔊 静音' }}
       </button>
-      <button 
-        class="btn btn-secondary" 
+      <button
+        class="btn btn-secondary"
         @click="toggleVideo"
         :class="{ active: isVideoMuted }"
       >
@@ -165,9 +165,11 @@ const joinRoom = async () => {
  localStream.value = await tauriWebRTC.getLocalStream();
  addLog('本地媒体流获取成功');
  // 获取窗口标签（Tauri 窗口标识）
- const window = await import('@tauri-apps/api/window');
- const currentWindow = window.getCurrent();
- const windowLabel = currentWindow.label;
+const windowModule = await import('@tauri-apps/api/webviewWindow');
+// Tauri v2 兼容性：getCurrentWindow 可能直接导出或在 WebviewWindow 对象中
+const getCurrentFn = windowModule.getCurrentWindow || windowModule.WebviewWindow?.getCurrent;
+const currentWindow = getCurrentFn ? getCurrentFn() : null;
+const windowLabel = currentWindow?.label || 'main';
  // 加入房间
  const result = await tauriWebRTC.joinRoom(roomInput.value, peerName.value, windowLabel);
  roomId.value = roomInput.value;

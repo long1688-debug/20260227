@@ -58,8 +58,12 @@ router.beforeEach((to, from, next) => {
 
   // Tauri 环境下动态设置窗口标题
   if (window.__TAURI__) {
-    import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-      getCurrentWindow().setTitle(title).catch(() => { });
+    import('@tauri-apps/api/webviewWindow').then((windowModule) => {
+      // Tauri v2 兼容性：getCurrentWindow 可能直接导出或在 WebviewWindow 对象中
+      const getCurrentFn = windowModule.getCurrentWindow || windowModule.WebviewWindow?.getCurrent;
+      if (getCurrentFn) {
+        getCurrentFn().setTitle(title).catch(() => { });
+      }
     }).catch(() => { });
   }
 

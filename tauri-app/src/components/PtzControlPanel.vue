@@ -137,6 +137,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import flvjs from 'flv.js'
 
 const selectedDevice = ref('')
 const devices = ref([])
@@ -149,6 +150,8 @@ const statusMessage = ref('')
 const isError = ref(false)
 const ptzVideo = ref(null)
 let videoStream = null
+let flvPlayer = null
+let currentStreamId = null
 const manualRtspUrl = ref('')
 
 // 加载已注册设备列表
@@ -185,17 +188,31 @@ async function registerDevice(dev) {
   showStatus('正在注册设备...', false)
 
   try {
-    // 这里应该弹出对话框获取用户名密码，简化起见使用默认值
-    const deviceId = await invoke('ptz_register_device', {
+    // 使用新的统一注册命令，同时获取RTSP地址
+    const result = await invoke('register_onvif_device_with_rtsp', {
+      deviceName: dev.name,
       ip: dev.ip,
+      port: 80,
       username: 'admin',
       password: 'admin',
-      name: dev.name
+      profileToken: 'profile_1'
     })
 
-    showStatus(`设备注册成功: ${deviceId}`, false)
-    await loadDevices()
-    discoveredDevices.value = discoveredDevices.value.filter(d => d.ip !== dev.ip)
+    if (result.registered) {
+      showStatus(`设备注册成功: ${result.device_id}${result.rtsp_url ? ' 并获取了RTSP地址' : ' 但未能获取RTSP地址'}`, false)
+      await loadDevices()
+      discoveredDevices.value = discoveredDevices.value.filter(d => d.ip !== dev.ip)
+
+      // 如果注册成功，自动选择该设备
+      selectedDevice.value = result.device_id
+
+      // 如果获取到了RTSP地址，尝试播放视频流
+      if (result.rtsp_url) {
+        await playVideoStream(result.device_id)
+      }
+    } else {
+      showStatus('设备注册失败', true)
+    }
   } catch (err) {
     showStatus('注册失败: ' + err, true)
   } finally {
@@ -235,10 +252,7 @@ async function playVideoStream(deviceId) {
   if (!ptzVideo.value) return
 
   // 停止当前流
-  if (videoStream) {
-    videoStream.close()
-    videoStream = null
-  }
+  await stopVideoStream()
 
   // 尝试获取RTSP流地址
   const rtspUrl = await getRtspStreamUrl(deviceId)
@@ -248,20 +262,44 @@ async function playVideoStream(deviceId) {
   }
 
   try {
-    // 这里我们使用代理服务将RTSP转换为浏览器可播放的格式
-    // 实际实现可能需要后端启动一个流媒体代理服务
-    const streamResponse = await invoke('start_rtsp_stream', {
-      rtsp_url: rtspUrl,
-      username: null, // 如果RTSP需要认证，可以传递
-      password: null
+    const streamResponse = await invoke('start_rtsp_stream_proxy', {
+      rtspUrl: rtspUrl,
+      streamId: selectedDevice.value
     })
 
-    // 设置视频源
-    ptzVideo.value.src = streamResponse.streamUrl
-    ptzVideo.value.play().catch(error => {
-      console.error('视频播放失败:', error)
-      showStatus('视频播放失败: ' + error.message, true)
-    })
+    currentStreamId = streamResponse.streamId || selectedDevice.value
+    const flvUrl = streamResponse.flvUrl || streamResponse.streamUrl
+
+    if (!flvUrl) {
+      throw new Error('未获取到可播放的流地址')
+    }
+
+    if (flvjs.isSupported()) {
+      if (flvPlayer) {
+        try {
+          flvPlayer.destroy()
+        } catch (destroyError) {
+          console.warn('销毁旧FLV播放器失败:', destroyError)
+        }
+        flvPlayer = null
+      }
+
+      flvPlayer = flvjs.createPlayer({
+        type: 'flv',
+        url: flvUrl,
+        isLive: true,
+        hasAudio: true,
+        hasVideo: true,
+        enableStashBuffer: true,
+        stashInitialSize: 128
+      })
+      flvPlayer.attachMediaElement(ptzVideo.value)
+      flvPlayer.load()
+      await ptzVideo.value.play()
+    } else {
+      ptzVideo.value.src = flvUrl
+      await ptzVideo.value.play()
+    }
   } catch (err) {
     console.error('启动RTSP流失败:', err)
     showStatus('启动视频流失败: ' + err.message, true)
@@ -269,13 +307,36 @@ async function playVideoStream(deviceId) {
 }
 
 // 停止视频流
-function stopVideoStream() {
+async function stopVideoStream() {
+  if (flvPlayer) {
+    try {
+      flvPlayer.destroy()
+    } catch (destroyError) {
+      console.warn('销毁FLV播放器失败:', destroyError)
+    }
+    flvPlayer = null
+  }
+
   if (ptzVideo.value) {
     ptzVideo.value.pause()
     ptzVideo.value.src = ''
   }
+
+  if (currentStreamId) {
+    try {
+      await invoke('stop_rtsp_stream_proxy', { stream_id: currentStreamId })
+    } catch (err) {
+      console.warn('停止RTSP代理失败:', err)
+    }
+    currentStreamId = null
+  }
+
   if (videoStream) {
-    videoStream.close()
+    try {
+      videoStream.close()
+    } catch (closeError) {
+      console.warn('关闭旧流失败:', closeError)
+    }
     videoStream = null
   }
 }

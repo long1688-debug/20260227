@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>字幕生成器</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: #0c1424;
+      color: #f4f7ff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .page {
+      width: min(980px, calc(100vw - 40px));
+      background: rgba(16, 25, 47, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 24px;
+      padding: 40px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+    }
+
+    h1 {
+      margin: 0 0 18px;
+      font-size: 36px;
+      letter-spacing: 0.04em;
+    }
+
+    p {
+      line-height: 1.8;
+      margin: 0 0 18px;
+      color: #c8d0e6;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 20px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(82, 100, 255, 0.16);
+      color: #f4f7ff;
+      text-decoration: none;
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      background: rgba(82, 100, 255, 0.24);
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #9ab3ff;
+      margin-right: 8px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <h1>字幕生成器</h1>
+    <p>这是本地服务器的字幕生成器入口页面，已集成到 Tauri 原生桌面中。若需要完整功能，请先确保后端服务已启动。</p>
+    <p>当前页面仅作为本地 Web 集成入口，占位并保留后续字幕生成扩展。</p>
+    <div class="btn-group">
+      <a class="btn" href="/web/index.html">返回 Web 功能中心</a>
+      <a class="btn" href="/web/service-status.html">查看服务状态</a>
+      <a class="btn" href="/web/api-test.html">打开 API 测试</a>
+    </div>
+    <p style="margin-top:28px; color:#8fa3c3;">提示：若您希望直接在桌面中使用字幕生成功能，可在此页面基础上继续扩展后台字幕服务接口。</p>
+  </div>
+</body>
+
+</html>

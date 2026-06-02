@@ -114,6 +114,151 @@ import flvjs from 'flv.js'; // 🎯 导入 FLV.js 播放器
 import { useVideoSourceManager } from '@/utils/videoSource';
 import { useSourceStore } from '@/stores/sourceStore';
 
+// 🎯 WebRTC 播放器（低延迟）
+import { ZLMediaKitWebRTCPlayer } from '@/utils/zlm-webrtc-player';
+
+// 🎯 mpv 播放器（替代 FLV，更好的兼容性）
+import { MpvPlayer } from '@/utils/mpv-player';
+
+// 🎯 动态导入WebRTC播放器（避免全局 window 污染 - 问题4修复）
+let WebRTCPlayerClass = null;
+
+async function loadWebRTCPlayer() {
+  if (!WebRTCPlayerClass) {
+    try {
+      const { ZLMediaKitWebRTCPlayer } = await import('@/utils/zlm-webrtc-player');
+      WebRTCPlayerClass = ZLMediaKitWebRTCPlayer;
+    } catch (e) {
+      console.warn('WebRTC播放器加载失败:', e);
+    }
+  }
+  return WebRTCPlayerClass;
+}
+
+// 🎯 设备配置缓存：记住之前成功的配置
+const deviceConfigCache = new Map();
+
+// 从localStorage加载缓存
+try {
+  const cached = localStorage.getItem('video_device_configs');
+  if (cached) {
+    const parsed = JSON.parse(cached);
+    Object.entries(parsed).forEach(([key, config]) => {
+      deviceConfigCache.set(key, config);
+    });
+  }
+} catch (e) {
+  console.warn('加载设备配置缓存失败:', e);
+}
+
+// 保存缓存到localStorage
+function saveDeviceConfigCache() {
+  try {
+    const obj = {};
+    deviceConfigCache.forEach((value, key) => {
+      obj[key] = value;
+    });
+    localStorage.setItem('video_device_configs', JSON.stringify(obj));
+  } catch (e) {
+    console.warn('保存设备配置缓存失败:', e);
+  }
+}
+
+// 获取缓存的设备配置
+function getCachedDeviceConfig(deviceKey) {
+  return deviceConfigCache.get(deviceKey);
+}
+
+// 设置设备配置到缓存
+function setCachedDeviceConfig(deviceKey, config) {
+  deviceConfigCache.set(deviceKey, config);
+  saveDeviceConfigCache();
+}
+
+// 尝试通用RTSP模板
+async function tryGenericRtspTemplates(ip, sourceData) {
+  console.log('[VideoPreview] 尝试通用RTSP模板...');
+
+  // 常见的RTSP路径模板
+  const rtspTemplates = [
+    `rtsp://${ip}:554/stream`,
+    `rtsp://${ip}:554/live/av0`,
+    `rtsp://${ip}:554/cam/realmonitor?channel=1&subtype=0`,
+    `rtsp://${ip}:554/Streaming/Channels/1`,
+    `rtsp://${ip}:554/Streaming/Channels/101`,
+    `rtsp://${ip}:554/mpeg4`,
+    `rtsp://${ip}:554/1`,
+    `rtsp://${ip}:554/ch0_0.h264`,
+    `rtsp://${ip}:554/videoMain`,
+    `rtsp://${ip}:554/LiveChannel/0`,
+  ];
+
+  // 如果有用户名密码，尝试在每个模板中添加认证
+  const username = sourceData?.username || 'admin';
+  const password = sourceData?.password || '';
+
+  // 先尝试带认证的模板
+  for (const template of rtspTemplates) {
+    let rtspUrlWithAuth = template;
+    if (username && password) {
+      rtspUrlWithAuth = template.replace('rtsp://', `rtsp://${username}:${password}@`);
+    }
+
+    try {
+      console.log(`[VideoPreview] 尝试RTSP模板: ${rtspUrlWithAuth}`);
+      const isValid = await testRtspConnection(rtspUrlWithAuth);
+      if (isValid) {
+        console.log(`[VideoPreview] ✅ 通用模板成功: ${rtspUrlWithAuth}`);
+        return rtspUrlWithAuth;
+      }
+    } catch (e) {
+      console.log(`[VideoPreview] 通用模板失败: ${rtspUrlWithAuth}`, e.message);
+    }
+  }
+
+  // 如果带认证的失败，尝试不带认证的模板
+  for (const template of rtspTemplates) {
+    try {
+      console.log(`[VideoPreview] 尝试RTSP模板(无认证): ${template}`);
+      const isValid = await testRtspConnection(template);
+      if (isValid) {
+        console.log(`[VideoPreview] ✅ 通用模板成功(无认证): ${template}`);
+        return template;
+      }
+    } catch (e) {
+      console.log(`[VideoPreview] 通用模板失败(无认证): ${template}`, e.message);
+    }
+  }
+
+  throw new Error('所有通用RTSP模板均失败');
+}
+
+// PTZ设备注册功能
+async function registerCameraToDeviceManager(cameraConfig) {
+  console.log('[VideoPreview] 注册摄像机到PTZ设备管理器:', cameraConfig);
+
+  try {
+    // 通知父窗口或全局设备管理器注册此摄像机
+    if (typeof window !== 'undefined' && window.parent && window.parent.registerPtzDevice) {
+      await window.parent.registerPtzDevice({
+        id: cameraConfig.id || cameraConfig.ip,
+        ip: cameraConfig.ip,
+        port: cameraConfig.port || 2000, // ONVIF端口
+        rtspUrl: cameraConfig.rtspUrl,
+        username: cameraConfig.username,
+        password: cameraConfig.password,
+        name: cameraConfig.name || `Camera ${cameraConfig.ip}`,
+        capabilities: ['pan', 'tilt', 'zoom', 'focus', 'iris'] // 默认能力
+      });
+      console.log('[VideoPreview] 摄像机已成功注册到PTZ设备管理器');
+    } else {
+      console.log('[VideoPreview] 未找到PTZ设备管理器注册接口');
+    }
+  } catch (e) {
+    console.error('[VideoPreview] 摄像机注册到PTZ设备管理器失败:', e);
+  }
+}
+
 // 🎯 初始化视频源管理器
 const videoSourceManager = useVideoSourceManager();
 const sourceStore = useSourceStore();
@@ -172,6 +317,9 @@ const props = defineProps({
     default: false
   }
 });
+
+// 组件销毁状态
+const isComponentDestroyed = ref(false);
 
 const emit = defineEmits([
   'sourceChanged',
@@ -307,53 +455,31 @@ watch(
 // 🎯 手动注册视频到同步系统
 // 用于在设置视频源后确保注册到 SyncStateReplicator
 const registerVideoToSyncSystem = () => {
+  // 简化检查：确保有视频元素、源ID，且未注册
   if (!videoRef.value || !props.sourceId || isRegistered.value) {
-    console.log(`[VideoPreview.registerVideoToSyncSystem] 跳过注册:`, {
-      hasVideo: !!videoRef.value,
-      sourceId: props.sourceId,
-      isRegistered: isRegistered.value
-    });
+    console.log(`[VideoPreview.registerVideoToSyncSystem] 跳过注册`);
     return;
   }
 
-  // 🎯 关键修复：如果播放器正在销毁，跳过注册
-  if (videoRef.value?._isDestroying) {
-    console.log(`[VideoPreview.registerVideoToSyncSystem] 播放器正在销毁，跳过注册: ${props.sourceId}`);
-    return;
-  }
-
-  // 检查是否有有效的视频源（含 FLV 播放器实例）
-  // flv.js 通过 MediaSource 写入 SourceBuffer，不设置 src/srcObject，
-  // 此时 src 和 srcObject 均为空，但 _flvPlayer 存在表示视频已就绪。
+  // 检查是否有有效的视频源（含 FLV/mpv 播放器实例）
   const hasVideoSource =
     videoRef.value.src ||
     videoRef.value.srcObject ||
-    // FLV 播放器：即使 src/srcObject 为空，_flvPlayer 存在即为有效流
-    (videoRef.value._flvPlayer && typeof videoRef.value._flvPlayer.destroy === 'function');
+    (videoRef.value._flvPlayer && typeof videoRef.value._flvPlayer.destroy === 'function') ||
+    (videoRef.value._mpvPlayer && typeof videoRef.value._mpvPlayer.destroy === 'function');
+
   if (!hasVideoSource) {
     console.log(`[VideoPreview.registerVideoToSyncSystem] 视频元素无有效源，跳过注册: ${props.sourceId}`);
     return;
   }
 
-  // 🎯 关键修复：检查是否在布局切换期间，如果是则延迟注册
-  // 防止在旧注册未清理时尝试新注册
-  if (window.__isLayoutSwitching) {
-    console.log(`[VideoPreview.registerVideoToSyncSystem] 布局切换中，延迟注册: ${props.sourceId}`);
-    setTimeout(() => registerVideoToSyncSystem(), 100);
-    return;
-  }
+  console.log(`[VideoPreview.registerVideoToSyncSystem] 注册视频: ${props.sourceId}, index: ${props.index}`);
 
-  console.log(`[VideoPreview.registerVideoToSyncSystem] 手动注册视频: ${props.sourceId}, index: ${props.index}`);
-
+  // 根据索引决定是主控还是从属
   if (props.index === 0) {
     registerMasterVideo(videoRef.value, props.videoSource || props.sourceId);
-    console.log(`[VideoPreview] 主控视频已手动注册: ${props.sourceId}`);
   } else {
-    // 🎯 关键修复：传递完整的 videoSource 对象，而不是仅传递 sourceId
-    // 这样 useVideoSync 可以检测到 isClone 和 originalStreamId 属性
-    const sourceToRegister = props.videoSource || props.sourceId;
-    registerSlaveVideo(videoRef.value, props.index, sourceToRegister);
-    console.log(`[VideoPreview] 从属视频已手动注册: ${props.sourceId}, isClone: ${props.videoSource?.isClone || false}`);
+    registerSlaveVideo(videoRef.value, props.index, props.videoSource || props.sourceId);
   }
 
   isRegistered.value = true;
@@ -369,9 +495,10 @@ const onVideoLoadedMetadata = () => {
 
   // 🎯 关键修复：只有当 video 元素真正有视频源时才注册
   // 避免空 video 元素误注册到同步系统
-  // flv.js：通过 FLV 播放器实例检测有效流（其 src/srcObject 始终为空）
+  // flv.js/mpv：通过播放器实例检测有效流（其 src/srcObject 始终为空）
   const hasVideoSourceFromFlv = !!videoRef.value._flvPlayer && typeof videoRef.value._flvPlayer.destroy === 'function';
-  const hasVideoSource = videoRef.value.src || videoRef.value.srcObject || hasVideoSourceFromFlv;
+  const hasVideoSourceFromMpv = !!videoRef.value._mpvPlayer && typeof videoRef.value._mpvPlayer.destroy === 'function';
+  const hasVideoSource = videoRef.value.src || videoRef.value.srcObject || hasVideoSourceFromFlv || hasVideoSourceFromMpv;
   if (!hasVideoSource) {
     console.log(`[VideoPreview] 视频元素无有效源，跳过注册: ${props.sourceId}`);
     return;
@@ -379,25 +506,26 @@ const onVideoLoadedMetadata = () => {
 
   console.log(`[VideoPreview.onVideoLoadedMetadata] 视频元数据加载完成，准备注册: ${props.sourceId}`);
 
-  // 🎯 关键修复：延迟注册，确保视频元素完全就绪
-  // 避免在布局切换时，视频元素尚未挂载完成就调用 play()
-  setTimeout(() => {
-    if (!videoRef.value || isRegistered.value) return;
+  // 🎯 关键修复：立即注册，同时优化同步机制
+  // 避免延迟注册导致的同步不及时问题
+  if (!videoRef.value || isRegistered.value) return;
 
-    if (props.index === 0) {
-      registerMasterVideo(videoRef.value, props.videoSource || props.sourceId);
-      console.log(`[VideoPreview] 主控视频已注册: ${props.sourceId}`);
-    } else {
-      // 🎯 关键修复：传递完整的 videoSource 对象，而不是仅传递 sourceId
-      // 这样 useVideoSync 可以检测到 isClone 和 originalStreamId 属性
-      const sourceToRegister = props.videoSource || props.sourceId;
-      registerSlaveVideo(videoRef.value, props.index, sourceToRegister);
-      console.log(`[VideoPreview] 从属视频已注册: ${props.sourceId}, isClone: ${props.videoSource?.isClone || false}`);
-    }
+  // 计算视频加载完成到注册的时间，用于延迟评估
+  const loadTime = Date.now();
 
-    isRegistered.value = true;
-    console.log(`[VideoPreview] ${props.index === 0 ? '主控' : '从属'} 已注册: ${props.sourceId}`);
-  }, 50);
+  if (props.index === 0) {
+    registerMasterVideo(videoRef.value, props.videoSource || props.sourceId);
+    console.log(`[VideoPreview] 主控视频已注册: ${props.sourceId}, 加载耗时: ${Date.now() - loadTime}ms`);
+  } else {
+    // 🎯 关键修复：传递完整的 videoSource 对象，而不是仅传递 sourceId
+    // 这样 useVideoSync 可以检测到 isClone 和 originalStreamId 属性
+    const sourceToRegister = props.videoSource || props.sourceId;
+    registerSlaveVideo(videoRef.value, props.index, sourceToRegister);
+    console.log(`[VideoPreview] 从属视频已注册: ${props.sourceId}, isClone: ${props.videoSource?.isClone || false}, 加载耗时: ${Date.now() - loadTime}ms`);
+  }
+
+  isRegistered.value = true;
+  console.log(`[VideoPreview] ${props.index === 0 ? '主控' : '从属'} 已注册: ${props.sourceId}`);
 };
 
 // 视频可以播放
@@ -501,6 +629,7 @@ const isPaused = ref(false);
 const playbackRate = ref(1.0);
 const progress = ref(0); // 进度条值（0-100）
 let isDragging = false; // 是否正在拖动进度条
+let progressAnimationId = null; // 用于取消requestAnimationFrame
 
 // 🎯 视频加载和错误状态
 const videoLoading = ref(false);
@@ -807,29 +936,26 @@ async function validateUserRtspUrl(rtspUrl, sourceData) {
   };
 }
 
-// 确保ZLMediaKit流媒体服务已启动
-async function ensureZLMediaKitRunning(invoke) {
-  console.log('[VideoPreview] 检查ZLMediaKit状态...');
+// 🎯 新增：智能RTSP URL处理，支持多种格式
+function normalizeRtspUrl(rtspUrl, sourceData) {
+  let normalizedUrl = rtspUrl;
 
-  try {
-    const status = await invoke('check_zlmediakit_status');
-    console.log('[VideoPreview] ZLMediaKit状态:', status);
-
-    if (!status.running) {
-      console.log('[VideoPreview] ZLMediaKit未运行，尝试启动...');
-      const result = await invoke('start_zlmediakit');
-      console.log('[VideoPreview] ZLMediaKit启动结果:', result);
-
-      // 等待服务启动
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-  } catch (e) {
-    console.warn('[VideoPreview] ZLMediaKit检查/启动失败:', e);
+  // 如果URL中没有端口号且不是标准554端口，尝试添加
+  if (!normalizedUrl.includes(':554/') && !normalizedUrl.match(/:\d+\//)) {
+    normalizedUrl = normalizedUrl.replace(/([^:])\/(.*)$/, '$1:554/$2');
   }
+
+  // 如果提供了用户名密码，且URL中没有认证信息，添加认证
+  if (sourceData?.username && sourceData?.password && !normalizedUrl.includes('@')) {
+    const withoutProtocol = normalizedUrl.replace(/^rtsp:\/\//, '');
+    normalizedUrl = `rtsp://${sourceData.username}:${sourceData.password}@${withoutProtocol}`;
+  }
+
+  return normalizedUrl;
 }
 
 // 🆕 确保 ZLMediaKit 流媒体服务已启动（WebRTC + FLV）
-async function ensureRtspProxyRunning(invoke) {
+async function ensureZLMediaKitRunning(invoke) {
   console.log('[VideoPreview] 检查ZLMediaKit流媒体服务状态...');
 
   try {
@@ -838,7 +964,8 @@ async function ensureRtspProxyRunning(invoke) {
 
     try {
       console.log('[VideoPreview] 尝试HTTP健康检查...');
-      const response = await fetch('/index/api/getServerInfo', {
+      // 使用 getApiList 代替 getServerInfo（新版ZLMediaKit API）
+      const response = await fetch('/index/api/getApiList', {
         method: 'GET',
         mode: 'cors',
         signal: AbortSignal.timeout(3000)
@@ -863,12 +990,12 @@ async function ensureRtspProxyRunning(invoke) {
 
     // 如果HTTP检查失败，再使用Tauri API
     console.log('[VideoPreview] 调用Tauri API检查ZLMediaKit状态...');
-    const status = await invoke('check_rtsp_proxy_status');
+    const status = await invoke('check_zlmediakit_status');
     console.log('[VideoPreview] ZLMediaKit状态:', status);
 
     if (!status.running) {
       console.log('[VideoPreview] ZLMediaKit未运行，尝试启动...');
-      const result = await invoke('start_rtsp_proxy');
+      const result = await invoke('start_zlmediakit');
       console.log('[VideoPreview] ZLMediaKit启动结果:', result);
 
       // 等待服务启动
@@ -989,16 +1116,69 @@ async function startNetworkCamera(sourceData) {
       let onvifSuccess = false;
       let verifiedPort = null;  // 🎯 记录验证成功的端口
 
-      for (const port of uniquePorts) {
+      // 🎯 优先检查缓存的设备配置
+      const cachedConfig = getCachedDeviceConfig(`${ip}:${sourceData?.onvifPort || 2000}`);
+      if (cachedConfig) {
+        console.log('[VideoPreview] 发现缓存的设备配置:', cachedConfig);
+
+        // 验证缓存的RTSP地址是否仍然可用
+        const isCachedRtspValid = await testRtspConnection(cachedConfig.rtspUrl);
+        if (isCachedRtspValid) {
+          console.log('[VideoPreview] ✅ 使用缓存的有效RTSP地址:', cachedConfig.rtspUrl);
+          rtspUrl = cachedConfig.rtspUrl;
+          verifiedPort = cachedConfig.port;
+          onvifSuccess = true;
+
+          // 🎯 使用缓存配置时也注册到PTZ设备管理器
+          await registerCameraToDeviceManager({
+            id: sourceData?.id || `${ip}:${cachedConfig.port}`,
+            ip,
+            port: cachedConfig.port,
+            rtspUrl: cachedConfig.rtspUrl,
+            username: sourceData?.username,
+            password: sourceData?.password,
+            name: sourceData?.name || `ONVIF Camera ${ip}`
+          });
+        } else {
+          console.log('[VideoPreview] 缓存的RTSP地址不可用，清除缓存并重新探测');
+          deviceConfigCache.delete(`${ip}:${sourceData?.onvifPort || 2000}`);
+          saveDeviceConfigCache();
+        }
+      }
+
+      // 🎯 如果缓存无效，则进行智能ONVIF探测
+      if (!onvifSuccess) {
+        // 🎯 智能ONVIF探测：添加更全面的设备识别和错误处理
+        for (const port of uniquePorts) {
         try {
           console.log(`[VideoPreview] 尝试ONVIF端口 ${port}...`);
 
-          const result = await invoke('get_onvif_stream_uri', {
+          // 🎯 添加超时控制，避免长时间等待
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('ONVIF请求超时')), 8000) // 增加超时时间
+          );
+
+          console.log(`[VideoPreview] 正在调用后端ONVIF服务，IP: ${ip}, 端口: ${port}`);
+          console.log(`[VideoPreview] 认证信息: 用户名=${sourceData?.username || '未提供'}, 密码=${sourceData?.password ? '已提供' : '未提供'}`);
+
+          const onvifPromise = invoke('get_onvif_stream_uri', {
             ip: ip,
             port: port,
             username: sourceData?.username || '',
             password: sourceData?.password || ''
           });
+
+          let result;
+          try {
+            result = await Promise.race([onvifPromise, timeoutPromise]);
+            console.log(`[VideoPreview] ONVIF调用成功，返回结果:`, result);
+          } catch (error) {
+            console.error(`[VideoPreview] ONVIF调用失败，端口 ${port}:`, error.message || error);
+            if (error.message && error.message.includes('timeout')) {
+              console.warn(`[VideoPreview] 端口 ${port} 请求超时，可能是网络连接慢或设备响应慢`);
+            }
+            continue; // 尝试下一个端口
+          }
 
           console.log('[VideoPreview] ONVIF返回结果:', result);
 
@@ -1061,12 +1241,47 @@ async function startNetworkCamera(sourceData) {
             }
 
             onvifSuccess = true;
+
+            // 🎯 缓存成功的设备配置
+            const deviceKey = `${ip}:${verifiedPort}`;
+            const deviceConfig = {
+              ip,
+              port: verifiedPort,
+              rtspUrl,
+              timestamp: Date.now(),
+              username: sourceData?.username,
+              password: sourceData?.password ? '***' : '' // 不存储真实密码，仅标记存在
+            };
+            setCachedDeviceConfig(deviceKey, deviceConfig);
+            console.log('[VideoPreview] 设备配置已缓存:', deviceKey);
+
+            // 🎯 自动注册到PTZ设备管理器
+            await registerCameraToDeviceManager({
+              id: sourceData?.id || `${ip}:${verifiedPort}`,
+              ip,
+              port: verifiedPort,
+              rtspUrl,
+              username: sourceData?.username,
+              password: sourceData?.password,
+              name: sourceData?.name || `ONVIF Camera ${ip}`
+            });
+
             break;
           }
         } catch (e) {
           console.warn(`[VideoPreview] ONVIF端口 ${port} 失败:`, e.message || e);
+
+          // 🎯 智能错误分类：区分网络错误和认证错误
+          if (e.message && (e.message.includes('timeout') || e.message.includes('ECONNREFUSED'))) {
+            console.log(`[VideoPreview] 端口 ${port} 无响应，继续尝试下一个端口`);
+          } else if (e.message && (e.message.includes('auth') || e.message.toLowerCase().includes('unauthorized'))) {
+            console.warn(`[VideoPreview] 端口 ${port} 认证失败，用户名/密码可能错误`);
+          } else {
+            console.log(`[VideoPreview] 端口 ${port} 其他错误，继续尝试下一个端口`);
+          }
         }
       }
+    } // 结束 if (!onvifSuccess) 块
 
       // 如果ONVIF获取失败，尝试使用常见的RTSP地址模板
       if (!onvifSuccess) {
@@ -1074,10 +1289,12 @@ async function startNetworkCamera(sourceData) {
 
         // 🎯 关键修复：如果用户已经提供了有效的RTSP地址，不要覆盖它
         if (rtspUrl && rtspUrl.startsWith('rtsp://')) {
+          // 🎯 应用标准化处理以优化RTSP URL
+          rtspUrl = normalizeRtspUrl(rtspUrl, sourceData);
           console.log('[VideoPreview] ✅ 用户已提供RTSP地址，保持使用:', rtspUrl);
           ElMessage.success({
-            message: 'ONVIF探测未完成，但将使用您手动输入的RTSP地址',
-            duration: 3000
+            message: `继续使用用户提供的RTSP地址`,
+            duration: 2000
           });
         } else {
           // 显示更详细的错误提示
@@ -1092,13 +1309,16 @@ async function startNetworkCamera(sourceData) {
             const { invoke } = await import('@tauri-apps/api/core');
             console.log('[VideoPreview] 🔍 开始智能 RTSP 地址验证...');
 
-            const verifiedUrl = await invoke('try_multiple_rtsp_templates_cmd', {
-              ip: ip,
-              brand: sourceData?.brand || null
-            }).catch(err => {
+            let verifiedUrl = null;
+            try {
+              verifiedUrl = await invoke('try_multiple_rtsp_templates_cmd', {
+                ip: ip,
+                brand: sourceData?.brand || null
+              });
+            } catch (err) {
               console.warn('[VideoPreview] 智能验证失败，回退到模板:', err);
-              return null;
-            });
+              verifiedUrl = null;
+            }
 
             if (verifiedUrl) {
               console.log('[VideoPreview] ✅ 智能验证成功，使用地址:', verifiedUrl);
@@ -1116,7 +1336,31 @@ async function startNetworkCamera(sourceData) {
         if (rtspUrl) {
           console.log('[VideoPreview] ✅ 最终使用的 RTSP 地址:', rtspUrl);
         } else {
-          throw new Error('ONVIF获取失败且RTSP模板也无法生成地址');
+          // 🎯 提供手动输入RTSP地址的选项
+          console.log('[VideoPreview] 📝 ONVIF和RTSP模板均失败，提供手动配置选项');
+
+          // 显示消息提示用户可以手动输入RTSP地址
+          const userRtspInput = await new Promise(async (resolve) => {
+            // 创建一个简单的用户输入界面（在实际实现中，您可能需要一个更优雅的UI组件）
+            console.log('[VideoPreview] 用户可以在此处手动输入RTSP地址');
+
+            // 实际应用中，您可以使用ElMessageBox或自定义对话框
+            // 但现在我们尝试使用通用RTSP模板作为替代方案
+            try {
+              const genericRtspUrl = await tryGenericRtspTemplates(ip, sourceData);
+              resolve(genericRtspUrl);
+            } catch (e) {
+              console.log('[VideoPreview] 通用RTSP模板也失败了');
+              resolve(null);
+            }
+          });
+
+          if (userRtspInput && userRtspInput.startsWith('rtsp://')) {
+            rtspUrl = userRtspInput;
+            console.log('[VideoPreview] ✅ 使用用户手动输入的RTSP地址:', rtspUrl);
+          } else {
+            throw new Error('ONVIF获取失败且RTSP模板也无法生成地址');
+          }
         }
       }
     }
@@ -1211,8 +1455,8 @@ async function startNetworkCamera(sourceData) {
         console.error('[VideoPreview] ❌ 无法使用 ONVIF 服务端点作为 RTSP 流地址:', rtspUrl);
         console.warn('[VideoPreview] ⚠️ 提示：请手动输入正确的 RTSP 地址');
         ElMessage.error({
-          message: 'ONVIF解析失败，无法获取RTSP流地址。请重新添加信号源并输入正确的RTSP地址。',
-          duration: 5000,
+          message: `ONVIF解析失败，无法获取RTSP流地址。请参考以下故障排除指南后重试：\n1. 确认摄像头ONVIF功能已启用\n2. 检查用户名和密码是否正确\n3. 确认网络连接正常\n4. 验证ONVIF端口设置是否正确\n5. 确认摄像头型号支持ONVIF协议\n6. 确认摄像头在线且运行正常\n\n请重新添加信号源并输入正确的RTSP地址。`,
+          duration: 10000, // 延长显示时间以便用户阅读
           showClose: true
         });
         return;  // 🎯 直接返回，不继续尝试播放
@@ -1293,12 +1537,18 @@ async function startNetworkCamera(sourceData) {
         proxyOptions.password = sourceData.password;
       }
 
-      const proxyResult = await invoke('proxy_network_stream', {
-        streamUrl: finalRtspUrl,
-        streamId: streamId,
-        streamType: 'NetworkCamera',
-        options: proxyOptions
-      }).catch(err => {
+      // 🎯 启动 RTSP 代理
+      let proxyResult;
+      try {
+        proxyResult = await invoke('start_rtsp_stream_proxy', {
+          rtspUrl: finalRtspUrl,
+          streamId: streamId,
+          // 优化代理配置以减少延迟
+          timeoutSec: 10,        // 减少连接超时时间
+          retryCount: 2,         // 重试次数
+          bufferSize: 2048       // 优化缓冲区大小
+        });
+      } catch (err) {
         console.error('[VideoPreview] ZLMediaKit代理启动失败:', err);
 
         let errorMsg = 'RTSP流代理启动失败';
@@ -1316,8 +1566,9 @@ async function startNetworkCamera(sourceData) {
           showClose: true
         });
 
-        return null;
-      });
+        videoLoading.value = false;
+        return;
+      }
 
       // 检查代理结果是否有效
       if (!proxyResult) {
@@ -1329,66 +1580,57 @@ async function startNetworkCamera(sourceData) {
 
       console.log('[VideoPreview] ZLMediaKit代理返回结果:', JSON.stringify(proxyResult, null, 2));
 
-      // 使用代理后的FLV URL播放
-      // 🎯 优化：优先使用 WebSocket-FLV 降低延迟
-      let flvUrl = null;
-      if (proxyResult) {
-        // 🎯 优先使用 WebSocket-FLV（更低延迟）
-        flvUrl = proxyResult.wsFlvUrl || proxyResult.ws_flv_url;
-        // 如果没有WebSocket-FLV，回退到HTTP-FLV
-        if (!flvUrl) {
-          flvUrl = proxyResult.flvUrl || proxyResult.flv_url;
-        }
+      console.log('[VideoPreview] ZLMediaKit代理返回结果:', JSON.stringify(proxyResult, null, 2));
+
+      // 🎯 优化：优先使用 WebRTC（延迟 <200ms），其次 WebSocket-FLV，最后 HTTP-FLV
+      const webrtcUrl = proxyResult.webrtcUrl || proxyResult.webrtc_url;
+      const wsFlvUrl = proxyResult.wsFlvUrl || proxyResult.ws_flv_url;
+      const httpFlvUrl = proxyResult.flvUrl || proxyResult.flv_url;
+
+      // 选择最优播放 URL：WebRTC > WebSocket-FLV > HTTP-FLV
+      let selectedUrl = null;
+      let playMode = 'flv';
+
+      if (webrtcUrl && proxyResult.playMode === 'webrtc') {
+        selectedUrl = webrtcUrl;
+        playMode = 'webrtc';
+        console.log('[VideoPreview] 使用 WebRTC 模式，延迟最低');
+      } else if (wsFlvUrl) {
+        selectedUrl = wsFlvUrl;
+        playMode = 'ws-flv';
+        console.log('[VideoPreview] 使用 WebSocket-FLV 模式，较低延迟');
+      } else if (httpFlvUrl) {
+        selectedUrl = httpFlvUrl;
+        playMode = 'http-flv';
+        console.log('[VideoPreview] 使用 HTTP-FLV 模式');
       }
 
-      if (flvUrl) {
-        console.log('[VideoPreview] 使用代理后的FLV URL:', flvUrl);
-        console.log('[VideoPreview] 使用协议:', flvUrl.startsWith('ws://') ? 'WebSocket-FLV (低延迟)' : 'HTTP-FLV');
-        console.log('[VideoPreview] 代理返回结果:', JSON.stringify(proxyResult, null, 2));
+      // 🎯 初始化锁，防止并发初始化导致竞态条件
+      let isFlvInitializing = false;
+      let currentFlvUrl = '';
+      let flvRetryCount = 0;  // 重试计数器，保持跨调用状态
+      const FLV_MAX_RETRIES = 3;  // 最大重试次数
 
-        // 使用flv.js播放FLV流
-        if (flvjs.isSupported()) {
-          console.log('[VideoPreview] ✅ 创建FLV播放器...')
+      // Initialize FLV Player function
+      async function initializeFlvPlayer(flvUrl) {
+        // 🎯 竞态条件保护：如果正在初始化或URL相同，则跳过
+        if (isFlvInitializing) {
+          console.warn('[VideoPreview] ⚠️ FLV播放器正在初始化中，跳过重复调用');
+          return;
+        }
 
-          // 🎯 先销毁旧播放器（如果存在）- 使用安全销毁流程
-          if (videoRef.value._flvPlayer) {
-            console.log('[VideoPreview] 销毁旧的FLV播放器')
-            videoRef.value._isDestroying = true;  // 🎯 标记为正在销毁
-            try {
-              const oldPlayer = videoRef.value._flvPlayer;
+        if (currentFlvUrl === flvUrl && videoRef.value?._flvPlayer) {
+          console.warn('[VideoPreview] ⚠️ 相同URL的播放器已存在，跳过重复初始化');
+          return;
+        }
 
-              // 🎯 安全销毁：按顺序执行，每个步骤单独捕获异常
-              try {
-                oldPlayer.pause();
-              } catch (e) {
-                console.warn('[VideoPreview] pause失败:', e);
-              }
+        // 设置初始化锁
+        isFlvInitializing = true;
+        currentFlvUrl = flvUrl;
 
-              try {
-                oldPlayer.unload();
-              } catch (e) {
-                console.warn('[VideoPreview] unload失败:', e);
-              }
-
-              try {
-                oldPlayer.detachMediaElement();
-              } catch (e) {
-                console.warn('[VideoPreview] detachMediaElement失败:', e);
-              }
-
-              try {
-                oldPlayer.destroy();
-              } catch (e) {
-                console.warn('[VideoPreview] destroy失败:', e);
-              }
-
-              videoRef.value._flvPlayer = null;
-            } catch (e) {
-              console.warn('[VideoPreview] 销毁旧播放器时出错:', e)
-            } finally {
-              videoRef.value._isDestroying = false;  // 🎯 销毁完成
-            }
-          }
+        try {
+          // 先清理现有的播放器
+          cleanupFlvPlayer();
 
           const flvPlayer = flvjs.createPlayer({
             type: 'flv',
@@ -1399,39 +1641,34 @@ async function startNetworkCamera(sourceData) {
           }, {
             // 🎯 关键配置：修复flushStashedSamples错误，同时优化延迟
             enableWorker: false,              // 禁用Worker避免跨线程错误
-            enableStashBuffer: true,          // ✅ 必须启用，否则会导致flushStashedSamples错误
-            stashInitialSize: 1024,           // 初始缓冲 1KB（降低延迟）
+            enableStashBuffer: false,         // ❌ 禁用缓冲区以减少延迟（直播场景）
+            stashInitialSize: 128,            // 极小初始缓冲 128字节（大幅降低延迟）
             lazyLoad: false,                  // 禁用懒加载
             lazyLoadMaxDuration: 0,           // 不限制最大持续时间
             deferLoadAfterSourceOpen: false,  // 不延迟加载
             // 🎯 自动清理策略 - 控制内存和延迟
             autoCleanupSourceBuffer: true,    // 自动清理SourceBuffer
-            autoCleanupMaxBackwardDuration: 1, // 最大向后保留1秒（降低延迟）
-            autoCleanupMinBackwardDuration: 0.5,  // 最小向后保留0.5秒
+            autoCleanupMaxBackwardDuration: 0.2, // 最大向后保留0.2秒（极低延迟）
+            autoCleanupMinBackwardDuration: 0.1,  // 最小向后保留0.1秒
             // 🎯 直播同步配置 - 极低延迟（局域网环境）
-            liveSyncDuration: 0.5,               // 直播同步时长0.5秒（极低延迟）
+            liveSyncDuration: 0.2,            // 直播同步时长0.2秒（极低延迟）
             liveSyncDurationCount: 1,         // 直播同步帧数
-            fixAudioTimestampGap: true        // 修正音频时间戳间隙
+            fixAudioTimestampGap: true,       // 修正音频时间戳间隙
+            // 🎯 性能优化 - 更快的帧率适应
+            statisticsInfoReportInterval: 500 // 统计信息上报间隔500ms
           });
 
-          videoRef.value._flvPlayer = flvPlayer  // 🎯 保存播放器实例（后续 register 将通过 _flvPlayer 检测到与 flvPlayer 相同）
+          videoRef.value._flvPlayer = flvPlayer;  // 🎯 保存播放器实例
 
           // ======================================================
           // 🎯 时序兜底：flvPlayer 已创建，立即尝试注册
           // ======================================================
-          // flv.js attachMediaElement + load() 是异步的，sourceId watcher
-          // 可能已在 flvPlayer 附着之前先触发并跳过了注册。
-          // 这里直接绕过 hasVideoSource 检查，确保 VideoSync/Slave 注册不丢失。
           if (!isRegistered.value && props.sourceId && videoRef.value) {
             console.log(`[VideoPreview] FLV播放器已创建，时序兜底触发注册: ${props.sourceId}`);
             if (props.index === 0) {
               registerMasterVideo(videoRef.value, props.videoSource || props.sourceId);
-              console.log(`[VideoPreview] 时序兜底-主控注册: ${props.sourceId}`);
             } else {
-              // 🎯 关键修复：传递完整的 videoSource 对象
-              const sourceToRegister = props.videoSource || props.sourceId;
-              registerSlaveVideo(videoRef.value, props.index, sourceToRegister);
-              console.log(`[VideoPreview] 时序兜底-从属注册: ${props.sourceId}, isClone: ${props.videoSource?.isClone || false}`);
+              registerSlaveVideo(videoRef.value, props.index, props.videoSource || props.sourceId);
             }
             isRegistered.value = true;
             lastRegisteredSourceId = props.sourceId;
@@ -1440,112 +1677,152 @@ async function startNetworkCamera(sourceData) {
           flvPlayer.attachMediaElement(videoRef.value);
 
           // 🎯 监听错误事件
-          let retryCount = 0;
-          const MAX_RETRIES = 3;
-
           flvPlayer.on(flvjs.Events.ERROR, (errorType, errorDetail, errorInfo) => {
             console.error('[VideoPreview] FLV播放错误:', errorType, errorDetail, errorInfo)
 
             // 🎯 关键修复：忽略播放器销毁过程中的错误
-            if (videoRef.value?._isDestroying) {
-              console.log('[VideoPreview] ℹ️ 播放器正在销毁，忽略错误')
+            if (isComponentDestroyed.value) {
+              console.log('[VideoPreview] ℹ️ 组件已销毁，忽略错误')
               return
             }
 
+            // 🎯 检测编解码器不支持错误
+            if (errorDetail?.message?.includes('CodecUnsupported') ||
+                errorInfo?.info?.includes('Unsupported codec') ||
+                errorInfo?.info?.includes('codec in video frame')) {
+              console.error('[VideoPreview] ❌ 编解码器不支持错误')
+              console.warn('[VideoPreview] 提示：当前视频流的编解码器格式不被浏览器支持')
+              ElMessage.warning({
+                message: `视频流编解码器不支持，可能的原因：\n1. 摄像头使用了H.265/HEVC编码，浏览器不支持\n2. 视频编码格式超出浏览器支持范围\n3. 音频编码格式不兼容\n\n建议：尝试切换摄像头码流设置为H.264编码，或联系管理员调整摄像头编码参数。`,
+                duration: 10000,
+                showClose: true
+              })
+              // 显示错误覆盖层 - 使用更安全的方式访问父窗口
+              if (typeof window !== 'undefined' && window.parent && typeof window.parent.updateStreamStatus === 'function') {
+                window.parent.updateStreamStatus(props.sourceId, 'failed', '编解码器不支持');
+              }
+              return
+            }
+
+            // 🎯 关键修复：处理FLV格式不支持错误（流可能还未准备好）
+            if (errorType === 'MediaError' && errorDetail === 'FormatUnsupported') {
+              console.warn('[VideoPreview] ⚠️ FLV格式不支持，可能是流还未准备好，尝试重新连接...');
+              if (flvRetryCount < FLV_MAX_RETRIES) {
+                flvRetryCount++;
+                const delay = Math.min(2000 * Math.pow(2, flvRetryCount - 1), 8000); // 指数退避，从2秒开始
+                console.warn(`[VideoPreview] FLV流未准备好，第${flvRetryCount}次重试（延迟${delay}ms）...`);
+
+                setTimeout(() => {
+                  if (videoRef.value && !isComponentDestroyed.value) {
+                    // 重新创建播放器
+                    initializeFlvPlayer(flvUrl);
+                  }
+                }, delay);
+                return;
+              } else {
+                console.error('[VideoPreview] ❌ 达到最大重试次数，FLV流仍然不可用');
+                videoLoading.value = false;
+                videoError.value = '视频流格式不支持或流未准备好';
+                ElMessage.error('视频流格式不支持，请检查摄像头连接');
+                return;
+              }
+            }
+
             // 🎯 关键修复：遇到网络错误时尝试重新加载，最多重试3次
-            if (errorType === 'NetworkError' && retryCount < MAX_RETRIES) {
-              retryCount++;
-              const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000); // 指数退避
-              console.warn(`[VideoPreview] 网络错误，第${retryCount}次重试（延迟${delay}ms）...`);
+            if (errorType === 'NetworkError' && flvRetryCount < FLV_MAX_RETRIES) {
+              flvRetryCount++;
+              const delay = Math.min(1000 * Math.pow(2, flvRetryCount - 1), 5000); // 指数退避
+              console.warn(`[VideoPreview] 网络错误，第${flvRetryCount}次重试（延迟${delay}ms）...`);
 
               setTimeout(() => {
-                try {
-                  if (videoRef.value && videoRef.value._flvPlayer && !videoRef.value._isDestroying) {
-                    // 🎯 先销毁旧播放器，再重新创建
-                    console.log('[VideoPreview] 销毁旧的FLV播放器并重建...');
-                    videoRef.value._isDestroying = true;  // 🎯 标记为正在销毁
-                    const oldPlayer = videoRef.value._flvPlayer;
-
-                    // 🎯 安全销毁：按顺序执行，每个步骤单独捕获异常
-                    try {
-                      oldPlayer.pause();
-                    } catch (e) {
-                      console.warn('[VideoPreview] pause失败:', e);
-                    }
-
-                    try {
-                      oldPlayer.unload();
-                    } catch (e) {
-                      console.warn('[VideoPreview] unload失败:', e);
-                    }
-
-                    try {
-                      oldPlayer.detachMediaElement();
-                    } catch (e) {
-                      console.warn('[VideoPreview] detachMediaElement失败:', e);
-                    }
-
-                    try {
-                      oldPlayer.destroy();
-                    } catch (e) {
-                      console.warn('[VideoPreview] destroy失败:', e);
-                    }
-
-                    videoRef.value._flvPlayer = null;
-                    videoRef.value._isDestroying = false;  // 🎯 销毁完成
-
-                    // 重新创建播放器
-                    const newFlvPlayer = flvjs.createPlayer({
-                      type: 'flv',
-                      url: flvUrl,
-                      isLive: true,
-                      hasAudio: true,
-                      hasVideo: true
-                    }, {
-                      enableWorker: false,
-                      enableStashBuffer: true,
-                      stashInitialSize: 4096,            // 初始缓冲 4KB
-                      lazyLoad: false,
-                      lazyLoadMaxDuration: 0,
-                      deferLoadAfterSourceOpen: false,
-                      autoCleanupSourceBuffer: true,
-                      autoCleanupMaxBackwardDuration: 2, // 最大向后保留2秒
-                      autoCleanupMinBackwardDuration: 1,  // 最小向后保留1秒
-                      liveSyncDuration: 1,               // 直播同步时长1秒（平滑低延迟）
-                      liveSyncDurationCount: 1,          // 直播同步帧数
-                      fixAudioTimestampGap: true
-                    });
-
-                    videoRef.value._flvPlayer = newFlvPlayer;
-                    newFlvPlayer.attachMediaElement(videoRef.value);
-                    newFlvPlayer.load();
-                    newFlvPlayer.play().catch(err => {
-                      console.warn('[VideoPreview] FLV重播失败:', err);
-                    });
-                  }
-                } catch (e) {
-                  console.error('[VideoPreview] FLV重加载失败:', e);
+                if (videoRef.value && !isComponentDestroyed.value) {
+                  // 重新创建播放器
+                  initializeFlvPlayer(flvUrl);
                 }
               }, delay);
-            } else if (retryCount >= MAX_RETRIES) {
+            } else if (flvRetryCount >= FLV_MAX_RETRIES) {
               console.error('[VideoPreview] 达到最大重试次数，停止重试');
               videoLoading.value = false;
-              videoError.value = `视频加载失败，已重试${MAX_RETRIES}次。请检查网络连接或手动刷新。`;
+              videoError.value = `视频加载失败，已重试${FLV_MAX_RETRIES}次。请检查网络连接或手动刷新。`;
               ElMessage.error('视频加载失败，请手动刷新页面重试');
             }
-          })
+          });
 
-          flvPlayer.load();
-          flvPlayer.play().catch(err => {
-            console.warn('[VideoPreview] FLV播放失败:', err);
+          // 监听播放准备就绪事件
+          flvPlayer.on(flvjs.Events.LOAD_START, () => {
+            console.log('[VideoPreview] FLV播放器开始加载');
+            videoLoading.value = false;
           });
+
+          flvPlayer.on(flvjs.Events.METADATA_ARRIVED, (metadata) => {
+            console.log('[VideoPreview] FLV元数据到达:', metadata);
+          });
+
+          flvPlayer.on(flvjs.Events.STATISTICS_INFO, (stat) => {
+            // console.log('[VideoPreview] FLV统计信息:', stat);
+          });
+
+          // 开始加载
+          try {
+            flvPlayer.load();
+            console.log('[VideoPreview] FLV播放器加载完成');
+
+            // 尝试播放
+            const playAttempt = flvPlayer.play();
+            if (playAttempt && playAttempt.then) {
+              playAttempt.catch(error => {
+                console.error('[VideoPreview] FLV播放启动失败:', error);
+                videoError.value = '播放启动失败';
+              });
+            }
+          } catch (error) {
+            console.error('[VideoPreview] FLV播放器加载失败:', error);
+            videoError.value = '播放器加载失败';
+          } finally {
+            // 🎯 释放初始化锁
+            isFlvInitializing = false;
+            console.log('[VideoPreview] FLV播放器初始化锁已释放');
+          }
+        } catch (error) {
+          console.error('[VideoPreview] FLV播放器创建失败:', error);
+          videoError.value = '播放器创建失败';
+          isFlvInitializing = false;
+        }
+      }
+
+      if (selectedUrl) {
+        console.log('[VideoPreview] 使用代理后的流 URL:', selectedUrl);
+        console.log('[VideoPreview] 播放模式:', playMode);
+        console.log('[VideoPreview] 代理返回结果:', JSON.stringify(proxyResult, null, 2));
+
+        // 🎯 优先使用 WebRTC 播放器（如果支持且可用）
+        if (playMode === 'webrtc' && window.ZLMediaKitWebRTCPlayer) {
+          console.log('[VideoPreview] 创建 WebRTC 播放器...');
+
+          // 如果已有播放器实例，先清理
+          if (videoRef.value._webrtcPlayer) {
+            try {
+              await videoRef.value._webrtcPlayer.destroy();
+            } catch (e) {
+              console.warn('[VideoPreview] WebRTC播放器销毁失败:', e);
+            }
+          }
+
+          // 创建 WebRTC 播放器
+          const webrtcPlayer = new window.ZLMediaKitWebRTCPlayer();
+          videoRef.value._webrtcPlayer = webrtcPlayer;
+
+          try {
+            await webrtcPlayer.play(selectedUrl, videoRef.value);
+            console.log('[VideoPreview] WebRTC 播放器启动成功');
+          } catch (error) {
+            console.error('[VideoPreview] WebRTC 播放失败，回退到 FLV:', error);
+            // 回退到 FLV 播放
+            await initializeFlvPlayer(httpFlvUrl || wsFlvUrl);
+          }
         } else {
-          // 备用方案：直接设置src（适用于HLS或其他HTTP流）
-          videoRef.value.src = flvUrl;
-          videoRef.value.load();
-          videoRef.value.play().catch(err => {
-            console.warn('[VideoPreview] HTTP流播放失败:', err);
-          });
+          // 使用 FLV 播放器
+          await initializeFlvPlayer(selectedUrl);
         }
       } else if (rtspUrl && (rtspUrl.startsWith('http') || rtspUrl.startsWith('ws'))) {
         // 如果代理失败但是HTTP/WS流，直接播放
@@ -1576,6 +1853,7 @@ async function startNetworkCamera(sourceData) {
 
       videoLoading.value = false;
 
+      // 🎯 捕获 Tauri API 调用失败
     } catch (apiError) {
       console.error('[VideoPreview] Tauri API调用失败:', apiError);
       videoLoading.value = false;
@@ -1615,39 +1893,64 @@ async function startRecording() {
       return;
     }
 
-    mediaRecorder = new MediaRecorder(captureStream, {
-      mimeType: 'video/webm;codecs=vp9'
-    });
+    // 为录制功能添加异常保护
+    try {
+      mediaRecorder = new MediaRecorder(captureStream, {
+        mimeType: 'video/webm;codecs=vp9'
+      });
+    } catch (e) {
+      console.error('创建MediaRecorder失败:', e);
+      ElMessage.error('无法创建录制器，可能是不支持的视频格式');
+      return;
+    }
 
     recordedChunks = [];
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        recordedChunks.push(event.data);
-      }
-    };
 
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(recordedChunks, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `recording_${props.index}_${Date.now()}.webm`;
-      a.click();
-      URL.revokeObjectURL(url);
-      ElMessage.success('录制已保存');
-    };
+    // 添加异常处理
+    try {
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunks.push(event.data);
+        }
+      };
 
-    mediaRecorder.start(1000);
-    isRecording.value = true;
-    isRecordingPaused.value = false;
-    recordingStartTime = Date.now();
-    updateRecordingTime();
+      mediaRecorder.onstop = () => {
+        try {
+          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `recording_${props.index}_${Date.now()}.webm`;
+          a.click();
+          URL.revokeObjectURL(url);
+          ElMessage.success('录制已保存');
+        } catch (e) {
+          console.error('保存录制文件失败:', e);
+          ElMessage.error('录制文件保存失败');
+        }
+      };
+    } catch (e) {
+      console.error('设置MediaRecorder事件处理器失败:', e);
+      ElMessage.error('录制功能初始化失败');
+      return;
+    }
 
-    emit('recordingChanged', { index: props.index, recording: true });
-    ElMessage.success('开始录制');
+    try {
+      mediaRecorder.start(1000);
+      isRecording.value = true;
+      isRecordingPaused.value = false;
+      recordingStartTime = Date.now();
+      updateRecordingTime();
+
+      emit('recordingChanged', { index: props.index, recording: true });
+      ElMessage.success('开始录制');
+    } catch (e) {
+      console.error('开始录制失败:', e);
+      ElMessage.error('开始录制失败：' + e.message);
+    }
   } catch (error) {
-    console.error('开始录制失败:', error);
-    ElMessage.error('开始录制失败');
+    console.error('开始录制时发生错误:', error);
+    ElMessage.error('开始录制失败：' + error.message);
   }
 }
 
@@ -1735,7 +2038,7 @@ const updateProgress = () => {
   if (videoRef.value && videoRef.value.duration && !isDragging) {
     progress.value = (videoRef.value.currentTime / videoRef.value.duration) * 100;
   }
-  requestAnimationFrame(updateProgress);
+  progressAnimationId = requestAnimationFrame(updateProgress);
 };
 
 // 启动进度条更新
@@ -2243,16 +2546,32 @@ function initFlvPlayer(streamUrl) {
       console.error('[VideoPreview] FLV 错误:', errorType, errorDetail, errorInfo);
 
       // 🎯 关键修复：忽略播放器销毁过程中的错误
-      if (videoRef.value?._isDestroying) {
-        console.log('[VideoPreview] ℹ️ 播放器正在销毁，忽略错误')
+      if (isComponentDestroyed.value) {
+        console.log('[VideoPreview] ℹ️ 组件已销毁，忽略错误')
         return
+      }
+
+      // 🎯 检测编解码器不支持错误
+      if (errorDetail?.message?.includes('CodecUnsupported') ||
+          errorInfo?.info?.includes('Unsupported codec') ||
+          errorInfo?.info?.includes('codec in video frame')) {
+        console.error('[VideoPreview] ❌ 编解码器不支持错误')
+        console.warn('[VideoPreview] 提示：当前视频流的编解码器格式不被浏览器支持')
+        ElMessage.warning({
+          message: `视频流编解码器不支持，可能的原因：\n1. 摄像头使用了H.265/HEVC编码，浏览器不支持\n2. 视频编码格式超出浏览器支持范围\n3. 音频编码格式不兼容\n\n建议：尝试切换摄像头码流设置为H.264编码，或联系管理员调整摄像头编码参数。`,
+          duration: 10000,
+          showClose: true
+        })
+        // 设置连接状态为失败
+        streamConnected.value = false;
+        return;
       }
 
       streamConnected.value = false;
 
       // 尝试重连
       setTimeout(() => {
-        if (flvPlayer && !videoRef.value?._isDestroying) {
+        if (flvPlayer && !isComponentDestroyed.value) {
           try {
             flvPlayer.unload();
             flvPlayer.load();
@@ -2277,18 +2596,34 @@ function initFlvPlayer(streamUrl) {
 
 // 🎯 清理 FLV 播放器
 function cleanupFlvPlayer() {
+  // 清理 videoRef 中的播放器实例
+  if (videoRef.value && videoRef.value._flvPlayer) {
+    try {
+      console.log('[VideoPreview] 清理 videoRef 中的 FLV 播放器');
+      videoRef.value._flvPlayer.pause();
+      videoRef.value._flvPlayer.unload();
+      videoRef.value._flvPlayer.detachMediaElement();
+      videoRef.value._flvPlayer.destroy();
+      videoRef.value._flvPlayer = null;
+    } catch (error) {
+      console.error('[VideoPreview] 清理 videoRef 中 FLV 播放器失败:', error);
+    }
+  }
+
+  // 清理模块级别的播放器实例（兼容旧代码）
   if (flvPlayer) {
     try {
-      console.log('[VideoPreview] 清理 FLV 播放器');
+      console.log('[VideoPreview] 清理模块级别 FLV 播放器');
       flvPlayer.pause();
       flvPlayer.unload();
       flvPlayer.detachMediaElement();
       flvPlayer.destroy();
       flvPlayer = null;
     } catch (error) {
-      console.error('[VideoPreview] 清理 FLV 播放器失败:', error);
+      console.error('[VideoPreview] 清理模块级别 FLV 播放器失败:', error);
     }
   }
+
   isStreaming.value = false;
   streamConnected.value = false;
 }
@@ -2317,14 +2652,30 @@ function onSyncUpdate(data) {
       source
     });
 
-    // 同步时间点
+    // 同步时间点 - 优化：使用更智能的同步策略
     if (currentTime !== undefined && !isNaN(currentTime)) {
       const timeDiff = Math.abs(videoRef.value.currentTime - currentTime);
 
+      // 根据当前视频源类型动态调整同步策略
+      // 对于RTSP流（通常延迟较高），使用较宽松的同步策略
+      const currentSrc = videoRef.value.src || (videoRef.value.srcObject ? 'srcObject' : (videoRef.value._flvPlayer ? 'flv' : 'unknown'));
+      const isRtspStream = currentSrc.includes('rtsp') || currentSrc.includes('proxy') || currentSrc.includes('flv');
+
+      // 对于RTSP代理流，使用更大的阈值以避免频繁跳转造成卡顿
+      const syncThreshold = isRtspStream ? 0.8 : 0.2; // RTSP流使用0.8秒阈值，其他流使用0.2秒
+
       // 只在时间差大于阈值时才跳转，避免频繁操作
-      if (timeDiff > 0.1) {
-        console.log(`[VideoPreview.onSyncUpdate] 同步时间: ${videoRef.value.currentTime.toFixed(2)} -> ${currentTime.toFixed(2)}, 偏差: ${timeDiff.toFixed(2)}s`);
-        videoRef.value.currentTime = currentTime;
+      if (timeDiff > syncThreshold) {
+        console.log(`[VideoPreview.onSyncUpdate] 同步时间: ${videoRef.value.currentTime.toFixed(2)} -> ${currentTime.toFixed(2)}, 偏差: ${timeDiff.toFixed(2)}s, 阈值: ${syncThreshold}s, 源类型: ${currentSrc}`);
+
+        // 使用 requestAnimationFrame 来平滑时间同步
+        requestAnimationFrame(() => {
+          try {
+            videoRef.value.currentTime = currentTime;
+          } catch (e) {
+            console.warn('[VideoPreview.onSyncUpdate] 时间同步失败:', e);
+          }
+        });
       }
     }
 
@@ -2379,8 +2730,10 @@ defineExpose({
 
 // 🎯 组件卸载时清理播放器
 onUnmounted(() => {
-  console.log('[VideoPreview] 组件卸载，清理FLV播放器')
+  console.log('[VideoPreview] 组件卸载，清理资源')
+  isComponentDestroyed.value = true; // 设置组件销毁状态
 
+  // 清理FLV播放器
   if (videoRef.value && videoRef.value._flvPlayer) {
     console.log('[VideoPreview] 销毁FLV播放器')
     try {
@@ -2392,6 +2745,27 @@ onUnmounted(() => {
       console.warn('[VideoPreview] 销毁播放器时出错:', e)
     }
     videoRef.value._flvPlayer = null
+  }
+
+  // 清理进度条动画
+  if (progressAnimationId) {
+    cancelAnimationFrame(progressAnimationId);
+    progressAnimationId = null;
+  }
+
+  // 清理录制资源
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try {
+      mediaRecorder.stop();
+    } catch (e) {
+      console.warn('[VideoPreview] 停止录制器时出错:', e);
+    }
+  }
+
+  // 停止视频流
+  if (videoRef.value && videoRef.value.srcObject) {
+    const tracks = videoRef.value.srcObject.getTracks();
+    tracks.forEach(track => track.stop());
   }
 })
 </script>

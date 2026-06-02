@@ -10,7 +10,35 @@
 
 import { ref, reactive } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+// Tauri v2: 使用动态导入以兼容不同版本的 API
+let getCurrentWindow: () => any = () => ({ listen: () => Promise.resolve(() => () => { }) })
+
+// 动态初始化 getCurrentWindow
+async function initGetCurrentWindow() {
+  if (getCurrentWindow().listen) return // 已初始化
+
+  try {
+    // 尝试从 @tauri-apps/api/window 导入
+    const windowModule = await import('@tauri-apps/api/window')
+    if (windowModule.getCurrentWindow) {
+      getCurrentWindow = windowModule.getCurrentWindow
+      return
+    }
+  } catch { }
+
+  try {
+    // 尝试从 @tauri-apps/api/webviewWindow 导入
+    const webviewWindowModule = await import('@tauri-apps/api/webviewWindow')
+    getCurrentWindow = webviewWindowModule.getCurrentWindow ||
+      (webviewWindowModule.WebviewWindow?.getCurrent as any) ||
+      (() => ({ listen: () => Promise.resolve(() => () => { }) }))
+  } catch {
+    getCurrentWindow = () => ({ listen: () => Promise.resolve(() => () => { }) })
+  }
+}
+
+// 确保初始化
+initGetCurrentWindow().catch(() => { })
 
 // ==================== 类型定义 ====================
 
@@ -189,6 +217,9 @@ export async function downloadModel(modelId: string, onProgress?: (progress: Dow
 
   try {
     console.log('[ModelManager] 开始下载模型:', modelId)
+
+    // 🎯 确保 getCurrentWindow 已初始化
+    await initGetCurrentWindow()
 
     // 🎯 调用 Rust 后端下载模型
     const result = await invoke<any>('download_whisper_model', { modelId })

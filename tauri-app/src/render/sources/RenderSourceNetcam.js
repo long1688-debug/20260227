@@ -1,10 +1,12 @@
 /**
  * RenderSourceNetcam - 网络摄像头数据源
  * 支持 RTSP、RTMP、HTTP 流等网络视频流
+ * 🎯 优先使用 mpv 播放器（更好的兼容性和更低延迟）
  */
 import { RenderSource } from './RenderSource.js';
-import { startRtspStream, ensureRtspProxyRunning } from '../../utils/rtsp-proxy-api.js';
+import { startRtspStreamProxy, ensureZLMediaKitRunning } from '../../utils/rtsp-proxy-api.js';
 import { ZLMediaKitWebRTCPlayer } from '../../utils/zlm-webrtc-player.js';
+import { MpvPlayer } from '../../utils/mpv-player.js';
 
 export class RenderSourceNetcam extends RenderSource {
   constructor(options = {}) {
@@ -20,10 +22,11 @@ export class RenderSourceNetcam extends RenderSource {
     // 播放器引用
     this._flvPlayer = null;
     this._webrtcPlayer = null;  // 🎯 WebRTC 播放器（低延迟 <200ms）
+    this._mpvPlayer = null;     // 🎯 mpv 播放器（替代 FLV，更好的兼容性）
     this._videoElement = null;
     this._flvUrl = null;       // 🎯 保存 ZLMediaKit 返回的 FLV 地址
     this._webrtcUrl = null;    // 🎯 保存 ZLMediaKit 返回的 WebRTC 信令地址
-    this._playMode = 'webrtc'; // 🎯 播放模式：webrtc（优先）| flv（降级）
+    this._playMode = 'mpv';    // 🎯 播放模式：mpv（优先）| webrtc | flv（降级）
 
     // 重连机制
     this._reconnectAttempts = 0;
@@ -61,7 +64,7 @@ export class RenderSourceNetcam extends RenderSource {
   async _setupRtspStream(resolve, reject) {
     // 🎯 先确保 ZLMediaKit 流媒体服务在运行
     try {
-      await ensureRtspProxyRunning();
+      await ensureZLMediaKitRunning();
     } catch (err) {
       reject(new Error(`RTSP 代理服务启动失败: ${err.message}`));
       return;
@@ -97,8 +100,8 @@ export class RenderSourceNetcam extends RenderSource {
     // 🎯 调用 Tauri 后端命令，通过 ZLMediaKit 代理 RTSP 流
     const streamId = this._properties?.networkCamera?.streamId || String(this.id);
     try {
-      const result = await startRtspStream(effectiveUrl, streamId);
-      this._flvUrl = result.flvUrl || 'http://127.0.0.1:801/live/' + streamId + '.flv';
+      const result = await startRtspStreamProxy(effectiveUrl, streamId);
+      this._flvUrl = result.flvUrl || 'http://127.0.0.1:801/live/' + streamId + '.live.flv';
       this._webrtcUrl = result.webrtcUrl || 'http://127.0.0.1:801/index/api/webrtc?app=live&stream=' + streamId + '&type=play';
       this._playMode = result.playMode || 'webrtc';
 
@@ -111,11 +114,54 @@ export class RenderSourceNetcam extends RenderSource {
       return;
     }
 
-    // 🎯 优先使用 WebRTC（延迟 <200ms），不支持时降级到 FLV
-    if (this._playMode === 'webrtc' && typeof RTCPeerConnection !== 'undefined') {
+    // 🎯 优先使用 mpv（更好的兼容性和更低延迟），其次 WebRTC，最后 FLV
+    const isMpvAvailable = await MpvPlayer.isAvailable();
+    if (isMpvAvailable && this._playMode === 'mpv') {
+      this._loadMpvPlayer(effectiveUrl, streamId, resolve, reject);
+    } else if (this._playMode === 'webrtc' && typeof RTCPeerConnection !== 'undefined') {
       this._loadWebRTCPlayer(streamId, resolve, reject);
     } else {
       this._loadFlvPlayer(this._flvUrl, resolve, reject);
+    }
+  }
+
+  /**
+   * 加载 mpv 播放器（优先使用，更好的兼容性和更低延迟）
+   * @param {string} rtspUrl - RTSP 流地址
+   * @param {string} streamId - 流 ID
+   */
+  async _loadMpvPlayer(rtspUrl, streamId, resolve, reject) {
+    console.log('[RenderSourceNetcam] 🎯 使用 mpv 播放器（最佳兼容性）, streamId: ' + streamId);
+
+    try {
+      const playerId = `mpv_${streamId}_${Date.now()}`;
+      this._mpvPlayer = new MpvPlayer(playerId, { autoCreate: true });
+
+      this._mpvPlayer.on('play', () => {
+        console.log('[RenderSourceNetcam] ✅ mpv 播放开始');
+        this._isReady = true;
+        this._emit('ready');
+        resolve();
+      });
+
+      this._mpvPlayer.on('error', (err) => {
+        console.warn('[RenderSourceNetcam] ⚠️ mpv 错误，降级到 WebRTC:', err.message);
+        this._mpvPlayer = null;
+        this._playMode = 'webrtc';
+        this._loadWebRTCPlayer(streamId, resolve, reject);
+      });
+
+      this._mpvPlayer.on('stop', () => {
+        console.log('[RenderSourceNetcam] ℹ️ mpv 播放停止');
+      });
+
+      await this._mpvPlayer.playRtsp(rtspUrl);
+
+    } catch (err) {
+      console.warn('[RenderSourceNetcam] ⚠️ mpv 连接失败，降级到 WebRTC:', err.message);
+      this._mpvPlayer = null;
+      this._playMode = 'webrtc';
+      this._loadWebRTCPlayer(streamId, resolve, reject);
     }
   }
 
@@ -285,6 +331,10 @@ export class RenderSourceNetcam extends RenderSource {
       this._flvPlayer.play();
     }
 
+    if (this._mpvPlayer) {
+      await this._mpvPlayer.resume();
+    }
+
     this._isPlaying = true;
     this._emit('play');
   }
@@ -292,12 +342,15 @@ export class RenderSourceNetcam extends RenderSource {
   /**
    * 暂停
    */
-  pause() {
+  async pause() {
     if (this._videoElement) {
       this._videoElement.pause();
     }
     if (this._flvPlayer) {
       this._flvPlayer.pause();
+    }
+    if (this._mpvPlayer) {
+      await this._mpvPlayer.pause();
     }
     super.pause();
   }
@@ -305,13 +358,16 @@ export class RenderSourceNetcam extends RenderSource {
   /**
    * 停止
    */
-  stop() {
+  async stop() {
     if (this._videoElement) {
       this._videoElement.pause();
       this._videoElement.currentTime = 0;
     }
     if (this._flvPlayer) {
       this._flvPlayer.pause();
+    }
+    if (this._mpvPlayer) {
+      await this._mpvPlayer.stop();
     }
     super.stop();
   }
@@ -345,9 +401,14 @@ export class RenderSourceNetcam extends RenderSource {
   /**
    * 释放资源
    */
-  dispose() {
+  async dispose() {
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer);
+    }
+
+    if (this._mpvPlayer) {
+      await this._mpvPlayer.destroy();
+      this._mpvPlayer = null;
     }
 
     if (this._webrtcPlayer) {

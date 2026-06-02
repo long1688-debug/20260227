@@ -1,6 +1,5 @@
 /**
  * ZLMediaKit 流媒体服务前端接口
- * 替代原 Node.js rtsp-proxy，直接使用 ZLMediaKit 作为流媒体服务器
  */
 
 import { invoke } from '@tauri-apps/api/core'
@@ -8,40 +7,40 @@ import { invoke } from '@tauri-apps/api/core'
 /**
  * 启动 ZLMediaKit 流媒体服务
  */
-export async function startRtspProxy() {
-  return await invoke('start_rtsp_proxy')
+export async function startZLMediaKit() {
+  return await invoke('start_zlmediakit')
 }
 
 /**
  * 停止 ZLMediaKit 流媒体服务
  */
-export async function stopRtspProxy() {
-  return await invoke('stop_rtsp_proxy')
+export async function stopZLMediaKit() {
+  return await invoke('stop_zlmediakit')
 }
 
 /**
  * 检查 ZLMediaKit 流媒体服务状态
  */
-export async function checkRtspProxyStatus() {
-  return await invoke('check_rtsp_proxy_status')
+export async function checkZLMediaKitStatus() {
+  return await invoke('check_zlmediakit_status')
 }
 
 /**
  * 启动 RTSP 流代理（通过 ZLMediaKit addStreamProxy）
  * @param {string} rtspUrl - RTSP 流地址
  * @param {string} [streamId] - 可选的流 ID
- * @returns {Promise<{success: boolean, streamId: string, flvUrl: string, wsUrl: string, rtspUrl: string, hlsUrl: string, backend: string}>}
+ * @returns {Promise<{success: boolean, streamId: string, flvUrl: string, wsUrl: string, rtspUrl: string, hlsUrl: string, webrtcUrl: string, backend: string, playMode: string}>}
  */
-export async function startRtspStream(rtspUrl, streamId) {
-  return await invoke('start_rtsp_stream', { rtspUrl, streamId })
+export async function startRtspStreamProxy(rtspUrl, streamId) {
+  return await invoke('start_rtsp_stream_proxy', { rtspUrl: rtspUrl, streamId: streamId })
 }
 
 /**
  * 停止 RTSP 流代理（通过 ZLMediaKit delStreamProxy）
  * @param {string} streamId - 流 ID
  */
-export async function stopRtspStream(streamId) {
-  return await invoke('stop_rtsp_stream', { streamId })
+export async function stopRtspStreamProxy(streamId) {
+  return await invoke('stop_rtsp_stream_proxy', { stream_id: streamId })
 }
 
 /**
@@ -67,11 +66,13 @@ export async function getOnvifStreamUri(ip, port, username, password) {
 /**
  * 确保 ZLMediaKit 流媒体服务已启动
  */
-export async function ensureRtspProxyRunning() {
-  const status = await checkRtspProxyStatus()
+export async function ensureZLMediaKitRunning() {
+  const status = await checkZLMediaKitStatus()
   if (!status.running) {
     console.log('[ZLMediaKit] 服务未运行，正在启动...')
-    await startRtspProxy()
+    await startZLMediaKit()
+    // 等待服务启动
+    await new Promise(resolve => setTimeout(resolve, 2000));
     console.log('[ZLMediaKit] 服务已启动')
   }
   return status

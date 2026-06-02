@@ -7,27 +7,27 @@ console.log('========================================');
 console.log('  前端播放问题诊断工具');
 console.log('========================================\n');
 
-// 诊断1：检查RTSP Proxy服务
-async function checkRtspProxy() {
-  console.log('📡 诊断1: 检查RTSP Proxy服务');
+// 诊断1：检查ZLMediaKit服务
+async function checkZLMediaKit() {
+  console.log('📡 诊断1: 检查ZLMediaKit服务');
 
   try {
-    const response = await fetch('http://localhost:8081/health');
+    const response = await fetch('http://127.0.0.1:801/index/api/getServerInfo');
     if (response.ok) {
       const data = await response.json();
-      console.log('✅ RTSP Proxy服务正常运行');
-      console.log('   状态:', data.status);
-      console.log('   活跃流数:', data.streams);
-      console.log('   运行时间:', data.uptime.toFixed(2), '秒');
+      console.log('✅ ZLMediaKit服务正常运行');
+      console.log('   服务器版本:', data.data?.mediaServerVersion || '未知');
+      console.log('   启动时间:', data.data?.startTime || '未知');
+      console.log('   当前时间:', data.data?.currentTime || '未知');
       return true;
     } else {
-      console.log('❌ RTSP Proxy服务响应异常:', response.status);
+      console.log('❌ ZLMediaKit服务响应异常:', response.status);
       return false;
     }
   } catch (e) {
-    console.log('❌ RTSP Proxy服务未运行或无法访问');
+    console.log('❌ ZLMediaKit服务未运行或无法访问');
     console.log('   错误:', e.message);
-    console.log('   解决方法: cd tauri-app/rtsp-proxy && node rtsp-proxy.js');
+    console.log('   解决方法: 确保ZLMediaKit已正确安装并在Tauri应用中启动');
     return false;
   }
 }
@@ -180,7 +180,7 @@ async function runDiagnostics() {
   console.log('开始诊断...\n');
 
   const results = {
-    rtspProxy: await checkRtspProxy(),
+    zlmediakit: await checkZLMediaKit(),
     flvSupport: checkFlvSupport(),
     videoElement: checkVideoElement(),
     network: await checkNetworkConnectivity(),
@@ -191,15 +191,15 @@ async function runDiagnostics() {
   console.log('\n========================================');
   console.log('  诊断总结');
   console.log('========================================');
-  console.log('RTSP Proxy服务:', results.rtspProxy ? '✅ 正常' : '❌ 异常');
+  console.log('ZLMediaKit服务:', results.zlmediakit ? '✅ 正常' : '❌ 异常');
   console.log('FLV.js支持:', results.flvSupport ? '✅ 正常' : '❌ 异常');
   console.log('视频元素:', results.videoElement ? '✅ 存在' : '❌ 缺失');
   console.log('网络连接:', results.network ? '✅ 正常' : '⚠️  需检查');
 
   console.log('\n💡 建议:');
 
-  if (!results.rtspProxy) {
-    console.log('1. 启动RTSP Proxy服务: cd tauri-app/rtsp-proxy && node rtsp-proxy.js');
+  if (!results.zlmediakit) {
+    console.log('1. 确保ZLMediaKit服务已启动: 在Tauri应用中启动ZLMediaKit服务');
   }
 
   if (!results.flvSupport) {
@@ -211,7 +211,7 @@ async function runDiagnostics() {
   }
 
   console.log('4. 查看浏览器控制台的详细日志');
-  console.log('5. 查看RTSP Proxy终端的输出日志');
+  console.log('5. 检查ZLMediaKit服务的日志输出');
 
   console.log('\n========================================');
   console.log('诊断完成');

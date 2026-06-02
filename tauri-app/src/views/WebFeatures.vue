@@ -12,7 +12,7 @@
     </div>
 
     <!-- Web功能中心视图 -->
-    <div class="main-content" v-show="!showAnalysisPanel">
+    <div class="main-content" v-show="!showAnalysisPanel && !showWebPageOpen">
       <div class="header">
         <h1>Web 功能中心</h1>
         <p class="subtitle">Training Teaching System - Web Features</p>
@@ -63,6 +63,30 @@
             <div class="card-actions">
               <el-button type="primary" @click="openApiTest">打开测试</el-button>
               <el-button @click="viewApiInfo">详情</el-button>
+            </div>
+          </div>
+        </div>
+
+        <div class="feature-card coco-docs">
+          <div class="card-icon">📊</div>
+          <div class="card-content">
+            <h2>COCO API 文档</h2>
+            <p>COCO 数据集统计、接口文档、API 调试</p>
+            <div class="card-actions">
+              <el-button type="primary" @click="openCocoDocs">打开文档</el-button>
+              <el-button @click="viewCocoInfo">详情</el-button>
+            </div>
+          </div>
+        </div>
+
+        <div class="feature-card subtitle-generator">
+          <div class="card-icon">🎬</div>
+          <div class="card-content">
+            <h2>字幕生成器</h2>
+            <p>音视频转写、字幕导出、字幕同步预览</p>
+            <div class="card-actions">
+              <el-button type="primary" @click="openSubtitleGenerator">打开生成器</el-button>
+              <el-button @click="viewSubtitleInfo">详情</el-button>
             </div>
           </div>
         </div>
@@ -135,8 +159,20 @@
       </div>
     </div>
 
+    <!-- 内嵌 Web 页面视图 -->
+    <div class="web-embed-panel" v-show="showWebPageOpen">
+      <div class="embed-toolbar">
+        <div class="embed-title">{{ activeWebTitle }}</div>
+        <div class="embed-actions">
+          <el-button size="small" type="primary" @click="closeWebPage">关闭</el-button>
+          <a class="open-browser-link" :href="activeWebUrl" target="_blank" rel="noreferrer">在浏览器中打开</a>
+        </div>
+      </div>
+      <iframe class="web-iframe" :src="activeWebUrl"></iframe>
+    </div>
+
     <!-- 视觉分析控制台视图 -->
-    <div class="analysis-panel-container" v-show="showAnalysisPanel">
+    <div class="analysis-panel-container" v-show="showAnalysisPanel && !showWebPageOpen">
       <div class="analysis-header">
         <button class="back-btn" @click="exitAnalysisPanel">
           ← 返回 Web 功能中心
@@ -166,7 +202,7 @@
             基础分析
           </button>
           <button
-            class="mode-btn" 
+            class="mode-btn"
             :class="{ active: analysisMode === 'experiment' }"
             @click="analysisMode = 'experiment'"
           >
@@ -715,12 +751,12 @@
               <div class="exp-score-circle">
                 <svg viewBox="0 0 100 100">
                   <circle cx="50" cy="50" r="45" fill="none" stroke="#2D4A6F" stroke-width="8"/>
-                  <circle 
-                    cx="50" 
-                    cy="50" 
-                    r="45" 
-                    fill="none" 
-                    :stroke="scoreColor" 
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    fill="none"
+                    :stroke="scoreColor"
                     stroke-width="8"
                     stroke-linecap="round"
                     :stroke-dasharray="`${(experimentScore / 20) * 283} 283`"
@@ -735,9 +771,9 @@
             <!-- 实验步骤列表 -->
             <div class="experiment-steps-list">
               <div class="steps-title">实验步骤</div>
-              <div 
-                v-for="(step, index) in experimentStepList" 
-                :key="index" 
+              <div
+                v-for="(step, index) in experimentStepList"
+                :key="index"
                 class="step-item"
                 :class="{ completed: step.completed, failed: step.failed }"
               >
@@ -792,7 +828,7 @@
 <script setup>
 import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { minimizeWindow, maximizeWindow, closeApp } from '@/utils/tauri-api.js'
+import { minimizeWindow, maximizeWindow, closeApp, openNativeWebviewWindow } from '@/utils/tauri-api.js'
 import AnnotationCanvas from '@/components/AnnotationCanvas.vue'
 import AnnotationToolbar from '@/components/AnnotationToolbar.vue'
 import { useVisionStore } from '@/stores/visionStore'
@@ -800,6 +836,10 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const visionStore = useVisionStore()
+const WEB_FEATURES_BASE_URL = 'http://127.0.0.1:8080/web'
+const activeWebUrl = ref('')
+const activeWebTitle = ref('')
+const showWebPageOpen = ref(false)
 
 // 路由控制
 const goBack = () => {
@@ -819,31 +859,68 @@ const close = () => {
 }
 
 // 功能跳转
-const openStudentTraining = () => {
-  router.push('/students')
+const openStudentTraining = () => openWebPage('student')
+
+const openTeacherManagement = () => openWebPage('teacher')
+
+const openVisionAnalysis = () => openWebPage('vision')
+
+const openApiTest = () => openWebPage('api')
+
+const openCocoDocs = () => openWebPage('coco')
+
+const openSystemHome = () => openWebPage('home')
+
+const openServiceStatus = () => openWebPage('status')
+
+const openSubtitleGenerator = () => openWebPage('subtitle')
+
+const openWebPage = async (feature) => {
+  const featureUrls = {
+    student: `${WEB_FEATURES_BASE_URL}/student-training.html`,
+    teacher: `${WEB_FEATURES_BASE_URL}/teacher-management.html`,
+    vision: `${WEB_FEATURES_BASE_URL}/vision-analysis.html`,
+    api: `${WEB_FEATURES_BASE_URL}/api-test.html`,
+    coco: 'http://127.0.0.1:8080/api/coco/stats',
+    home: `${WEB_FEATURES_BASE_URL}/index.html`,
+    status: `${WEB_FEATURES_BASE_URL}/service-status.html`,
+    subtitle: `${WEB_FEATURES_BASE_URL}/subtitle-generator.html`
+  }
+
+  const featureTitles = {
+    student: '学生实训',
+    teacher: '教师管理',
+    vision: '视觉分析',
+    api: 'API 测试',
+    coco: 'COCO API 文档',
+    home: '系统首页',
+    status: '服务状态',
+    subtitle: '字幕生成器'
+  }
+
+  const url = featureUrls[feature]
+  if (!url) {
+    ElMessage.warning(`功能 "${feature}" 暂未实现`)
+    return
+  }
+
+  try {
+    await openNativeWebviewWindow(`web-${feature}`, url, featureTitles[feature] || 'Web 页面', {
+      width: 1200,
+      height: 800,
+      resizable: true,
+      title: featureTitles[feature] || 'Web 页面'
+    })
+  } catch (err) {
+    console.error('openNativeWebviewWindow failed', err)
+    ElMessage.error('无法打开原生窗口，请检查后重试')
+  }
 }
 
-const openTeacherManagement = () => {
-  router.push('/teacher')
-}
-
-const openVisionAnalysis = () => {
-  showAnalysisPanel.value = true
-  nextTick(() => {
-    initOverlayCanvas()
-  })
-}
-
-const openApiTest = () => {
-  router.push('/logs')
-}
-
-const openSystemHome = () => {
-  router.push('/')
-}
-
-const openServiceStatus = () => {
-  router.push('/status')
+const closeWebPage = () => {
+  showWebPageOpen.value = false
+  activeWebUrl.value = ''
+  activeWebTitle.value = ''
 }
 
 const showMessage = (name, desc) => {
@@ -854,6 +931,8 @@ const viewTrainingInfo = () => showMessage('学生实训', '学生在线实训�
 const viewManagementInfo = () => showMessage('教师管理', '管理班级、分配任务、批改作业、成绩管理')
 const viewVisionInfo = () => showMessage('视觉分析', 'AI 视觉分析、专注度监测、行为分析报告')
 const viewApiInfo = () => showMessage('API 测试', '接口测试、性能监控、日志查看')
+const viewCocoInfo = () => showMessage('COCO API 文档', 'COCO 数据集统计与 API 文档')
+const viewSubtitleInfo = () => showMessage('字幕生成器', '音视频转写、字幕导出、字幕同步预览')
 const viewSystemInfo = () => showMessage('系统首页', '系统概览、快速导航、状态监控')
 const viewStatusInfo = () => showMessage('服务状态', '服务运行状态、资源使用情况、性能指标')
 
@@ -1993,6 +2072,59 @@ onUnmounted(() => {
       font-size: 18px;
       margin: 0;
     }
+  }
+
+  .web-embed-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px;
+    width: 100%;
+    min-height: calc(100vh - 56px);
+    background: rgba(15, 23, 42, 0.92);
+  }
+
+  .embed-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .embed-title {
+    font-size: 18px;
+    color: #E0E1DD;
+    font-weight: 600;
+  }
+
+  .embed-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .open-browser-link {
+    color: #FFFFFF;
+    font-size: 14px;
+    text-decoration: underline;
+    transition: color 0.2s ease;
+  }
+
+  .open-browser-link:hover {
+    color: #A5F3FC;
+  }
+
+  .web-iframe {
+    width: 100%;
+    flex: 1;
+    min-height: 72vh;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    background: #0F172A;
   }
 
   .features-grid {

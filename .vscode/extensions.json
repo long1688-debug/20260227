@@ -1,5 +1,8 @@
 {
     "recommendations": [
-        "doubao.doubao-app-share-vscode-plugin"
+        "doubao.doubao-app-share-vscode-plugin",
+        "kingleo.qwen",
+        "akainth015.marscode",
+        "baiducomate.comate"
     ]
 }

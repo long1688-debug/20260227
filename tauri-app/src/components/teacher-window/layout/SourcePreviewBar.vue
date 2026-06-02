@@ -256,12 +256,28 @@ const onDragStart = (event, source) => {
   isDragging.value = true
   draggingSourceId.value = source.id
 
+  // 🎯 获取视频状态（播放位置、播放状态等）
+  const videoEl = videoRefMap.value[source.id]
+  const videoState = {
+    currentTime: videoEl?.currentTime || 0,
+    paused: videoEl?.paused !== false,
+    volume: videoEl?.volume || 1,
+    muted: videoEl?.muted || false,
+    playbackRate: videoEl?.playbackRate || 1
+  }
+
+  // 克隆源数据并添加视频状态
+  const sourceWithState = {
+    ...source,
+    videoState
+  }
+
   // 设置拖拽数据 - 关键：必须设置 JSON 格式的数据
   event.dataTransfer.effectAllowed = 'copy'
   event.dataTransfer.setData('sourceId', source.id)
   event.dataTransfer.setData('sourceType', source.type)
   event.dataTransfer.setData('sourceName', source.name)
-  event.dataTransfer.setData('application/json', JSON.stringify(source))
+  event.dataTransfer.setData('application/json', JSON.stringify(sourceWithState))
 
   // 设置拖拽图像（可选）
   if (event.currentTarget) {
@@ -272,8 +288,8 @@ const onDragStart = (event, source) => {
     event.dataTransfer.setDragImage(dragImageElement, 90, 60)
   }
 
-  // 🎯 发出事件给父组件
-  emit('drag-start', source)
+  // 🎯 发出事件给父组件，包含视频状态
+  emit('drag-start', sourceWithState)
 }
 
 // 🎯 HTML5 拖拽结束

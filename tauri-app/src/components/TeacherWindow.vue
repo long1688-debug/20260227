@@ -4257,7 +4257,7 @@ async function startBackgroundNetworkCameraConnection(sourceId, formData) {
     if (formData.protocol === 'rtsp' && formData.streamUrl) {
       // 如果是RTSP协议，直接使用用户输入的地址，不进行ONVIF解析
       console.log('[TeacherWindow] 使用RTSP协议，直接应用地址:', formData.streamUrl)
-      
+
       source.streamUrl = formData.streamUrl
       source.protocol = 'rtsp'
       source.connectionStatus = 'connected'
@@ -4266,14 +4266,14 @@ async function startBackgroundNetworkCameraConnection(sourceId, formData) {
       source.username = formData.username || ''
       source.password = formData.password || ''
       source.needAuth = formData.needAuth || false
-      
+
       ElMessage.success('RTSP地址已配置')
-      
+
       // 🎯 触发预览组件重新加载
       triggerPreviewReload(sourceId)
       return
     }
-    
+
     // 清理 URL 中的反引号和多余空格
     const onvifUrl = cleanUrl(formData.onvifUrl || formData.streamUrl || '')
 
@@ -4386,8 +4386,8 @@ async function startBackgroundNetworkCameraConnection(sourceId, formData) {
 
     // 🎯 自动弹出编辑对话框，让用户手动输入RTSP地址
     ElMessage.warning({
-      message: 'ONVIF自动解析失败，请手动输入RTSP地址（格式：rtsp://IP:554/路径）',
-      duration: 8000,
+      message: `ONVIF自动解析失败，请参考以下故障排除指南后重试或手动输入RTSP地址（格式：rtsp://IP:554/路径）：\n1. 确认摄像头ONVIF功能已启用\n2. 检查用户名和密码是否正确\n3. 确认网络连接正常\n4. 验证ONVIF端口设置是否正确\n5. 确认摄像头型号支持ONVIF协议\n6. 确认摄像头在线且运行正常`,
+      duration: 10000, // 延长显示时间以便用户阅读
       showClose: true
     })
 
