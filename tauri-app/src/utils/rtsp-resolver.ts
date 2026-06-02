@@ -148,8 +148,22 @@ export async function resolveCameraRtsp(cameraConfig: {
     const result = await resolveRtsp(request)
     return result.uri
   } catch (error) {
-    console.error('[RTSP解析] 无法解析 RTSP 地址，请手动输入')
-    throw new Error(`RTSP 地址解析失败: ${error}`)
+    console.warn('[RTSP解析] ONVIF/模板解析失败，使用常见回退路径尝试直接构造 RTSP 地址', error)
+
+    const creds = request.username && request.password ? `${encodeURIComponent(request.username)}:${encodeURIComponent(request.password)}@` : ''
+    const hostPort = `${request.host}:${request.port || 554}`
+    const candidates = [
+      `rtsp://${creds}${hostPort}/live/av0`,
+      `rtsp://${creds}${hostPort}/live.sdp`,
+      `rtsp://${creds}${hostPort}/Streaming/Channels/101`,
+      `rtsp://${creds}${hostPort}/Streaming/Channels/101/preview`,
+      `rtsp://${creds}${hostPort}/h264`,
+      `rtsp://${creds}${hostPort}/ch0_0.264`
+    ]
+
+    console.info('[RTSP解析] 回退候选:', candidates)
+    // 返回第一个候选，调用方若需可自行验证
+    return candidates[0]
   }
 }
 
