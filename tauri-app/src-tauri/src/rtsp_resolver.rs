@@ -174,7 +174,89 @@ pub async fn resolve_rtsp(req: RtspResolveRequest) -> Result<RtspResolveResult, 
 
     log::error!("[RTSP解析] 所有ONVIF端口探测均失败 (尝试了{}个端口)", tried_count);
     log::error!("   最后错误: {}", last_error);
-    Err(format!("ONVIF 协议获取 RTSP 地址失败，尝试了{}个端口。最后错误: {}。请检查摄像机配置或手动输入RTSP地址", tried_count, last_error))
+
+    // 回退策略：构建常见 RTSP 路径候选并进行探针验证（TCP + RTSP DESCRIBE）
+    log::info!("[RTSP解析] 开始回退候选探测（构建并验证常见 RTSP 路径）");
+
+    // 构建凭据前缀（用于 URI）
+    let creds_prefix = if !req.username.is_empty() && !req.password.is_empty() {
+        format!("{}:{}@", req.username, req.password)
+    } else {
+        "".to_string()
+    };
+
+    let host_port = format!("{}:{}", req.host, req.port);
+    let candidates = vec![
+        format!("rtsp://{}{}/live/av0", creds_prefix, host_port),
+        format!("rtsp://{}{}/live.sdp", creds_prefix, host_port),
+        format!("rtsp://{}{}/Streaming/Channels/101", creds_prefix, host_port),
+        format!("rtsp://{}{}/Streaming/Channels/101/preview", creds_prefix, host_port),
+        format!("rtsp://{}{}/h264", creds_prefix, host_port),
+        format!("rtsp://{}{}/ch0_0.264", creds_prefix, host_port),
+    ];
+
+    // 简单的 RTSP 探针：TCP 连接 + 发送 DESCRIBE，若返回 200 则认为可用；若返回 401 则尝试 Basic Auth
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use base64::{engine::general_purpose, Engine as _};
+
+    async fn probe_rtsp(uri: &str, username: &str, password: &str) -> bool {
+        if let Ok(parsed) = Url::parse(uri) {
+            if let Some(host) = parsed.host_str() {
+                let port = parsed.port_or_known_default().unwrap_or(554);
+                let addr = format!("{}:{}", host, port);
+                // TCP 连接
+                if let Ok(Ok(mut stream)) = timeout(Duration::from_secs(3), tokio::net::TcpStream::connect(&addr)).await {
+                    let req = format!("DESCRIBE {} RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: rtsp_probe\r\n\r\n", uri);
+                    if let Ok(_) = stream.write_all(req.as_bytes()).await {
+                        let mut buf = vec![0u8; 1024];
+                        if let Ok(Ok(n)) = timeout(Duration::from_secs(3), stream.read(&mut buf)).await {
+                            let resp = String::from_utf8_lossy(&buf[..n]).to_string();
+                            if resp.contains("RTSP/1.0 200") {
+                                return true;
+                            }
+                            if resp.contains("RTSP/1.0 401") && !username.is_empty() {
+                                // 尝试带 Basic Auth 重新请求（新连接）
+                                if let Ok(Ok(mut s2)) = timeout(Duration::from_secs(3), tokio::net::TcpStream::connect(&addr)).await {
+                                    let creds = format!("{}:{}", username, password);
+                                    let token = general_purpose::STANDARD.encode(creds);
+                                    let req2 = format!("DESCRIBE {} RTSP/1.0\r\nCSeq: 2\r\nUser-Agent: rtsp_probe\r\nAuthorization: Basic {}\r\n\r\n", uri, token);
+                                    if let Ok(_) = s2.write_all(req2.as_bytes()).await {
+                                        let mut buf2 = vec![0u8; 1024];
+                                        if let Ok(Ok(m)) = timeout(Duration::from_secs(3), s2.read(&mut buf2)).await {
+                                            let r2 = String::from_utf8_lossy(&buf2[..m]).to_string();
+                                            if r2.contains("RTSP/1.0 200") {
+                                                return true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    // 依次验证候选
+    for candidate in &candidates {
+        log::info!("[RTSP解析] 探测候选: {}", candidate);
+        if probe_rtsp(candidate, &req.username, &req.password).await {
+            log::info!("[RTSP解析] 回退候选可用: {}", candidate);
+            return Ok(RtspResolveResult {
+                uri: candidate.clone(),
+                source: "fallback_probe".into(),
+                valid: true,
+                media_urls: candidate.clone(),
+            });
+        }
+    }
+
+    // 提供更详细的故障排除指南
+    let troubleshooting_guide = "\n请检查：\n1. 摄像机ONVIF功能是否已启用\n2. 用户名和密码是否正确\n3. 网络连接是否正常\n4. ONVIF端口是否正确（通常为80、8080等）\n5. 摄像机型号是否支持ONVIF协议\n6. 摄像机是否在线且工作正常";
+
+    Err(format!("ONVIF 协议获取 RTSP 地址失败，尝试了{}个端口。最后错误: {}。{}\n建议：您可以尝试手动输入RTSP地址或检查摄像机设置。", tried_count, last_error, troubleshooting_guide))
 }
 
 /// 清理 ONVIF 返回的相对路径/localhost 地址
