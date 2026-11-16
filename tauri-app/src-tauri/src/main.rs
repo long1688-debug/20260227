@@ -242,6 +242,9 @@ fn main() {
             onvif_discover_devices,
             ptz_register_device,
             ptz_list_devices,
+            set_device_rtsp_url,
+            get_device_rtsp_url,
+            register_onvif_device_with_rtsp,
             get_camera_details,
             update_camera_config,
             remove_camera_device,
@@ -269,6 +272,7 @@ fn main() {
             start_speech_recognition,
             stop_speech_recognition,
             get_speech_recognition_status,
+            update_recognition_settings,
 
             // 视频转字幕
             start_video_audio_capture,

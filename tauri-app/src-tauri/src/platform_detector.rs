@@ -155,6 +155,11 @@ fn windows_version() -> Result<String, String> {
     })
 }
 
+#[cfg(not(target_os = "windows"))]
+fn windows_version() -> Result<String, String> {
+    Err("not windows".to_string())
+}
+
 /// 检查 Windows 触摸能力
 #[cfg(target_os = "windows")]
 fn has_windows_touch_capability() -> bool {

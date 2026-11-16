@@ -124,3 +124,12 @@ models/
 # Debug files
 *.dump
 *.stackdump
+
+# Rust build output (any crate)
+target/
+
+# Editor backups / scratch
+*.bak
+*.backup
+*.orig
+vite.config.js.timestamp-*.mjs
