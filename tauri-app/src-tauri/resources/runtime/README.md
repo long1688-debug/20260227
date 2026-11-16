@@ -11,6 +11,7 @@ runtime/
   node/node.exe                       # 自动下载（Node.js 20 便携版），用于运行 server/
   server/                             # 复制 ../../server，并 npm ci --omit=dev
   zlmediakit/MediaServer.exe + config.ini 等   # 从 -ZLMediaKitDir 复制（需自行编译/准备）
+  models/whisper/ggml-base.bin        # 打包机下载一次（-WhisperModel 选型号，-WhisperModelDir 用本地文件）；运行时不联网
   MicrosoftEdgeWebview2Setup.exe      # 自动下载，Inno Setup 在目标机缺 WebView2 时静默安装
 ```
 

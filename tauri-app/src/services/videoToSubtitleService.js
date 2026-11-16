@@ -1,3 +1,4 @@
+import { SpeechRecognizer, isAsrSupported } from './asr';
 /**
  * 视频文件实时转字幕服务
  * 监听视频文件的音频流，实时转换为字幕
@@ -249,7 +250,7 @@ class VideoToSubtitleService {
     }
 
     // 检查浏览器是否支持 SpeechRecognition
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition = SpeechRecognizer;
     
     if (!SpeechRecognition) {
       ElMessage.error('您的浏览器不支持语音识别功能，请使用 Chrome 或 Edge 浏览器');

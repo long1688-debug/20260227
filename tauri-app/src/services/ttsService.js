@@ -1,3 +1,4 @@
+import { SpeechRecognizer, isAsrSupported } from './asr';
 // AI 文字转语音 (TTS) 服务
 // 支持多种后端：浏览器原生、Web Speech API、Tauri 原生插件
 
@@ -400,8 +401,8 @@ export class AIAudioAssistant {
     this.commandHandlers = new Map();
 
     // 初始化语音识别
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (isAsrSupported()) {
+      const SpeechRecognition = SpeechRecognizer;
       this.speechRecognition = new SpeechRecognition();
       this.speechRecognition.lang = options.lang || 'zh-CN';
       this.speechRecognition.continuous = true;

@@ -5,6 +5,10 @@
 param(
     [Parameter(Mandatory = $true)][string]$ZLMediaKitDir,
     [string]$NodeVersion = "20.18.1",
+    # 随包附带的 Whisper 模型（tiny/base/small/medium），程序运行时不再在线下载
+    [string]$WhisperModel = "base",
+    # 可选：已下载好的 ggml-*.bin 所在目录，指定后不联网
+    [string]$WhisperModelDir = "",
     [switch]$Force
 )
 $ErrorActionPreference = "Stop"
@@ -57,6 +61,18 @@ Write-Host "复制 ZLMediaKit ..."
 $zlmDst = Join-Path $runtime "zlmediakit"
 if (Test-Path $zlmDst) { Remove-Item -Recurse -Force $zlmDst }
 robocopy $ZLMediaKitDir $zlmDst /E /XF *.pdb *.ilk *.log /XD log www\record /NFL /NDL /NJH /NJS | Out-Null
+
+# Whisper 模型（whisper.cpp ggml 格式，MIT 许可）
+$wDir = Join-Path $runtime "models\whisper"
+New-Item -ItemType Directory -Force -Path $wDir | Out-Null
+$wFile = "ggml-$WhisperModel.bin"
+$wDst = Join-Path $wDir $wFile
+if ($WhisperModelDir) {
+    Copy-Item (Join-Path $WhisperModelDir $wFile) $wDst -Force
+} elseif ($Force -or -not (Test-Path $wDst)) {
+    Write-Host "下载 Whisper 模型 $wFile ..."
+    Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$wFile" -OutFile $wDst
+}
 
 # WebView2 bootstrapper
 $wv = Join-Path $runtime "MicrosoftEdgeWebview2Setup.exe"

@@ -21,6 +21,20 @@ pub fn runtime_dir() -> Option<PathBuf> {
         .map(|p| p.join("runtime"))
 }
 
+/// Bundled model file under `runtime/models/<rel>` (or `resources/runtime/models/<rel>` in debug builds).
+pub fn model_file(rel: &str) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = runtime_dir().map(|d| d.join("models").join(rel)).into_iter().collect();
+    #[cfg(debug_assertions)]
+    candidates.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("runtime")
+            .join("models")
+            .join(rel),
+    );
+    candidates.into_iter().find(|p| p.is_file())
+}
+
 fn resolve(env_var: &str, subdir: &str, name: &str) -> Option<PathBuf> {
     if let Ok(p) = std::env::var(env_var) {
         let p = PathBuf::from(p);

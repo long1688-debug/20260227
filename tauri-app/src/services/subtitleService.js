@@ -1,3 +1,4 @@
+import { SpeechRecognizer, isAsrSupported } from './asr';
 // 语音识别和字幕生成服务
 
 /**
@@ -21,8 +22,8 @@ export class SpeechRecognitionService {
   }
 
   init() {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (isAsrSupported()) {
+      const SpeechRecognition = SpeechRecognizer;
       this.recognition = new SpeechRecognition();
       this.recognition.continuous = this.continuous;
       this.recognition.interimResults = this.interimResults;

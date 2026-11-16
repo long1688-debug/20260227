@@ -203,6 +203,7 @@
 </template>
 
 <script setup>
+import { SpeechRecognizer, isAsrSupported } from '@/services/asr';
 import { ref, onMounted, onUnmounted, computed, reactive } from 'vue';
 import { ElMessage } from 'element-plus';
 import {
@@ -315,8 +316,8 @@ const voiceCommands = [
 
 // 初始化语音识别
 const initRecognition = () => {
-  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (isAsrSupported()) {
+    const SpeechRecognition = SpeechRecognizer;
     recognition = new SpeechRecognition();
     recognition.lang = 'zh-CN';
     recognition.continuous = true;
