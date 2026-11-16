@@ -19,7 +19,7 @@ impl ZLMediaKitState {
             process: Mutex::new(None),
             host: "127.0.0.1".to_string(),
             port: 801, // ZLMediaKit HTTP 端口
-            secret: "8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3".to_string(), // ZLMediaKit 配置的密钥
+            secret: crate::bin_resolver::zlmediakit_secret(), // ZLMediaKit 配置的密钥
         }
     }
 }

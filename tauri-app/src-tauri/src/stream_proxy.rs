@@ -62,7 +62,7 @@ impl StreamState {
             http_client: Client::new(),
             zlmediakit_host: "127.0.0.1".to_string(),
             zlmediakit_port: 801, // ZLMediaKit HTTP 端口
-           zlmediakit_secret: "8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3".to_string(), // ZLMediaKit 配置的密钥
+           zlmediakit_secret: crate::bin_resolver::zlmediakit_secret(), // ZLMediaKit 配置的密钥
             mobile_connections: Mutex::new(HashMap::new()),
         }
     }

@@ -13,19 +13,17 @@
   },
   "auth": {
     "sessionTimeout": 3600000,
-    "secretKey": "training_system_secret_key_2024",
     "defaultAccounts": {
       "admin": {
-        "password": "admin123",
         "role": "admin",
         "name": "管理员"
       },
       "teacher1": {
-        "password": "teacher123",
         "role": "teacher",
         "name": "张老师"
       }
-    }
+    },
+    "note": "secretKey 与默认账号口令由环境变量 SERVER_SECRET_KEY / ADMIN_PASSWORD / TEACHER_PASSWORD 提供，未设置时首次启动随机生成并保存在 data/initial-credentials.json"
   },
   "vision": {
     "enabled": true,

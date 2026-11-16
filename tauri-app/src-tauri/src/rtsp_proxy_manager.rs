@@ -231,7 +231,7 @@ pub async fn start_rtsp_stream_proxy(
     let add_url = format!("http://{}:{}/index/api/addStreamProxy", state.host, state.port);
 
     let params = serde_json::json!({
-        "secret": "8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3",
+        "secret": crate::bin_resolver::zlmediakit_secret(),
         "vhost": "__defaultVhost__",
         "app": "live",
         "stream": id,
@@ -293,7 +293,7 @@ pub async fn stop_rtsp_stream_proxy(
     let del_url = format!("http://{}:{}/index/api/delStreamProxy", state.host, state.port);
 
     let params = serde_json::json!({
-        "secret": "8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3",
+        "secret": crate::bin_resolver::zlmediakit_secret(),
         "key": format!("__defaultVhost__/live/{}", stream_id)
     });
 
@@ -325,7 +325,7 @@ pub async fn get_rtsp_streams(app_handle: AppHandle) -> Result<serde_json::Value
     let api_url = format!("http://{}:{}/index/api/getMediaList", state.host, state.port);
 
     let params = serde_json::json!({
-        "secret": "8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3",
+        "secret": crate::bin_resolver::zlmediakit_secret(),
         "app": "live"
     });
 

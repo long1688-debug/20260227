@@ -275,6 +275,7 @@ fn main() {
             stop_speech_recognition,
             get_speech_recognition_status,
             update_recognition_settings,
+            bin_resolver::get_zlm_secret,
 
             // 视频转字幕
             start_video_audio_capture,

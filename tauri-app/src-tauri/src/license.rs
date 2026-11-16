@@ -133,20 +133,8 @@ fn init_codes_db(app_data_dir: &PathBuf) -> Result<(), String> {
         .map_err(|e| format!("创建目录失败: {}", e))?;
 
     // 创建初始注册码数据库
-    let default_codes = serde_json::json!([
-        {
-            "code": "DEMO-PRO-2024-0001",
-            "status": "active",
-            "licenseType": "permanent",
-            "trialMonths": null
-        },
-        {
-            "code": "DEMO-TRL-2024-0001",
-            "status": "active",
-            "licenseType": "temporary",
-            "trialMonths": 3
-        }
-    ]);
+    // 不再内置演示注册码（任何人都能用它永久激活）
+    let default_codes = serde_json::json!([]);
 
     write_json_file(&codes_file, &default_codes)
         .map_err(|e| format!("初始化注册码数据库失败: {}", e))
@@ -185,7 +173,7 @@ pub fn get_registration_status(app_handle: tauri::AppHandle) -> Result<Registrat
     let registration_file = get_registration_file(app_data_dir.clone());
 
     // 尝试加载注册信息
-    if let Some(registration) = read_json_file::<RegistrationInfo>(&registration_file) {
+    if let Some(registration) = read_registration(&registration_file) {
         if registration.activated {
             // 检查是否过期
             if registration.license_type == "temporary" {
@@ -235,7 +223,7 @@ fn start_trial(registration_file: &PathBuf) -> Result<RegistrationStatus, String
         device_count: 1,
     };
 
-    let _ = write_json_file(registration_file, &trial_registration);
+    let _ = write_registration(registration_file, &trial_registration);
 
     Ok(RegistrationStatus {
         activated: false,
@@ -370,7 +358,7 @@ async fn activate_locally(
 
     // 保存注册信息
     let registration_file = get_registration_file(app_data_dir.clone());
-    write_json_file(&registration_file, &registration_info)?;
+    write_registration(&registration_file, &registration_info)?;
 
     Ok(ActivationResult {
         success: true,
@@ -543,4 +531,42 @@ pub fn deactivate_registration(app_handle: tauri::AppHandle) -> Result<bool, Str
     }
 
     Ok(true)
+}
+
+// 注册信息签名：防止直接修改 registration.json 绕过激活。
+// 发布构建请通过环境变量 LICENSE_SIGNING_KEY 注入私有密钥。
+const LICENSE_SIGNING_KEY: &str = match option_env!("LICENSE_SIGNING_KEY") {
+    Some(k) => k,
+    None => "training-teaching-system/registration/v1",
+};
+
+fn registration_signature(content: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(LICENSE_SIGNING_KEY.as_bytes());
+    hasher.update(generate_machine_code().as_bytes());
+    hasher.update(content.as_bytes());
+    hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+fn signature_file(path: &PathBuf) -> PathBuf {
+    path.with_extension("sig")
+}
+
+fn write_registration(path: &PathBuf, info: &RegistrationInfo) -> Result<(), String> {
+    let content = serde_json::to_string_pretty(info).map_err(|e| e.to_string())?;
+    if let Some(dir) = path.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    fs::write(path, &content).map_err(|e| e.to_string())?;
+    fs::write(signature_file(path), registration_signature(&content)).map_err(|e| e.to_string())
+}
+
+fn read_registration(path: &PathBuf) -> Option<RegistrationInfo> {
+    let content = fs::read_to_string(path).ok()?;
+    let sig = fs::read_to_string(signature_file(path)).ok()?;
+    if sig.trim() != registration_signature(&content) {
+        return None;
+    }
+    serde_json::from_str(&content).ok()
 }
