@@ -68,7 +68,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const systemStatus = ref({
@@ -94,8 +94,10 @@ const handleRefresh = () => {
   ElMessage.success('状态已刷新')
 }
 
+let statusTimer = null
+
 onMounted(() => {
-  setInterval(() => {
+  statusTimer = setInterval(() => {
     networkStatus.value = {
       upload: (Math.random() * 5 + 10).toFixed(1),
       download: (Math.random() * 10 + 40).toFixed(1),
@@ -103,6 +105,8 @@ onMounted(() => {
     }
   }, 3000)
 })
+
+onUnmounted(() => clearInterval(statusTimer))
 </script>
 
 <style lang="scss" scoped>

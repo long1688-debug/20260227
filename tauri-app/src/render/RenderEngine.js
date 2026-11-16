@@ -12,7 +12,7 @@ export class RenderEngine {
     this._keepRunning = false;
     this._renderWidth = options.width || 1920;
     this._renderHeight = options.height || 1080;
-    this._fps = options.fps || 60;
+    this._fps = options.fps || 30;
     this._interval = Math.floor(1000 / this._fps);
     this._rafId = null;
 
@@ -83,16 +83,18 @@ export class RenderEngine {
    * 🎯 修复：使用 requestAnimationFrame 替代 setTimeout，
    * 仅在视频帧实际更新时才绘制，消除渲染循环与视频刷新节拍不同步造成的时序滞后
    */
-  _renderLoop() {
+  _renderLoop(timestamp = 0) {
     if (!this._keepRunning) return;
 
-    // 先泵入本帧的绘制信号
-    this._onDraw();
+    // 限制到 this._fps，避免高刷屏上每秒绘制/读回上百帧
+    if (!this._lastDrawTime || timestamp - this._lastDrawTime >= this._interval) {
+      this._lastDrawTime = timestamp;
+      this._onDraw();
+    }
 
-    // 用 rAF 驱动下一帧，浏览器会根据 display refresh rate 调度
-    this._rafId = requestAnimationFrame(() => this._renderLoop());
+    this._rafId = requestAnimationFrame((ts) => this._renderLoop(ts));
   }
-  
+
   /**
    * 绘制帧
    */

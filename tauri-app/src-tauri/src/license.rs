@@ -62,7 +62,8 @@ fn get_mac_address() -> String {
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
-        let output = Command::new("getmac")
+        use crate::proc_util::NoWindow;
+        let output = Command::new("getmac").no_window()
             .arg("/NH")
             .arg("/FO")
             .arg("CSV")
@@ -169,12 +170,12 @@ fn write_json_file<T: Serialize>(path: &PathBuf, data: &T) -> Result<(), String>
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_machine_code() -> String {
     generate_machine_code()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_registration_status(app_handle: tauri::AppHandle) -> Result<RegistrationStatus, String> {
     let app_data_dir = app_handle.path().app_data_dir()
         .map_err(|e| e.to_string())?
@@ -528,7 +529,7 @@ pub struct ActivationResult {
     pub info: Option<RegistrationInfo>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn deactivate_registration(app_handle: tauri::AppHandle) -> Result<bool, String> {
     let app_data_dir = app_handle.path().app_data_dir()
         .map_err(|e| e.to_string())?

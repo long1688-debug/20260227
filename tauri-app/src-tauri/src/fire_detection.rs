@@ -165,7 +165,7 @@ pub async fn detect_fire_smoke(base64_image: String) -> Result<FireSmokeDetectio
 }
 
 /// 简单的颜色统计检测（用于前端快速预检测）
-#[tauri::command]
+#[tauri::command(async)]
 pub fn quick_color_check(base64_image: String) -> Result<(bool, bool), String> {
     let img = decode_image(&base64_image)?;
 

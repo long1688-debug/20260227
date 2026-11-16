@@ -224,13 +224,13 @@ impl CaptureDeviceManager {
 // ============================================
 
 /// 获取采集设备列表
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_capture_devices(manager: tauri::State<CaptureDeviceManager>) -> Result<Vec<CaptureDeviceInfo>, String> {
     manager.refresh_devices()
 }
 
 /// 启动采集设备
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_capture_device(
     manager: tauri::State<CaptureDeviceManager>,
     device_id: String,
@@ -239,7 +239,7 @@ pub fn start_capture_device(
 }
 
 /// 停止采集设备
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_capture_device(
     manager: tauri::State<CaptureDeviceManager>,
     device_id: String,
@@ -248,7 +248,7 @@ pub fn stop_capture_device(
 }
 
 /// 高拍仪拍照
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scanner_take_photo(
     manager: tauri::State<CaptureDeviceManager>,
     config: ScannerConfig,
@@ -257,7 +257,7 @@ pub fn scanner_take_photo(
 }
 
 /// 设置高拍仪配置
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_scanner_configuration(
     manager: tauri::State<CaptureDeviceManager>,
     config: ScannerConfig,

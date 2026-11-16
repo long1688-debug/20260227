@@ -306,7 +306,7 @@ pub async fn webrtc_get_service_status(
 }
 
 /// 生成唯一对等方 ID
-#[tauri::command]
+#[tauri::command(async)]
 pub fn webrtc_generate_peer_id() -> Result<String, String> {
     let peer_id = uuid::Uuid::new_v4().to_string();
     Ok(peer_id)

@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod proc_util;
 mod license;
 mod models;
 mod server_manager;
@@ -104,7 +105,7 @@ use mpv_player::{
 
 fn main() {
     // 初始化日志系统
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(if cfg!(debug_assertions) { "info" } else { "warn" })).init();
 
     tauri::Builder::default()
         // 管理状态

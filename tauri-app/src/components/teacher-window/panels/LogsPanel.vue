@@ -32,7 +32,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const logLevel = ref('all')
@@ -58,8 +58,10 @@ const handleExport = () => {
   ElMessage.success('日志已导出')
 }
 
+let logsTimer = null
+
 onMounted(() => {
-  setInterval(() => {
+  logsTimer = setInterval(() => {
     const now = new Date()
     const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
     const levels = ['info', 'warning', 'error']
@@ -81,6 +83,8 @@ onMounted(() => {
     }
   }, 5000)
 })
+
+onUnmounted(() => clearInterval(logsTimer))
 </script>
 
 <style lang="scss" scoped>

@@ -307,6 +307,7 @@ const isMicrophoneEnabled = ref(false)
 
 // 定时器
 let levelInterval = null
+let statusInterval = null
 let audioContext = null
 let microphoneStream = null
 let analyser = null
@@ -689,13 +690,14 @@ onMounted(async () => {
   updateAudioStatus()
 
   // 定时更新音频状态（每秒更新一次）
-  setInterval(() => {
+  statusInterval = setInterval(() => {
     updateAudioStatus()
   }, 1000)
 })
 
 // 卸载时清理
 onUnmounted(() => {
+  clearInterval(statusInterval)
   if (levelInterval) {
     clearInterval(levelInterval)
   }

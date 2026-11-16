@@ -1,3 +1,4 @@
+use crate::proc_util::NoWindow;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -157,7 +158,7 @@ impl MultiCodecManager {
         };
 
         // 检测 FFmpeg 支持的编码器
-        if let Ok(output) = Command::new("ffmpeg")
+        if let Ok(output) = Command::new("ffmpeg").no_window()
             .arg("-encoders")
             .output()
         {
@@ -189,7 +190,7 @@ impl MultiCodecManager {
 
         // 获取 GPU 内存信息（可选）
         if caps.has_nvidia {
-            if let Ok(output) = Command::new("nvidia-smi")
+            if let Ok(output) = Command::new("nvidia-smi").no_window()
                 .arg("--query-gpu=memory.total")
                 .arg("--format=csv,noheader,nounits")
                 .output()
@@ -231,7 +232,7 @@ impl MultiCodecManager {
             );
 
             // 构建 FFmpeg 命令
-            let mut cmd = Command::new("ffmpeg");
+            let mut cmd = Command::new("ffmpeg"); cmd.no_window();
             
             // 视频输入
             match video_config.source_type.as_str() {
@@ -374,7 +375,7 @@ impl MultiCodecManager {
     ) -> Result<String, String> {
         println!("[多路编解码] 开始混流录制: {}", session_id);
 
-        let mut cmd = Command::new("ffmpeg");
+        let mut cmd = Command::new("ffmpeg"); cmd.no_window();
 
         // 添加所有视频输入
         for (_idx, video_config) in video_streams.iter().enumerate() {

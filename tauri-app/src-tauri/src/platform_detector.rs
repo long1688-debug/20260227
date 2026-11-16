@@ -5,11 +5,13 @@
  * 支持 Windows/Android/Linux 多平台。
  */
 
+use crate::proc_util::NoWindow;
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::sync::OnceLock;
 
 /// 平台信息结构
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlatformInfo {
     pub platform: String,
     pub os_version: String,
@@ -18,8 +20,13 @@ pub struct PlatformInfo {
 }
 
 /// 获取当前运行平台信息
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_platform_info() -> Result<PlatformInfo, String> {
+    static GET_PLATFORM_INFO: OnceLock<Result<PlatformInfo, String>> = OnceLock::new();
+    GET_PLATFORM_INFO.get_or_init(detect_platform_info).clone()
+}
+
+fn detect_platform_info() -> Result<PlatformInfo, String> {
     let platform = env::consts::OS.to_string();
     let arch = env::consts::ARCH.to_string();
 
@@ -58,8 +65,13 @@ pub fn get_platform_info() -> Result<PlatformInfo, String> {
 }
 
 /// 检测设备是否支持触摸
-#[tauri::command]
+#[tauri::command(async)]
 pub fn is_touch_device() -> bool {
+    static IS_TOUCH_DEVICE: OnceLock<bool> = OnceLock::new();
+    IS_TOUCH_DEVICE.get_or_init(detect_touch_device).clone()
+}
+
+fn detect_touch_device() -> bool {
     #[cfg(target_os = "windows")]
     {
         // Windows: 检查系统是否有触摸设备
@@ -85,7 +97,7 @@ pub fn is_touch_device() -> bool {
 }
 
 /// 获取 Linux 发行版信息
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_linux_distro() -> Result<String, String> {
     #[cfg(target_os = "linux")]
     {
@@ -99,8 +111,13 @@ pub fn get_linux_distro() -> Result<String, String> {
 }
 
 /// 获取设备型号
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_device_model() -> Result<String, String> {
+    static GET_DEVICE_MODEL: OnceLock<Result<String, String>> = OnceLock::new();
+    GET_DEVICE_MODEL.get_or_init(detect_device_model).clone()
+}
+
+fn detect_device_model() -> Result<String, String> {
     #[cfg(target_os = "android")]
     {
         // Android: 从系统属性读取
@@ -126,8 +143,13 @@ pub fn get_device_model() -> Result<String, String> {
 }
 
 /// 检查 GPU 硬件加速能力
-#[tauri::command]
+#[tauri::command(async)]
 pub fn check_gpu_acceleration() -> bool {
+    static CHECK_GPU_ACCELERATION: OnceLock<bool> = OnceLock::new();
+    CHECK_GPU_ACCELERATION.get_or_init(detect_gpu_acceleration).clone()
+}
+
+fn detect_gpu_acceleration() -> bool {
     // 检测可用的硬件编码器
     has_hardware_encoder()
 }
@@ -139,7 +161,7 @@ pub fn check_gpu_acceleration() -> bool {
 fn windows_version() -> Result<String, String> {
     use std::process::Command;
 
-    let output = Command::new("powershell")
+    let output = Command::new("powershell").no_window()
         .args(&["-Command", "(Get-WmiObject Win32_OperatingSystem).Caption"])
         .output()
         .map_err(|e| format!("Failed to get Windows version: {}", e))?;
@@ -166,7 +188,7 @@ fn has_windows_touch_capability() -> bool {
     use std::process::Command;
 
     // 通过 PowerShell 检查触摸设备
-    let output = Command::new("powershell")
+    let output = Command::new("powershell").no_window()
         .args(&[
             "-Command",
             "Get-PnpDevice -Class 'HIDClass' | Where-Object {$_.FriendlyName -like '*Touch*'} | Measure-Object | Select-Object -ExpandProperty Count"
@@ -190,7 +212,7 @@ fn has_windows_touch_capability() -> bool {
 fn windows_device_model() -> String {
     use std::process::Command;
 
-    let output = Command::new("powershell")
+    let output = Command::new("powershell").no_window()
         .args(&[
             "-Command",
             "(Get-WmiObject Win32_ComputerSystem).Model"
@@ -290,7 +312,7 @@ fn check_windows_gpu_encoders() -> bool {
     use std::process::Command;
 
     // 检查 NVIDIA NVENC
-    let nvidia = Command::new("nvidia-smi")
+    let nvidia = Command::new("nvidia-smi").no_window()
         .output()
         .is_ok();
 
@@ -299,7 +321,7 @@ fn check_windows_gpu_encoders() -> bool {
     }
 
     // 检查 Intel QuickSync
-    let intel = Command::new("powershell")
+    let intel = Command::new("powershell").no_window()
         .args(&["-Command", "Get-CimInstance Win32_VideoController | Where-Object {$_.Name -like '*Intel*'}"])
         .output()
         .is_ok();
@@ -312,7 +334,7 @@ fn check_linux_gpu_encoders() -> bool {
     use std::process::Command;
 
     // 检查 VAAPI
-    let vaapi = Command::new("vainfo")
+    let vaapi = Command::new("vainfo").no_window()
         .output()
         .is_ok();
 
@@ -321,7 +343,7 @@ fn check_linux_gpu_encoders() -> bool {
     }
 
     // 检查 NVIDIA
-    let nvidia = Command::new("nvidia-smi")
+    let nvidia = Command::new("nvidia-smi").no_window()
         .output()
         .is_ok();
 

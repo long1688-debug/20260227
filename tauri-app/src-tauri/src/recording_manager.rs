@@ -1,3 +1,4 @@
+use crate::proc_util::NoWindow;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
@@ -219,7 +220,7 @@ impl RecordingManager {
         let output_path = self.generate_output_path(&recording_config.output_format, "multicam");
         
         // 构建FFmpeg命令，使用多个输入源
-        let mut cmd = Command::new("ffmpeg");
+        let mut cmd = Command::new("ffmpeg"); cmd.no_window();
         
         // 为每个摄像头添加输入
         for (_i, camera) in config.cameras.iter().enumerate() {
@@ -366,7 +367,7 @@ impl RecordingManager {
         let output_path = self.generate_output_path(&config.output_format, "canvas");
         
         // 构建FFmpeg命令 - 使用gdigrab捕获屏幕
-        let mut cmd = Command::new("ffmpeg");
+        let mut cmd = Command::new("ffmpeg"); cmd.no_window();
         
         // Windows屏幕捕获
         cmd.arg("-f")
@@ -494,7 +495,7 @@ impl RecordingManager {
         let output_path = self.generate_output_path(&config.output_format, "preview");
         
         // 构建FFmpeg命令 - 从网络流录制
-        let mut cmd = Command::new("ffmpeg");
+        let mut cmd = Command::new("ffmpeg"); cmd.no_window();
         
         cmd.arg("-i")
            .arg(&video_stream_url)
@@ -567,7 +568,7 @@ impl RecordingManager {
         let output_path = self.generate_output_path(&config.output_format, "pip");
         
         // 使用FFmpeg的overlay滤镜实现画中画
-        let mut cmd = Command::new("ffmpeg");
+        let mut cmd = Command::new("ffmpeg"); cmd.no_window();
         
         // 主画面输入
         cmd.arg("-f").arg("gdigrab")
@@ -685,7 +686,7 @@ impl RecordingManager {
                 return Err("RTMP推流未启用".to_string());
             }
             
-            let mut cmd = Command::new("ffmpeg");
+            let mut cmd = Command::new("ffmpeg"); cmd.no_window();
             
             // 屏幕捕获输入
             cmd.arg("-f").arg("gdigrab")
@@ -781,7 +782,7 @@ impl RecordingManager {
             }
             
             let output_path = self.generate_output_path(&config.output_format, "vr360");
-            let mut cmd = Command::new("ffmpeg");
+            let mut cmd = Command::new("ffmpeg"); cmd.no_window();
             
             // 根据输入类型配置不同的输入
             match vr_config.input_type.as_str() {
@@ -1179,7 +1180,7 @@ impl RecordingManager {
 
 // Tauri命令
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_canvas_recording(
     app_handle: AppHandle,
     session_id: String,
@@ -1193,7 +1194,7 @@ pub fn start_canvas_recording(
     state.start_canvas_recording(&app_handle, session_id, x, y, width, height, config)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_preview_recording(
     app_handle: AppHandle,
     session_id: String,
@@ -1204,7 +1205,7 @@ pub fn start_preview_recording(
     state.start_preview_recording(&app_handle, session_id, video_stream_url, config)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_pip_recording(
     app_handle: AppHandle,
     session_id: String,
@@ -1228,25 +1229,25 @@ pub fn start_pip_recording(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pause_recording(app_handle: AppHandle, session_id: String) -> Result<(), String> {
     let state = app_handle.state::<RecordingManager>();
     state.pause_recording(&session_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn resume_recording(app_handle: AppHandle, session_id: String) -> Result<(), String> {
     let state = app_handle.state::<RecordingManager>();
     state.resume_recording(&session_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_recording(app_handle: AppHandle, session_id: String) -> Result<String, String> {
     let state = app_handle.state::<RecordingManager>();
     state.stop_recording(&session_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_latest_preview_frame(
     app_handle: AppHandle,
     session_id: String,
@@ -1255,7 +1256,7 @@ pub fn get_latest_preview_frame(
     state.get_latest_preview_frame(&session_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cleanup_preview_frames(
     app_handle: AppHandle,
     session_id: String,
@@ -1264,7 +1265,7 @@ pub fn cleanup_preview_frames(
     state.cleanup_preview_frames(&session_id);
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn switch_active_camera(
     app_handle: AppHandle,
     session_id: String,
@@ -1274,7 +1275,7 @@ pub fn switch_active_camera(
     state.switch_active_camera(&session_id, camera_index)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_multicam_recording(
     app_handle: AppHandle,
     session_id: String,
@@ -1285,7 +1286,7 @@ pub fn start_multicam_recording(
     state.start_multicam_recording(&app_handle, session_id, config, recording_config)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_rtmp_streaming(
     app_handle: AppHandle,
     session_id: String,
@@ -1299,7 +1300,7 @@ pub fn start_rtmp_streaming(
     state.start_rtmp_streaming(&app_handle, session_id, source_x, source_y, source_width, source_height, config)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_rtmp_streaming(
     app_handle: AppHandle,
     session_id: String,
@@ -1308,7 +1309,7 @@ pub fn stop_rtmp_streaming(
     state.stop_rtmp_streaming(&session_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_vr_recording(
     app_handle: AppHandle,
     session_id: String,
@@ -1319,7 +1320,7 @@ pub fn start_vr_recording(
     state.start_vr_recording(&app_handle, session_id, camera_device, config)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_recording_template(
     app_handle: AppHandle,
     template: RecordingTemplate,
@@ -1328,7 +1329,7 @@ pub fn save_recording_template(
     state.save_template(template)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn load_recording_templates(
     app_handle: AppHandle,
 ) -> Result<Vec<RecordingTemplate>, String> {
@@ -1336,7 +1337,7 @@ pub fn load_recording_templates(
     state.load_templates()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_recording_template(
     app_handle: AppHandle,
     template_id: String,
@@ -1345,7 +1346,7 @@ pub fn delete_recording_template(
     state.delete_template(&template_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_active_recordings(app_handle: AppHandle) -> Vec<RecordingSession> {
     let state = app_handle.state::<RecordingManager>();
     state.get_active_sessions()

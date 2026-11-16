@@ -1,3 +1,4 @@
+use crate::proc_util::NoWindow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::process::Command;
@@ -104,7 +105,7 @@ impl RtspStreamManager {
                 #[cfg(windows)]
                 {
                     // Windows: 使用 taskkill
-                    let _ = std::process::Command::new("taskkill")
+                    let _ = std::process::Command::new("taskkill").no_window()
                         .args(&["/F", "/PID", &child.id().unwrap_or(0).to_string()])
                         .output();
                 }
@@ -167,7 +168,7 @@ impl RtspStreamManager {
 
         println!("[RTSP] 使用 FFmpeg: {:?}", ffmpeg_path);
 
-        let mut cmd = Command::new(ffmpeg_path);
+        let mut cmd = Command::new(ffmpeg_path); cmd.no_window();
         cmd.args(&[
             "-rtsp_transport", "tcp",
             "-i", rtsp_url,

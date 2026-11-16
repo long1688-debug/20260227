@@ -222,7 +222,7 @@ impl CameraDatabase {
 // 🎯 Tauri 命令
 
 /// 初始化摄像机数据库
-#[tauri::command]
+#[tauri::command(async)]
 pub fn init_camera_database(app_handle: AppHandle) -> Result<(), String> {
     let db = CameraDatabase::new(None).map_err(|e| format!("初始化数据库失败: {}", e))?;
 
@@ -287,7 +287,7 @@ pub async fn save_camera_config(
 }
 
 /// 获取所有摄像机配置
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_all_cameras(app_handle: AppHandle) -> Result<Vec<NetworkCameraConfig>, String> {
     let db = app_handle.state::<CameraDatabase>();
     db.get_all_cameras()
@@ -295,7 +295,7 @@ pub fn get_all_cameras(app_handle: AppHandle) -> Result<Vec<NetworkCameraConfig>
 }
 
 /// 根据ID获取摄像机配置
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_camera_by_id(
     app_handle: AppHandle,
     id: String,
@@ -306,7 +306,7 @@ pub fn get_camera_by_id(
 }
 
 /// 删除摄像机配置
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_camera_config(app_handle: AppHandle, id: String) -> Result<usize, String> {
     let db = app_handle.state::<CameraDatabase>();
     db.delete_camera(&id)
@@ -314,7 +314,7 @@ pub fn delete_camera_config(app_handle: AppHandle, id: String) -> Result<usize, 
 }
 
 /// 更新摄像机状态
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_camera_status(
     app_handle: AppHandle,
     id: String,
@@ -326,7 +326,7 @@ pub fn update_camera_status(
 }
 
 /// 获取在线摄像机数量
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_online_camera_count(app_handle: AppHandle) -> Result<usize, String> {
     let db = app_handle.state::<CameraDatabase>();
     db.get_online_count()
@@ -334,7 +334,7 @@ pub fn get_online_camera_count(app_handle: AppHandle) -> Result<usize, String> {
 }
 
 /// 获取离线摄像机数量
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_offline_camera_count(app_handle: AppHandle) -> Result<usize, String> {
     let db = app_handle.state::<CameraDatabase>();
     db.get_offline_count()

@@ -188,28 +188,28 @@ impl Default for AudioDeviceState {
 }
 
 // 获取所有音频设备（输入+输出）
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_audio_devices() -> Result<Vec<AudioDeviceInfo>, String> {
     let manager = AudioDeviceManager::new();
     manager.get_all_devices()
 }
 
 // 获取输入设备列表
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_input_devices() -> Result<Vec<AudioDeviceInfo>, String> {
     let manager = AudioDeviceManager::new();
     manager.get_input_devices()
 }
 
 // 获取输出设备列表
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_output_devices() -> Result<Vec<AudioDeviceInfo>, String> {
     let manager = AudioDeviceManager::new();
     manager.get_output_devices()
 }
 
 // 设置音频设备
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_audio_device(
     device_name: String, 
     is_input: bool,
@@ -225,7 +225,7 @@ pub fn set_audio_device(
 }
 
 // 获取设备信息
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_device_info(device_name: String) -> Result<AudioDeviceInfo, String> {
     let manager = AudioDeviceManager::new();
     
