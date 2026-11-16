@@ -31,6 +31,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; 只打包 Release 产物（Debug 版未优化，会慢数倍）
 Source: "{#SrcTauri}\target\release\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+; ort 默认静态链接 ONNX Runtime；若改为动态链接，onnxruntime*.dll 会出现在 release 目录，这里一并打包
+Source: "{#SrcTauri}\target\release\onnxruntime*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#SrcTauri}\resources\runtime\*"; DestDir: "{app}\runtime"; Excludes: "README.md,MicrosoftEdgeWebview2Setup.exe"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SrcTauri}\resources\runtime\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: NeedsWebView2
 ; 若启用了 mpv feature，取消下一行注释

@@ -13,6 +13,7 @@ mod zlmediakit_manager;
 mod audio_capture;
 mod speech_recognition;
 mod whisper_wrapper;
+mod object_detection;
 mod audio_device;
 mod audio_processor;
 mod video_subtitle;
@@ -117,6 +118,7 @@ fn main() {
         .manage(AudioCaptureState::new())
         .manage(SpeechRecognitionState::new())
         .manage(WhisperState::new())
+        .manage(object_detection::DetectorState::default())
         .manage(VideoAudioCaptureState::new())
         .manage(RecordingManager::new())
         .manage(CaptureDeviceManager::new())
@@ -291,6 +293,8 @@ fn main() {
             download_whisper_model,
             delete_whisper_model,
             check_whisper_model_exists,
+            object_detection::detect_objects,
+            object_detection::get_detector_status,
 
             // 录制管理
             start_canvas_recording,
