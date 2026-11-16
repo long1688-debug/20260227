@@ -116,9 +116,8 @@ export async function pushWebRTCStream(
     console.log(`[WebRTC推流] 开始推送: ${streamId}`)
 
     const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
-      ]
+      // 局域网内与本机 ZLMediaKit 直连，不依赖外网 STUN（国内访问 Google STUN 会让 ICE 收集等到超时）
+      iceServers: []
     })
 
     // 添加媒体轨道
