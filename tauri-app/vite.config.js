@@ -16,9 +16,6 @@ export default defineConfig(({ command }) => ({
       'node_modules'
     ]
   },
-  optimizeDeps: {
-    include: ['@xenova/transformers', 'onnxruntime-web']
-  },
   server: {
     host: '0.0.0.0',  // 允许外部访问
     port: 5181,  // 修改为5181避免端口冲突（5180已被占用）

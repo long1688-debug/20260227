@@ -100,6 +100,7 @@ futures = "0.3"         # 异步流控制
 # 🎯 SQLite数据库（用于持久化存储网络摄像机配置）
 rusqlite = { version = "0.31", features = ["bundled"] }
 whisper-rs = "0.16"
+ort = "=2.0.0-rc.15"
 
 # Unix 信号处理（仅 Unix 平台）
 [target.'cfg(unix)'.dependencies]

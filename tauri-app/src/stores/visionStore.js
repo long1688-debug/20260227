@@ -1,24 +1,11 @@
 import { defineStore } from 'pinia'
 import { getCocoDatasetManager } from '@/services/coco-dataset'
+import { detect, getDetectorStatus } from '@/services/detection'
 
 // YOLO 模型加载器（单例模式）
-let yoloDetector = null
 let visionStoreRef = null
 
 // 本地模型配置
-const LOCAL_MODEL_CONFIG = {
-  // 本地模型路径 - 支持 Tauri 和 Web 环境
-  getModelPath: () => {
-    // Tauri 环境：使用 asset 协议
-    if (typeof window !== 'undefined' && window.__TAURI__) {
-      return 'resource:///models/yolov8n.onnx'
-    }
-    // 开发环境：使用公共路径
-    return '/models/yolov8n.onnx'
-  },
-  // 本地模型是否已下载
-  available: false
-}
 
 // COCO 数据集本地路径配置
 const COCO_DATASET_CONFIG = {
@@ -47,178 +34,6 @@ const COCO_DATASET_CONFIG = {
  */
 function setVisionStoreRef(store) {
   visionStoreRef = store
-}
-
-/**
- * 检测网络状态
- */
-async function checkNetworkStatus() {
-  if (visionStoreRef) {
-    visionStoreRef.isOnline = navigator.onLine
-  }
-  return navigator.onLine
-}
-
-/**
- * 检测本地模型是否可用
- */
-async function checkLocalModelAvailable() {
-  const modelPath = LOCAL_MODEL_CONFIG.getModelPath()
-  console.log(`[VisionStore] 检查本地模型: ${modelPath}`)
-  try {
-    const response = await fetch(modelPath, { method: 'HEAD' })
-    LOCAL_MODEL_CONFIG.available = response.ok
-    console.log(`[VisionStore] 本地模型可用: ${response.ok}`)
-  } catch (error) {
-    console.warn(`[VisionStore] 本地模型不可用:`, error)
-    LOCAL_MODEL_CONFIG.available = false
-  }
-  return LOCAL_MODEL_CONFIG.available
-}
-
-/**
- * 获取或初始化 YOLO 检测器（在线/离线双模式）
- */
-async function getYoloDetector() {
-  if (!yoloDetector) {
-    if (visionStoreRef) {
-      visionStoreRef.yoloStatus = 'loading'
-    }
-
-    try {
-      // 只使用随安装包提供的本地模型，不再从 HuggingFace 在线下载
-      const localAvailable = await checkLocalModelAvailable()
-      if (localAvailable) {
-        console.log('[VisionStore] 使用本地模型...')
-        if (visionStoreRef) {
-          visionStoreRef.detectionMode = 'local'
-        }
-        // 使用 onnxruntime-web 加载本地模型
-        const { InferenceSession } = await import('onnxruntime-web')
-        yoloDetector = await InferenceSession.create(LOCAL_MODEL_CONFIG.modelPath)
-        // 包装为统一接口
-        yoloDetector = createLocalDetectorWrapper(yoloDetector)
-      } else {
-        console.warn('[VisionStore] 本地模型不可用，启用降级模式...')
-        if (visionStoreRef) {
-          visionStoreRef.detectionMode = 'fallback'
-        }
-        // 降级到模拟检测
-        yoloDetector = createFallbackDetector()
-      }
-      console.log('[VisionStore] YOLO 模型加载完成')
-    } catch (error) {
-      console.error('[VisionStore] 模型加载失败:', error)
-      // 降级到模拟检测
-      if (visionStoreRef) {
-        visionStoreRef.detectionMode = 'fallback'
-      }
-      yoloDetector = createFallbackDetector()
-    }
-
-    if (visionStoreRef) {
-      visionStoreRef.yoloStatus = 'ready'
-      visionStoreRef.yoloModel = yoloDetector
-    }
-  }
-  return yoloDetector
-}
-
-/**
- * 创建本地模型检测器包装
- */
-function createLocalDetectorWrapper(session) {
-  return async (imageUrl, options = {}) => {
-    const threshold = options.threshold || 0.5
-
-    try {
-      // 准备输入数据
-      const img = new Image()
-      img.src = imageUrl
-      await new Promise((resolve, reject) => {
-        img.onload = resolve
-        img.onerror = reject
-      })
-
-      // 使用 Transformers.js 的 feature-extractor 处理图像
-      const { AutoImageProcessor, AutoModelForObjectDetection } = await import('@xenova/transformers')
-
-      // 从本地加载 ONNX 模型
-      const model = await AutoModelForObjectDetection.from_onnx(LOCAL_MODEL_CONFIG.getModelPath())
-
-      // 准备输入
-      const processor = await AutoImageProcessor.from_pretrained('Xenova/transformers', {
-        quantized: true
-      })
-
-      const inputs = await processor(img)
-
-      // 执行推理
-      const outputs = await model(inputs)
-
-      // 后处理（简化的 YOLO 后处理逻辑）
-      const results = []
-      const logits = outputs.logits
-      const boxes = outputs.pred_boxes || outputs.last_hidden_state
-
-      // COCO 80 类标签
-      const cocoLabels = [
-        'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat',
-        'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat',
-        'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack',
-        'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
-        'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
-        'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
-        'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair',
-        'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote',
-        'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book',
-        'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
-      ]
-
-      // 简单的后处理（取最大分数的检测结果）
-      const maxIdx = logits.data.map((x, i) => x > threshold ? i : -1).filter(x => x >= 0)
-
-      for (const idx of maxIdx.slice(0, 20)) {
-        results.push({
-          label: cocoLabels[idx % cocoLabels.length] || 'object',
-          score: logits.data[idx]
-        })
-      }
-
-      console.log(`[VisionStore] 本地模型检测到 ${results.length} 个物体`)
-      return results
-    } catch (error) {
-      console.error('[VisionStore] 本地 ONNX 推理失败:', error)
-      return []
-    }
-  }
-}
-
-/**
- * 创建降级检测器（模拟检测）
- */
-function createFallbackDetector() {
-  return async (imageUrl, options = {}) => {
-    // 返回模拟检测结果
-    const objects = []
-    const labels = ['person', 'hand', 'object']
-    const count = Math.floor(Math.random() * 3) + 1
-
-    for (let i = 0; i < count; i++) {
-      objects.push({
-        label: labels[Math.floor(Math.random() * labels.length)],
-        score: 0.7 + Math.random() * 0.25,
-        box: {
-          xc: Math.random() * 80 + 10,
-          yc: Math.random() * 80 + 10,
-          width: Math.random() * 30 + 10,
-          height: Math.random() * 30 + 10
-        }
-      })
-    }
-
-    return objects
-  }
 }
 
 /**
@@ -271,7 +86,7 @@ export const useVisionStore = defineStore('vision', {
     // 网络状态
     isOnline: navigator.onLine,
     // 检测模式: online | local | fallback
-    detectionMode: 'online',
+    detectionMode: 'local', // local | unavailable
     // 分析历史记录（用于专注度计算）
     analysisHistory: [],
     // 最终得分
@@ -308,7 +123,7 @@ export const useVisionStore = defineStore('vision', {
       const modes = {
         online: '🌐 在线模式',
         local: '💾 本地模式',
-        fallback: '⚠️ 降级模式'
+        unavailable: '⚠️ 未安装检测模型'
       }
       return modes[state.detectionMode] || state.detectionMode
     },
@@ -370,25 +185,25 @@ export const useVisionStore = defineStore('vision', {
     // 预加载 YOLO 模型
     async preloadYoloModel() {
       setVisionStoreRef(this)
+      this.yoloStatus = 'loading'
       try {
-        await getYoloDetector()
-        return true
+        const status = await getDetectorStatus()
+        this.detectionMode = status.available ? 'local' : 'unavailable'
+        this.yoloStatus = status.available ? 'ready' : 'error'
+        return status.available
       } catch (error) {
-        console.error('[VisionStore] YOLO 模型预加载失败:', error)
+        console.error('[VisionStore] 检测服务不可用:', error)
+        this.detectionMode = 'unavailable'
         this.yoloStatus = 'error'
         return false
       }
     },
 
-    // 重置 YOLO 模型（用于网络切换后重新加载）
     async resetYoloModel() {
-      yoloDetector = null
       this.yoloStatus = 'idle'
-      this.yoloModel = null
       await this.preloadYoloModel()
     },
 
-    // 获取当前网络状态
     getNetworkStatus() {
       this.isOnline = navigator.onLine
       return this.isOnline
@@ -1046,50 +861,18 @@ export const useVisionStore = defineStore('vision', {
 
     // 物体检测 - 使用 YOLO 模型（Transformers.js）
     async detectObjects(imageData) {
-      const objects = []
-
       try {
-        // 将 ImageData 转换为 canvas 再转为 blob
-        const canvas = document.createElement('canvas')
-        canvas.width = imageData.width
-        canvas.height = imageData.height
-        canvas.getContext('2d').putImageData(imageData, 0, 0)
-
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
-        const imageUrl = URL.createObjectURL(blob)
-
-        // 使用 YOLO 模型检测
-        const detector = await getYoloDetector()
-        const results = await detector(imageUrl, {
-          threshold: this.config.yoloThreshold || 0.5,
-          percentage: true
-        })
-
-        // 清理 blob URL
-        URL.revokeObjectURL(imageUrl)
-
-        // 转换结果格式
-        for (const item of results) {
-          objects.push({
-            label: item.label,
-            confidence: item.score,
-            bbox: {
-              x: (item.box.xc / 100) * imageData.width - (item.box.width / 100) * imageData.width / 2,
-              y: (item.box.yc / 100) * imageData.height - (item.box.height / 100) * imageData.height / 2,
-              width: (item.box.width / 100) * imageData.width,
-              height: (item.box.height / 100) * imageData.height
-            }
-          })
-        }
-
-        console.log(`[VisionStore] YOLO 检测到 ${objects.length} 个物体`)
+        const results = await detect(imageData, { threshold: this.config.yoloThreshold || 0.5 })
+        return results.map((item) => ({
+          label: item.label,
+          confidence: item.score,
+          bbox: item.box
+        }))
       } catch (error) {
-        console.error('[VisionStore] YOLO 检测失败:', error)
-        // 检测失败时返回空数组
+        console.error('[VisionStore] 物体检测失败:', error)
+        this.detectionMode = 'unavailable'
         return []
       }
-
-      return objects
     },
 
     // 专注度分析
@@ -1168,10 +951,5 @@ export const useVisionStore = defineStore('vision', {
       return emotions
     },
 
-    // 加载 TensorFlow.js 模型（可选，用于更准确的检测）
-    async loadModel() {
-      // 不再从 CDN 动态加载 TensorFlow.js（离线不可用）
-      throw new Error('TensorFlow.js 已移除，请使用 YOLO 检测')
-    }
   }
 })

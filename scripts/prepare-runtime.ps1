@@ -74,6 +74,15 @@ if ($WhisperModelDir) {
     Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$wFile" -OutFile $wDst
 }
 
+# 物体检测模型（YOLOX-Nano，Apache-2.0，Megvii 官方发布）
+$dDir = Join-Path $runtime "models\detection"
+New-Item -ItemType Directory -Force -Path $dDir | Out-Null
+$dDst = Join-Path $dDir "yolox_nano.onnx"
+if ($Force -or -not (Test-Path $dDst)) {
+    Write-Host "下载检测模型 yolox_nano.onnx ..."
+    Invoke-WebRequest -Uri "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx" -OutFile $dDst
+}
+
 # WebView2 bootstrapper
 $wv = Join-Path $runtime "MicrosoftEdgeWebview2Setup.exe"
 if ($Force -or -not (Test-Path $wv)) {
