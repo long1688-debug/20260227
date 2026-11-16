@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [vue(), react()],
   resolve: {
     alias: {
@@ -55,6 +55,9 @@ export default defineConfig({
       }
     }
   },
+  esbuild: command === 'build'
+    ? { pure: ['console.log', 'console.debug', 'console.info'], drop: ['debugger'] }
+    : {},
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
@@ -64,4 +67,4 @@ export default defineConfig({
       include: [/node_modules/]
     }
   },
-})
+}))

@@ -1,6 +1,7 @@
 // Server Manager - Node.js 后端服务管理
 // 负责启动/停止 Node.js HTTP API 服务器和 WebSocket 服务器
 
+use crate::proc_util::NoWindow;
 use std::process::{Child, Command};
 use tokio::sync::Mutex;
 use tauri::{AppHandle, Manager};
@@ -72,7 +73,7 @@ pub async fn start_backend_server(app_handle: AppHandle) -> Result<String, Strin
     }
 
     // 启动 Node.js 进程
-    let child = Command::new("node")
+    let child = Command::new("node").no_window()
         .arg(&server_entry)
         .current_dir(server_entry.parent().unwrap_or(&resource_path))
         .spawn()
@@ -100,7 +101,7 @@ pub async fn stop_backend_server(app_handle: AppHandle) -> Result<(), String> {
         #[cfg(target_os = "windows")]
         {
             let pid = child.id();
-            let _ = Command::new("taskkill")
+            let _ = Command::new("taskkill").no_window()
                 .args(["/PID", &pid.to_string(), "/T", "/F"])
                 .spawn();
         }

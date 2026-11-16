@@ -278,7 +278,7 @@ pub async fn discover_all_cameras(timeout_secs: u64) -> Result<crate::camera_dis
 }
 
 /// 获取本地 IP 地址
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_local_ip() -> Result<String, String> {
     crate::camera_discovery::get_local_ip()
         .ok_or_else(|| "Failed to get local IP".to_string())
@@ -373,7 +373,7 @@ pub async fn scan_specific_subnets(
 // 🎯 RTSP 流管理命令
 
 /// 获取所有网络接口信息（仅用于调试）
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_network_interfaces_info() -> Result<serde_json::Value, String> {
     let interfaces = crate::camera_discovery::get_all_network_interfaces();
 
@@ -427,7 +427,7 @@ pub async fn stop_rtsp_stream(session_id: String) -> Result<String, String> {
 }
 
 /// 获取所有活跃的 RTSP 流会话
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_active_rtsp_sessions() -> Vec<serde_json::Value> {
     use crate::rtsp_stream::RtspStreamManager;
 

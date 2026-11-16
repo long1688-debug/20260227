@@ -1,5 +1,6 @@
 // ZLMediaKit Stream Proxy Manager - 通过 ZLMediaKit 管理流媒体代理
 // 替代原 Node.js rtsp-proxy，直接使用 ZLMediaKit 作为流媒体服务器
+use crate::proc_util::NoWindow;
 use std::process::{Child, Command};
 use tokio::sync::Mutex;
 use tauri::{AppHandle, Manager};
@@ -62,7 +63,7 @@ pub async fn start_rtsp_proxy(app_handle: AppHandle) -> Result<String, String> {
     // 查找并启动 ZLMediaKit
     let zlmediakit_path = find_zlmediakit_binary()?;
 
-    let mut child = Command::new(&zlmediakit_path)
+    let mut child = Command::new(&zlmediakit_path).no_window()
         .current_dir(
             std::path::Path::new(&zlmediakit_path)
                 .parent()
@@ -107,7 +108,7 @@ pub async fn start_rtsp_proxy(app_handle: AppHandle) -> Result<String, String> {
         println!("[ZLMediaKit] 健康检查失败，终止进程");
         #[cfg(target_os = "windows")]
         {
-            let _ = Command::new("taskkill")
+            let _ = Command::new("taskkill").no_window()
                 .args(&["/F", "/T", "/PID", &child.id().to_string()])
                 .status();
         }
@@ -137,7 +138,7 @@ pub async fn stop_rtsp_proxy(app_handle: AppHandle) -> Result<String, String> {
         // 优雅关闭
         #[cfg(target_os = "windows")]
         {
-            let status = Command::new("taskkill")
+            let status = Command::new("taskkill").no_window()
                 .args(&["/F", "/T", "/PID", &child.id().to_string()])
                 .status();
 

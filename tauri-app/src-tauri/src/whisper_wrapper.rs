@@ -2,6 +2,7 @@
 // 优势：无需编译依赖，立即可用
 // 要求：系统已安装 Python 和 whisper 库
 
+use crate::proc_util::NoWindow;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use std::sync::Arc;
@@ -105,7 +106,7 @@ impl WhisperRecognizer {
     /// 检查 Python 和 whisper 库是否可用
     fn check_python_availability() -> Result<bool, String> {
         // 尝试运行 python --version
-        let output = Command::new("python")
+        let output = Command::new("python").no_window()
             .arg("--version")
             .output();
 
@@ -114,7 +115,7 @@ impl WhisperRecognizer {
                 log::info!("✅ [Whisper] Python 可用");
 
                 // 检查 whisper 库
-                let check_whisper = Command::new("python")
+                let check_whisper = Command::new("python").no_window()
                     .args(&["-c", "import whisper; print('OK')"])
                     .output();
 
@@ -131,7 +132,7 @@ impl WhisperRecognizer {
             }
             _ => {
                 // 尝试 python3
-                let output3 = Command::new("python3")
+                let output3 = Command::new("python3").no_window()
                     .arg("--version")
                     .output();
 
@@ -225,12 +226,12 @@ impl WhisperRecognizer {
         let python_script = self.build_whisper_script(wav_path);
 
         // 执行 Python 命令
-        let output = Command::new("python")
+        let output = Command::new("python").no_window()
             .args(&["-c", &python_script])
             .output()
             .or_else(|_| {
                 // 尝试 python3
-                Command::new("python3")
+                Command::new("python3").no_window()
                     .args(&["-c", &python_script])
                     .output()
             })

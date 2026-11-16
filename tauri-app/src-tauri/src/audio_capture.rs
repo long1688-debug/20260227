@@ -218,7 +218,7 @@ pub async fn start_audio_capture(
 }
 
 // 停止音频捕获
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_audio_capture(state: tauri::State<'_, AudioCaptureState>) -> Result<(), String> {
     let mut is_capturing = state.is_capturing.lock().unwrap();
     *is_capturing = false;
@@ -226,7 +226,7 @@ pub fn stop_audio_capture(state: tauri::State<'_, AudioCaptureState>) -> Result<
 }
 
 // 获取音频捕获状态
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_audio_capture_status(state: tauri::State<'_, AudioCaptureState>) -> Result<bool, String> {
     let is_capturing = state.is_capturing.lock().unwrap();
     Ok(*is_capturing)

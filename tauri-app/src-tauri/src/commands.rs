@@ -6,12 +6,12 @@ use anyhow::Result;
 
 // ==================== 窗口控制 ====================
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn minimize_window<R: Runtime>(window: Window<R>) {
     let _ = window.minimize();
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn maximize_window<R: Runtime>(window: Window<R>) {
     if window.is_maximized().unwrap_or(false) {
         let _ = window.unmaximize();
@@ -20,7 +20,7 @@ pub fn maximize_window<R: Runtime>(window: Window<R>) {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn close_window<R: Runtime>(window: Window<R>) {
     let _ = window.close();
 }
@@ -48,7 +48,7 @@ impl Default for AppSettings {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_settings(app_handle: AppHandle) -> Result<AppSettings, String> {
     let settings_path = app_handle
         .path()
@@ -69,7 +69,7 @@ pub fn get_settings(app_handle: AppHandle) -> Result<AppSettings, String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_settings(app_handle: AppHandle, settings: AppSettings) -> Result<bool, String> {
     // 获取设置文件路径
     let app_data_dir = app_handle
@@ -100,7 +100,7 @@ pub fn save_settings(app_handle: AppHandle, settings: AppSettings) -> Result<boo
     Ok(true)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_default_recording_path() -> Result<String, String> {
     dirs::video_dir()
         .map(|p| p.join("Recordings").to_string_lossy().to_string())
@@ -147,10 +147,14 @@ pub struct SystemInfo {
     pub available_memory: u64,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_system_info() -> Result<SystemInfo, String> {
-    let mut sys = sysinfo::System::new_all();
-    sys.refresh_all();
+    use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind};
+    let sys = sysinfo::System::new_with_specifics(
+        RefreshKind::new()
+            .with_cpu(CpuRefreshKind::new())
+            .with_memory(MemoryRefreshKind::everything()),
+    );
 
     Ok(SystemInfo {
         hostname: sysinfo::System::host_name().unwrap_or_default(),
@@ -165,7 +169,7 @@ pub fn get_system_info() -> Result<SystemInfo, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn check_port_available(port: u16) -> Result<bool, String> {
     use std::net::TcpListener;
 
@@ -177,24 +181,24 @@ pub fn check_port_available(port: u16) -> Result<bool, String> {
 
 // ==================== 文件操作 ====================
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn read_file(path: PathBuf) -> Result<String, String> {
     std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read file: {}", e))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn write_file(path: PathBuf, content: String) -> Result<(), String> {
     std::fs::write(&path, content)
         .map_err(|e| format!("Failed to write file: {}", e))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn file_exists(path: PathBuf) -> bool {
     path.exists()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_dir(path: PathBuf) -> Result<(), String> {
     std::fs::create_dir_all(&path)
         .map_err(|e| format!("Failed to create directory: {}", e))

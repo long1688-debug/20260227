@@ -1,4 +1,5 @@
 // ZLMediaKit 管理器 - 自动启动/停止 ZLMediaKit 服务
+use crate::proc_util::NoWindow;
 use std::process::{Child, Command};
 use tokio::sync::Mutex;
 use tauri::{AppHandle, Manager};
@@ -69,7 +70,7 @@ pub async fn start_zlmediakit(app_handle: AppHandle) -> Result<String, String> {
     }
 
     // 启动 ZLMediaKit 进程
-    let mut child = Command::new(&zlmediakit_path)
+    let mut child = Command::new(&zlmediakit_path).no_window()
         .current_dir(zlmediakit_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

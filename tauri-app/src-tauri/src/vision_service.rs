@@ -172,7 +172,7 @@ pub struct VisionServiceStatus {
 // ============ COCO 数据集管理命令 ============
 
 /// 设置 COCO 数据集路径
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_coco_dataset_path(state: State<'_, VisionServiceState>, path: String) -> Result<(), String> {
     println!("[VisionService] COCO 数据集路径已设置为: {}", path);
     *state.coco_dataset_path.lock().map_err(|e| e.to_string())? = path;
@@ -180,7 +180,7 @@ pub fn set_coco_dataset_path(state: State<'_, VisionServiceState>, path: String)
 }
 
 /// 获取当前 COCO 数据集路径
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_coco_dataset_path(state: State<'_, VisionServiceState>) -> Result<String, String> {
     Ok(state.coco_dataset_path.lock().map_err(|e| e.to_string())?.clone())
 }
@@ -274,7 +274,7 @@ pub async fn search_coco_images_by_category(
 // ============ 智能视觉分析命令 ============
 
 /// 分析图像（模拟）
-#[tauri::command]
+#[tauri::command(async)]
 pub fn analyze_image(
     state: State<'_, VisionServiceState>,
     image_path: String,
@@ -309,14 +309,14 @@ pub fn analyze_image(
 }
 
 /// 获取分析历史记录
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_analysis_history(state: State<'_, VisionServiceState>) -> Result<Vec<AnalysisResult>, String> {
     let history = state.analysis_history.lock().map_err(|e| e.to_string())?.clone();
     Ok(history)
 }
 
 /// 清除分析历史
-#[tauri::command]
+#[tauri::command(async)]
 pub fn clear_analysis_history(state: State<'_, VisionServiceState>) -> Result<(), String> {
     let mut history = state.analysis_history.lock().map_err(|e| e.to_string())?;
     history.clear();
@@ -326,7 +326,7 @@ pub fn clear_analysis_history(state: State<'_, VisionServiceState>) -> Result<()
 // ============ 人工智能评估系统命令 ============
 
 /// 设置考试配置
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_exam_config(
     state: State<'_, VisionServiceState>,
     config: ExamConfig,
@@ -337,7 +337,7 @@ pub fn set_exam_config(
 }
 
 /// 获取当前考试配置
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_exam_config(state: State<'_, VisionServiceState>) -> Result<ExamConfig, String> {
     Ok(state.exam_config.lock().map_err(|e| e.to_string())?.clone())
 }
@@ -385,7 +385,7 @@ pub async fn start_batch_test(
 }
 
 /// 分析考试结果并评分
-#[tauri::command]
+#[tauri::command(async)]
 pub fn analyze_exam_results(
     state: State<'_, VisionServiceState>,
     exam_results: Vec<ExamFrameResult>,
@@ -448,7 +448,7 @@ pub fn analyze_exam_results(
 }
 
 /// 获取服务状态
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_vision_service_status(state: State<'_, VisionServiceState>) -> Result<VisionServiceStatus, String> {
     let path = state.coco_dataset_path.lock().map_err(|e| e.to_string())?.clone();
     let count = state.analysis_history.lock().map_err(|e| e.to_string())?.len();

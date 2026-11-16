@@ -1,17 +1,17 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
-import Home from '../views/Home.vue';
-import Student from '../views/Student.vue';
-import TeacherWindow from '../components/TeacherWindow.vue';
-import ServerManagement from '../views/ServerManagement.vue';
-import License from '../views/License.vue';
-import Students from '../views/Students.vue';
-import Logs from '../views/Logs.vue';
-import Status from '../views/Status.vue';
-import WebFeatures from '../views/WebFeatures.vue';
-import AdvancedRecordingTest from '../views/AdvancedRecordingTest.vue';
-import MediaMixerPage from '../views/MediaMixerPage.vue';
-import MediaCodecTest from '../views/MediaCodecTest.vue';
-import MindMap from '../views/MindMap.vue';
+const Home = () => import('../views/Home.vue');
+const Student = () => import('../views/Student.vue');
+const TeacherWindow = () => import('../components/TeacherWindow.vue');
+const ServerManagement = () => import('../views/ServerManagement.vue');
+const License = () => import('../views/License.vue');
+const Students = () => import('../views/Students.vue');
+const Logs = () => import('../views/Logs.vue');
+const Status = () => import('../views/Status.vue');
+const WebFeatures = () => import('../views/WebFeatures.vue');
+const AdvancedRecordingTest = () => import('../views/AdvancedRecordingTest.vue');
+const MediaMixerPage = () => import('../views/MediaMixerPage.vue');
+const MediaCodecTest = () => import('../views/MediaCodecTest.vue');
+const MindMap = () => import('../views/MindMap.vue');
 
 const routes = [
   { path: '/', redirect: '/teacher' },

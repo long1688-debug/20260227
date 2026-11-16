@@ -13,7 +13,7 @@ pub struct ModelInfo {
     pub model_type: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_models(app_handle: tauri::AppHandle) -> Result<Vec<ModelInfo>, String> {
     let models_dir = get_models_dir(&app_handle)?;
 
@@ -113,7 +113,7 @@ pub async fn download_model(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_model(app_handle: tauri::AppHandle, filename: String) -> Result<bool, String> {
     let models_dir = get_models_dir(&app_handle)?;
     let model_path = models_dir.join(&filename);
@@ -126,7 +126,7 @@ pub fn delete_model(app_handle: tauri::AppHandle, filename: String) -> Result<bo
     Ok(true)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn clear_model_cache(app_handle: tauri::AppHandle) -> Result<bool, String> {
     let models_dir = get_models_dir(&app_handle)?;
 

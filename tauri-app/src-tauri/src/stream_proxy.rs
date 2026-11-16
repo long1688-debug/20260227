@@ -1,5 +1,6 @@
 // 流媒体代理模块 - 基于 ZLMediaKit 的统一流管理
 // 支持：本地视频文件、RTSP/RTMP 网络流、WebRTC 推流
+use crate::proc_util::NoWindow;
 use tauri::{AppHandle, Manager};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -661,7 +662,7 @@ pub async fn proxy_local_camera(
     println!("[本地摄像头] 启动 FFmpeg: ffmpeg {}", ffmpeg_args.join(" "));
 
     // 启动 FFmpeg 进程
-    let mut child = tokio::process::Command::new("ffmpeg")
+    let mut child = tokio::process::Command::new("ffmpeg").no_window()
         .args(&ffmpeg_args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

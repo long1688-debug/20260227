@@ -1,5 +1,6 @@
 
 // 文档转换模块 - 使用 LibreOffice 将文档转换为 PDF
+use crate::proc_util::NoWindow;
 use std::path::PathBuf;
 use std::process::Command;
 use std::fs;
@@ -57,7 +58,7 @@ fn find_libreoffice() -> Result<PathBuf> {
     // 如果常见路径都不存在，尝试使用 which 命令查找
     #[cfg(unix)]
     {
-        if let Ok(output) = Command::new("which").arg("libreoffice").output() {
+        if let Ok(output) = Command::new("which").no_window().arg("libreoffice").output() {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 return Ok(PathBuf::from(path));
@@ -67,7 +68,7 @@ fn find_libreoffice() -> Result<PathBuf> {
 
     #[cfg(windows)]
     {
-        if let Ok(output) = Command::new("where").arg("soffice").output() {
+        if let Ok(output) = Command::new("where").no_window().arg("soffice").output() {
             if output.status.success() {
                 let path = String::from_utf8_lossy(&output.stdout).lines().next().unwrap_or("").to_string();
                 return Ok(PathBuf::from(path));
@@ -129,7 +130,7 @@ pub fn convert_to_pdf(input_path: PathBuf, app_handle: Option<tauri::AppHandle>)
     let output_dir = TEMP_DIR.as_path();
 
     // 调用 LibreOffice 进行转换
-    let output = Command::new(&libreoffice_path)
+    let output = Command::new(&libreoffice_path).no_window()
         .arg("--headless")
         .arg("--convert-to")
         .arg("pdf")

@@ -1,5 +1,4 @@
 import { defineStore } from 'pinia'
-import { pipeline } from '@xenova/transformers'
 import { getCocoDatasetManager } from '@/services/coco-dataset'
 
 // YOLO 模型加载器（单例模式）
@@ -96,6 +95,7 @@ async function getYoloDetector() {
         if (visionStoreRef) {
           visionStoreRef.detectionMode = 'online'
         }
+        const { pipeline } = await import('@xenova/transformers')
         yoloDetector = await pipeline('object-detection', 'Xenova/yolov8n')
       } else {
         // 离线模式：检查本地模型
