@@ -18,8 +18,26 @@ const CONFIG = {
     wsPort: process.env.WS_PORT || 8082,  // 🎯 修改为8082，避免与RTSP-Proxy(8081)冲突
     dataDir: process.env.TRAINING_DATA_DIR || path.join(__dirname, 'data'),
     sessionTimeout: 3600000, // 1 小时
-    secretKey: 'training_system_secret_key_2024'
+    secretKey: null
 };
+
+// 密钥和初始口令：环境变量优先，否则首次启动随机生成并保存在 dataDir/initial-credentials.json
+function loadOrCreateSecrets() {
+    fs.mkdirSync(CONFIG.dataDir, { recursive: true });
+    const file = path.join(CONFIG.dataDir, 'initial-credentials.json');
+    let saved = {};
+    try { saved = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { /* first run */ }
+    const gen = () => crypto.randomBytes(9).toString('base64url');
+    const secrets = {
+        secretKey: process.env.SERVER_SECRET_KEY || saved.secretKey || crypto.randomBytes(32).toString('hex'),
+        adminPassword: process.env.ADMIN_PASSWORD || saved.adminPassword || gen(),
+        teacherPassword: process.env.TEACHER_PASSWORD || saved.teacherPassword || gen()
+    };
+    fs.writeFileSync(file, JSON.stringify(secrets, null, 2), { mode: 0o600 });
+    return secrets;
+}
+const SECRETS = loadOrCreateSecrets();
+CONFIG.secretKey = SECRETS.secretKey;
 
 // ==================== 辅助函数 ====================
 /**
@@ -154,7 +172,7 @@ class DataStore {
             this.users.set('admin', {
                 id: 'admin',
                 username: 'admin',
-                password: this.hashPassword('admin123'),
+                password: this.hashPassword(SECRETS.adminPassword),
                 role: 'admin',
                 name: '管理员',
                 createdAt: new Date().toISOString()
@@ -163,7 +181,7 @@ class DataStore {
             this.users.set('teacher1', {
                 id: 'teacher1',
                 username: 'teacher1',
-                password: this.hashPassword('teacher123'),
+                password: this.hashPassword(SECRETS.teacherPassword),
                 role: 'teacher',
                 name: '张老师',
                 classIds: ['class001'],
@@ -333,7 +351,11 @@ const dataStore = new DataStore();
 function createHttpServer() {
     return http.createServer((req, res) => {
         // CORS 头
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        const origin = req.headers.origin;
+        if (origin && isAllowedOrigin(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+            res.setHeader('Vary', 'Origin');
+        }
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
@@ -351,8 +373,38 @@ function createHttpServer() {
     });
 }
 
+const EXTRA_ORIGINS = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+function isAllowedOrigin(origin) {
+    return /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?|tauri:\/\/localhost|https?:\/\/tauri\.localhost)$/.test(origin)
+        || EXTRA_ORIGINS.includes(origin);
+}
+
+function isLoopback(req) {
+    const addr = req.socket.remoteAddress || '';
+    return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+}
+
+// 局域网学生端可匿名访问的接口；其余 /api/* 远程请求需要登录会话
+const PUBLIC_API = [
+    /^\/api\/login$/,
+    /^\/api\/students\/[^/]+\/(hand|answer)$/,
+    /^\/api\/tasks\/[^/]+\/submit$/,
+    /^\/api\/live\//
+];
+
+function getSession(req) {
+    const auth = req.headers.authorization || '';
+    const sid = auth.startsWith('Bearer ') ? auth.slice(7) : req.headers['x-session-id'];
+    return sid ? dataStore.validateSession(sid) : null;
+}
+
 async function handleRequest(req, res, pathname, url) {
     try {
+        if (pathname.startsWith('/api/') && !isLoopback(req)
+            && !PUBLIC_API.some(re => re.test(pathname)) && !getSession(req)) {
+            sendJSON(res, { success: false, message: '未登录或会话已过期' }, 401);
+            return;
+        }
         // 健康检查端点
         if (pathname === '/health') {
             sendJSON(res, {
@@ -1411,7 +1463,7 @@ function initLicenseData() {
         const admins = [{
             id: 1,
             username: 'admin',
-            password: bcrypt.hashSync('admin123', 10),
+            password: bcrypt.hashSync(SECRETS.adminPassword, 10),
             email: 'admin@system.com',
             createdAt: new Date().toISOString(),
             lastLogin: null

@@ -182,13 +182,15 @@ pub fn check_port_available(port: u16) -> Result<bool, String> {
 // ==================== 文件操作 ====================
 
 #[tauri::command(async)]
-pub fn read_file(path: PathBuf) -> Result<String, String> {
+pub fn read_file(app: AppHandle, path: PathBuf) -> Result<String, String> {
+    let path = ensure_allowed_path(&app, &path)?;
     std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read file: {}", e))
 }
 
 #[tauri::command(async)]
-pub fn write_file(path: PathBuf, content: String) -> Result<(), String> {
+pub fn write_file(app: AppHandle, path: PathBuf, content: String) -> Result<(), String> {
+    let path = ensure_allowed_path(&app, &path)?;
     std::fs::write(&path, content)
         .map_err(|e| format!("Failed to write file: {}", e))
 }
@@ -199,8 +201,55 @@ pub fn file_exists(path: PathBuf) -> bool {
 }
 
 #[tauri::command(async)]
-pub fn create_dir(path: PathBuf) -> Result<(), String> {
+pub fn create_dir(app: AppHandle, path: PathBuf) -> Result<(), String> {
+    let path = ensure_allowed_path(&app, &path)?;
     std::fs::create_dir_all(&path)
         .map_err(|e| format!("Failed to create directory: {}", e))
 }
 
+
+/// 前端文件读写只允许访问应用数据目录、临时目录和用户文档/视频/下载/桌面目录
+fn ensure_allowed_path(app: &AppHandle, path: &std::path::Path) -> Result<PathBuf, String> {
+    use std::path::Component;
+    if path.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err("路径不允许包含 ..".to_string());
+    }
+    let resolver = app.path();
+    let roots: Vec<PathBuf> = [
+        resolver.app_data_dir().ok(),
+        resolver.app_local_data_dir().ok(),
+        resolver.app_cache_dir().ok(),
+        resolver.document_dir().ok(),
+        resolver.video_dir().ok(),
+        resolver.download_dir().ok(),
+        resolver.desktop_dir().ok(),
+        Some(std::env::temp_dir()),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(|p| p.canonicalize().ok())
+    .collect();
+
+    // 不存在的路径：取最近的已存在祖先目录做规范化
+    let mut existing = path.to_path_buf();
+    let mut rest = Vec::new();
+    while !existing.exists() {
+        match (existing.file_name().map(|n| n.to_owned()), existing.parent()) {
+            (Some(name), Some(parent)) => {
+                rest.push(name);
+                existing = parent.to_path_buf();
+            }
+            _ => return Err("无效路径".to_string()),
+        }
+    }
+    let mut resolved = existing.canonicalize().map_err(|e| e.to_string())?;
+    for name in rest.into_iter().rev() {
+        resolved.push(name);
+    }
+
+    if roots.iter().any(|root| resolved.starts_with(root)) {
+        Ok(resolved)
+    } else {
+        Err(format!("不允许访问该路径: {}", path.display()))
+    }
+}

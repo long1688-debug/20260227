@@ -14,7 +14,7 @@
 // ZLMediaKit 默认配置
 const ZLM_DEFAULT_HOST = '127.0.0.1'
 const ZLM_DEFAULT_HTTP_PORT = 801
-const ZLM_DEFAULT_SECRET = '8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3'
+const ZLM_DEFAULT_SECRET = ''
 
 /**
  * ZLMediaKit WebRTC 播放器类
@@ -38,7 +38,7 @@ export class ZLMediaKitWebRTCPlayer {
     this._videoElement = videoElement
     this._host = options.host || ZLM_DEFAULT_HOST
     this._httpPort = options.httpPort || ZLM_DEFAULT_HTTP_PORT
-    this._secret = options.secret || ZLM_DEFAULT_SECRET
+    this._secret = options.secret || window.__ZLM_SECRET__ || ZLM_DEFAULT_SECRET
     this._streamId = options.streamId || ''
     this._enableAudio = options.enableAudio !== false
     this._enableVideo = options.enableVideo !== false

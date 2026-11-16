@@ -5,6 +5,14 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue';
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs';
 import App from './App.vue';
 import router from './router';
+
+// ZLMediaKit secret 从安装目录的 config.ini 读取，不再写死在前端
+if (window.__TAURI_INTERNALS__) {
+  import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke('get_zlm_secret'))
+    .then((s) => { window.__ZLM_SECRET__ = s; })
+    .catch(() => {});
+}
 // 🎯 注意：自定义样式必须在 Element Plus 样式之后引入，才能正确覆盖默认样式
 import 'element-plus/dist/index.css';
 // 🎯 深色主题覆盖样式 - 必须在 Element Plus 样式之后引入

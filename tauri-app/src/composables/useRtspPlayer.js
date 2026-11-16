@@ -652,7 +652,7 @@ export function useRtspPlayer() {
       }
 
       // ZLMediaKit API: 添加 RTSP 流代理
-      const apiUrl = `/index/api/addStreamProxy?secret=8qNdNv8bykcWrRo9BAsFQiUZABZ9kWd3`
+      const apiUrl = `/index/api/addStreamProxy?secret=${encodeURIComponent(window.__ZLM_SECRET__ || '')}`
       const requestBody = {
         vhost: '__defaultVhost__', // ZLMediaKit 默认虚拟主机
         url: proxyUrl,
