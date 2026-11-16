@@ -124,6 +124,7 @@ pub async fn check_zlmediakit_status(app_handle: AppHandle) -> Result<serde_json
 
     Ok(serde_json::json!({
         "running": is_running,
+        "listening": is_port_listening(state.port),
         "host": state.host,
         "port": state.port,
         "url": format!("http://{}:{}", state.host, state.port)
@@ -132,7 +133,14 @@ pub async fn check_zlmediakit_status(app_handle: AppHandle) -> Result<serde_json
 
 /// 查找 ZLMediaKit 可执行文件
 fn find_zlmediakit_binary() -> Result<String, String> {
-    // 尝试多个可能的路径
+    if let Some(path) = crate::bin_resolver::zlmediakit() {
+        return Ok(path.to_string_lossy().into_owned());
+    }
+
+    // 以下为开发机路径，仅 debug 构建使用；发布版请把 ZLMediaKit 放到 <安装目录>/runtime/zlmediakit/
+    #[cfg(not(debug_assertions))]
+    let candidates: Vec<String> = Vec::new();
+    #[cfg(debug_assertions)]
     let candidates = vec![
         // Windows 根目录（直接安装）
         "C:\\ZLMediaKit\\MediaServer.exe".to_string(),

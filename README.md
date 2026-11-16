@@ -310,6 +310,17 @@ npx tauri build --target x86_64-unknown-linux-gnu --bundles deb,rpm
 
 ---
 
+## 🪟 Windows 安装包（Inno Setup）
+
+```powershell
+# 1. 准备 ffmpeg / node / server / ZLMediaKit / WebView2 到 tauri-app/src-tauri/resources/runtime/
+powershell -ExecutionPolicy Bypass -File scripts\prepare-runtime.ps1 -ZLMediaKitDir <ZLMediaKit 目录>
+# 2. Release 构建（不要打包 target\debug）
+cd tauri-app; npm run tauri build; cd ..
+# 3. 生成安装包 installer\Output\TrainingTeacher-Setup-*.exe
+ISCC.exe installer\teacher.iss
+```
+
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！

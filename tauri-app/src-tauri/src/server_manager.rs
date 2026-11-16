@@ -66,15 +66,30 @@ pub async fn start_backend_server(app_handle: AppHandle) -> Result<String, Strin
     };
 
     #[cfg(not(debug_assertions))]
-    let server_entry = resource_path.join("server").join("server.js");
+    let server_entry = {
+        let bundled = resource_path.join("runtime").join("server").join("server.js");
+        if bundled.exists() { bundled } else { resource_path.join("server").join("server.js") }
+    };
+
+    // 安装目录（Program Files）不可写，数据和上传临时文件放到用户 AppData
+    let app_data = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
+    let data_dir = app_data.join("server-data");
+    let temp_dir = app_data.join("server-temp");
+    let _ = std::fs::create_dir_all(&data_dir);
+    let _ = std::fs::create_dir_all(&temp_dir);
 
     if !server_entry.exists() {
         return Err(format!("找不到服务器入口文件: {}", server_entry.display()));
     }
 
     // 启动 Node.js 进程
-    let child = Command::new("node").no_window()
+    let child = Command::new(crate::bin_resolver::node()).no_window()
         .arg(&server_entry)
+        .env("TRAINING_DATA_DIR", &data_dir)
+        .env("TRAINING_TEMP_DIR", &temp_dir)
         .current_dir(server_entry.parent().unwrap_or(&resource_path))
         .spawn()
         .map_err(|e| format!("启动 Node.js 服务器失败: {}", e))?;

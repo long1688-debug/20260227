@@ -998,8 +998,12 @@ async function ensureZLMediaKitRunning(invoke) {
       const result = await invoke('start_zlmediakit');
       console.log('[VideoPreview] ZLMediaKit启动结果:', result);
 
-      // 等待服务启动
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // 轮询等待服务就绪（最多 10 秒），而不是固定等待
+      for (let i = 0; i < 33; i++) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const s = await invoke('check_zlmediakit_status').catch(() => null);
+        if (s?.listening) break;
+      }
     } else {
       console.log('[VideoPreview] ✅ Tauri API检测到服务已在运行');
     }

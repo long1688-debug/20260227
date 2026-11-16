@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod bin_resolver;
 mod proc_util;
 mod license;
 mod models;

@@ -662,7 +662,7 @@ pub async fn proxy_local_camera(
     println!("[本地摄像头] 启动 FFmpeg: ffmpeg {}", ffmpeg_args.join(" "));
 
     // 启动 FFmpeg 进程
-    let mut child = tokio::process::Command::new("ffmpeg").no_window()
+    let mut child = tokio::process::Command::new(crate::bin_resolver::ffmpeg()).no_window()
         .args(&ffmpeg_args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
