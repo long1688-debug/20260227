@@ -162,9 +162,7 @@ impl RtspStreamManager {
         http_port: u16,
         _session_id: &str,
     ) -> Result<tokio::process::Child, String> {
-        let ffmpeg_path = which::which("ffmpeg").map_err(|_| {
-            "FFmpeg 未安装，请先下载并添加到 PATH: https://ffmpeg.org/download.html".to_string()
-        })?;
+        let ffmpeg_path = crate::bin_resolver::ffmpeg();
 
         println!("[RTSP] 使用 FFmpeg: {:?}", ffmpeg_path);
 

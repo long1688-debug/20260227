@@ -15,7 +15,7 @@ impl VisionServiceState {
     pub fn new() -> Self {
         VisionServiceState {
             analysis_history: Mutex::new(Vec::new()),
-            coco_dataset_path: Mutex::new("F:\\coco".to_string()),
+            coco_dataset_path: Mutex::new(String::new()),
             exam_config: Mutex::new(ExamConfig::default()),
         }
     }

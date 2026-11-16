@@ -220,7 +220,7 @@ impl RecordingManager {
         let output_path = self.generate_output_path(&recording_config.output_format, "multicam");
         
         // 构建FFmpeg命令，使用多个输入源
-        let mut cmd = Command::new("ffmpeg"); cmd.no_window();
+        let mut cmd = Command::new(crate::bin_resolver::ffmpeg()); cmd.no_window();
         
         // 为每个摄像头添加输入
         for (_i, camera) in config.cameras.iter().enumerate() {
@@ -367,7 +367,7 @@ impl RecordingManager {
         let output_path = self.generate_output_path(&config.output_format, "canvas");
         
         // 构建FFmpeg命令 - 使用gdigrab捕获屏幕
-        let mut cmd = Command::new("ffmpeg"); cmd.no_window();
+        let mut cmd = Command::new(crate::bin_resolver::ffmpeg()); cmd.no_window();
         
         // Windows屏幕捕获
         cmd.arg("-f")
@@ -495,7 +495,7 @@ impl RecordingManager {
         let output_path = self.generate_output_path(&config.output_format, "preview");
         
         // 构建FFmpeg命令 - 从网络流录制
-        let mut cmd = Command::new("ffmpeg"); cmd.no_window();
+        let mut cmd = Command::new(crate::bin_resolver::ffmpeg()); cmd.no_window();
         
         cmd.arg("-i")
            .arg(&video_stream_url)
@@ -568,7 +568,7 @@ impl RecordingManager {
         let output_path = self.generate_output_path(&config.output_format, "pip");
         
         // 使用FFmpeg的overlay滤镜实现画中画
-        let mut cmd = Command::new("ffmpeg"); cmd.no_window();
+        let mut cmd = Command::new(crate::bin_resolver::ffmpeg()); cmd.no_window();
         
         // 主画面输入
         cmd.arg("-f").arg("gdigrab")
@@ -686,7 +686,7 @@ impl RecordingManager {
                 return Err("RTMP推流未启用".to_string());
             }
             
-            let mut cmd = Command::new("ffmpeg"); cmd.no_window();
+            let mut cmd = Command::new(crate::bin_resolver::ffmpeg()); cmd.no_window();
             
             // 屏幕捕获输入
             cmd.arg("-f").arg("gdigrab")
@@ -782,7 +782,7 @@ impl RecordingManager {
             }
             
             let output_path = self.generate_output_path(&config.output_format, "vr360");
-            let mut cmd = Command::new("ffmpeg"); cmd.no_window();
+            let mut cmd = Command::new(crate::bin_resolver::ffmpeg()); cmd.no_window();
             
             // 根据输入类型配置不同的输入
             match vr_config.input_type.as_str() {
@@ -1009,7 +1009,7 @@ impl RecordingManager {
     fn generate_output_path(&self, format: &str, prefix: &str) -> String {
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let app_data_dir = std::env::var("APPDATA")
-            .unwrap_or_else(|_| "C:\\Users\\Default\\AppData\\Roaming".to_string());
+            .unwrap_or_else(|_| dirs::data_dir().unwrap_or_else(std::env::temp_dir).to_string_lossy().into_owned());
         
         let recordings_dir = format!("{}\\training-teaching-system\\recordings", app_data_dir);
         
@@ -1110,7 +1110,7 @@ impl RecordingManager {
     /// 保存录制模板
     pub fn save_template(&self, template: RecordingTemplate) -> Result<(), String> {
         let app_data_dir = std::env::var("APPDATA")
-            .unwrap_or_else(|_| "C:\\Users\\Default\\AppData\\Roaming".to_string());
+            .unwrap_or_else(|_| dirs::data_dir().unwrap_or_else(std::env::temp_dir).to_string_lossy().into_owned());
         
         let templates_dir = format!("{}\\training-teaching-system\\recording-templates", app_data_dir);
         std::fs::create_dir_all(&templates_dir).map_err(|e| format!("创建目录失败: {}", e))?;
@@ -1129,7 +1129,7 @@ impl RecordingManager {
     /// 加载所有录制模板
     pub fn load_templates(&self) -> Result<Vec<RecordingTemplate>, String> {
         let app_data_dir = std::env::var("APPDATA")
-            .unwrap_or_else(|_| "C:\\Users\\Default\\AppData\\Roaming".to_string());
+            .unwrap_or_else(|_| dirs::data_dir().unwrap_or_else(std::env::temp_dir).to_string_lossy().into_owned());
         
         let templates_dir = format!("{}\\training-teaching-system\\recording-templates", app_data_dir);
         
@@ -1165,7 +1165,7 @@ impl RecordingManager {
     /// 删除录制模板
     pub fn delete_template(&self, template_id: &str) -> Result<(), String> {
         let app_data_dir = std::env::var("APPDATA")
-            .unwrap_or_else(|_| "C:\\Users\\Default\\AppData\\Roaming".to_string());
+            .unwrap_or_else(|_| dirs::data_dir().unwrap_or_else(std::env::temp_dir).to_string_lossy().into_owned());
         
         let templates_dir = format!("{}\\training-teaching-system\\recording-templates", app_data_dir);
         let template_path = format!("{}\\{}.json", templates_dir, template_id);

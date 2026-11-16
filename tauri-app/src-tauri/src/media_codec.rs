@@ -158,7 +158,7 @@ impl MultiCodecManager {
         };
 
         // 检测 FFmpeg 支持的编码器
-        if let Ok(output) = Command::new("ffmpeg").no_window()
+        if let Ok(output) = Command::new(crate::bin_resolver::ffmpeg()).no_window()
             .arg("-encoders")
             .output()
         {
@@ -232,7 +232,7 @@ impl MultiCodecManager {
             );
 
             // 构建 FFmpeg 命令
-            let mut cmd = Command::new("ffmpeg"); cmd.no_window();
+            let mut cmd = Command::new(crate::bin_resolver::ffmpeg()); cmd.no_window();
             
             // 视频输入
             match video_config.source_type.as_str() {
@@ -375,7 +375,7 @@ impl MultiCodecManager {
     ) -> Result<String, String> {
         println!("[多路编解码] 开始混流录制: {}", session_id);
 
-        let mut cmd = Command::new("ffmpeg"); cmd.no_window();
+        let mut cmd = Command::new(crate::bin_resolver::ffmpeg()); cmd.no_window();
 
         // 添加所有视频输入
         for (_idx, video_config) in video_streams.iter().enumerate() {

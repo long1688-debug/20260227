@@ -16,7 +16,7 @@ const { whisperService } = require('./services/whisper-service');
 const CONFIG = {
     httpPort: process.env.HTTP_PORT || 8080,
     wsPort: process.env.WS_PORT || 8082,  // 🎯 修改为8082，避免与RTSP-Proxy(8081)冲突
-    dataDir: path.join(__dirname, 'data'),
+    dataDir: process.env.TRAINING_DATA_DIR || path.join(__dirname, 'data'),
     sessionTimeout: 3600000, // 1 小时
     secretKey: 'training_system_secret_key_2024'
 };
@@ -863,7 +863,7 @@ async function handleRequest(req, res, pathname, url) {
         else if (pathname === '/api/upload/video' && req.method === 'POST') {
             const formidable = require('formidable');
             const form = new formidable.IncomingForm({
-                uploadDir: path.join(__dirname, 'temp'),
+                uploadDir: process.env.TRAINING_TEMP_DIR || path.join(__dirname, 'temp'),
                 keepExtensions: true,
                 maxFileSize: 500 * 1024 * 1024 // 500MB
             });

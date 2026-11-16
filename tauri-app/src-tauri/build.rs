@@ -2,7 +2,10 @@ fn main() {
     // 配置 mpv 库路径
     #[cfg(feature = "mpv")]
     {
-        let mpv_path = std::path::Path::new("F:\\20260227\\mpv");
+        let mpv_path = std::env::var("MPV_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mpv"));
+        println!("cargo:rerun-if-env-changed=MPV_DIR");
 
         // 添加 include 目录
         let include_dir = mpv_path.join("include");

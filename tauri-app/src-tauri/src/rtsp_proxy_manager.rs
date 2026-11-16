@@ -346,6 +346,14 @@ pub async fn get_rtsp_streams(app_handle: AppHandle) -> Result<serde_json::Value
 
 /// 查找 ZLMediaKit 可执行文件
 fn find_zlmediakit_binary() -> Result<String, String> {
+    if let Some(path) = crate::bin_resolver::zlmediakit() {
+        return Ok(path.to_string_lossy().into_owned());
+    }
+
+    // 以下为开发机路径，仅 debug 构建使用；发布版请把 ZLMediaKit 放到 <安装目录>/runtime/zlmediakit/
+    #[cfg(not(debug_assertions))]
+    let candidates: Vec<String> = Vec::new();
+    #[cfg(debug_assertions)]
     let candidates = vec![
         // Windows 根目录（直接安装）
         "C:\\ZLMediaKit\\MediaServer.exe".to_string(),

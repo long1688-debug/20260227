@@ -545,7 +545,7 @@ fn get_whisper_cache_dir() -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
     let base_dir = std::env::var("USERPROFILE")
         .map(|p| PathBuf::from(p).join(".cache"))
-        .unwrap_or_else(|_| PathBuf::from("C:\\Users\\Default\\.cache"));
+        .unwrap_or_else(|_| std::env::temp_dir());
 
     #[cfg(target_os = "macos")]
     let base_dir = dirs::home_dir()
