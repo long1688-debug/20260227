@@ -124,26 +124,13 @@ pub async fn process_audio_data(
         .map(|&sample| sample as f32 / 32768.0)
         .collect();
 
-    // 尝试调用 Whisper 识别器
-    let mut guard = whisper_state.recognizer.lock().await;
-
-    // 如果 Whisper 未初始化，返回空字符串（不报错）
-    let recognizer = match guard.as_mut() {
-        Some(rec) => rec,
-        None => {
-            // Whisper 未初始化，静默返回空字符串
+    let results = match whisper_state.transcribe(float_data).await {
+        Some(Ok(results)) => results,
+        Some(Err(e)) => {
+            log::warn!("[Whisper] 音频处理失败: {}", e);
             return Ok(String::new());
         }
-    };
-
-    // 尝试处理音频数据
-    let results = match recognizer.process_audio(&float_data) {
-        Ok(results) => results,
-        Err(e) => {
-            // 处理失败，记录日志并返回空字符串
-            eprintln!("[Whisper] 音频处理失败: {}", e);
-            return Ok(String::new());
-        }
+        None => return Ok(String::new()),
     };
 
     // 合并识别结果

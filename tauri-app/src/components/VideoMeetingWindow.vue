@@ -399,6 +399,7 @@
 </template>
 
 <script setup>
+import { SpeechRecognizer, isAsrSupported } from '@/services/asr';
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import { VideoCamera, User, Monitor, Microphone, VideoStop, VideoPause, CopyDocument, Close, Document, Files } from '@/components/icons';
@@ -1269,12 +1270,12 @@ const toggleMeetingNotesRecording = () => {
 
 // 开始会议记录
 const startMeetingNotesRecording = () => {
-  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+  if (!isAsrSupported()) {
     ElMessage.warning('您的浏览器不支持语音识别功能');
     return;
   }
 
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const SpeechRecognition = SpeechRecognizer;
   speechRecognition = new SpeechRecognition();
   speechRecognition.lang = 'zh-CN';
   speechRecognition.continuous = true;

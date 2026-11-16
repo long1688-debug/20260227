@@ -14,8 +14,8 @@ export { default as tauriVision } from './tauriVisionService';  // Tauri 原生�
 // 媒体相关服务
 export { default as captureDeviceService } from './captureDeviceService';
 export { default as mediaCodecService } from './mediaCodecService';
-export { default as offlineSpeechRecognition } from './offlineSpeechRecognition';
 export { default as subtitleService } from './subtitleService';
+export * as asr from './asr';
 export { default as ttsService } from './ttsService';
 export { default as videoToSubtitleService } from './videoToSubtitleService';
 
@@ -24,7 +24,6 @@ export { default as apiService } from './apiService';
 export { default as cameraDatabaseApi } from './cameraDatabaseApi';
 export { default as cocoDatasetService } from './coco-dataset';
 export { default as meetingStats } from './meetingStats';
-export { default as modelDownloader } from './modelDownloader';
 
 // 导出所有服务
 export * from './webrtcService';
@@ -36,8 +35,6 @@ export * from './cameraDatabaseApi';
 export * from './coco-dataset';
 export * from './captureDeviceService';
 export * from './meetingStats';
-export * from './modelDownloader';
-export * from './offlineSpeechRecognition';
 export * from './subtitleService';
 export * from './ttsService';
 export * from './videoToSubtitleService';
