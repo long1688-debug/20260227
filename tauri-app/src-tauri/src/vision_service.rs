@@ -348,7 +348,7 @@ pub async fn start_batch_test(
     state: State<'_, VisionServiceState>,
     max_images: usize,
 ) -> Result<BatchTestResult, String> {
-    let path = state.coco_dataset_path.lock().map_err(|e| e.to_string())?.clone();
+    let _path = state.coco_dataset_path.lock().map_err(|e| e.to_string())?.clone();
 
     let test_count = max_images.min(50);
     let mut results = Vec::new();

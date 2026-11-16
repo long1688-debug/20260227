@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::timeout;
 use url::Url;
-use futures_util::future::join_all;
 
 use crate::ptz::onvif::OnvifCamera;
 

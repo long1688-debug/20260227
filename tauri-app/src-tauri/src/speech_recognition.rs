@@ -11,12 +11,14 @@ use crate::whisper_wrapper::WhisperState;
 #[derive(Clone)]
 pub struct SpeechRecognitionState {
     pub is_recognizing: Arc<Mutex<bool>>,
+    pub settings: Arc<Mutex<serde_json::Value>>,
 }
 
 impl SpeechRecognitionState {
     pub fn new() -> Self {
         SpeechRecognitionState {
             is_recognizing: Arc::new(Mutex::new(false)),
+            settings: Arc::new(Mutex::new(serde_json::Value::Null)),
         }
     }
 }
@@ -175,3 +177,13 @@ pub async fn get_speech_recognition_status(state: tauri::State<'_, SpeechRecogni
 }
 
 
+
+// 更新识别设置
+#[tauri::command]
+pub async fn update_recognition_settings(
+    speech_state: tauri::State<'_, SpeechRecognitionState>,
+    config: serde_json::Value,
+) -> Result<(), String> {
+    *speech_state.settings.lock().await = config;
+    Ok(())
+}

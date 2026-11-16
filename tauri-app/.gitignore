@@ -3,9 +3,6 @@ node_modules
 dist
 dist-electron
 src-tauri/target
-src-tauri/icons/*.png
-src-tauri/icons/*.ico
-src-tauri/icons/*.icns
 .env
 .env.local
 .DS_Store
