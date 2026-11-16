@@ -45,6 +45,17 @@ app.config.errorHandler = (err, instance, info) => {
   // 不抛出错误，防止应用崩溃
 };
 
+// 无独显/软件渲染时关闭毛玻璃（backdrop-filter 在集显上开销很大）；localStorage.reduceEffects = '1' / '0' 可手动覆盖
+const reduceEffectsPref = localStorage.getItem('reduceEffects');
+if (reduceEffectsPref === '1') {
+  document.documentElement.classList.add('reduce-effects');
+} else if (reduceEffectsPref !== '0' && window.__TAURI_INTERNALS__) {
+  import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke('check_gpu_acceleration'))
+    .then((ok) => { if (!ok) document.documentElement.classList.add('reduce-effects'); })
+    .catch(() => {});
+}
+
 app.mount('#app');
 
 // 开发模式下自动打开 DevTools
