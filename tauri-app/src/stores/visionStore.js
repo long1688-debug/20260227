@@ -23,7 +23,7 @@ const LOCAL_MODEL_CONFIG = {
 // COCO 数据集本地路径配置
 const COCO_DATASET_CONFIG = {
   // 本地 COCO 数据集路径（包含 val2017 或 train2017 文件夹）
-  localPath: 'F:\\\\coco',
+  localPath: '',
   // 是否使用本地数据集
   useLocalDataset: false,
   // 获取本地数据集路径
@@ -85,39 +85,26 @@ async function getYoloDetector() {
       visionStoreRef.yoloStatus = 'loading'
     }
 
-    const isOnline = await checkNetworkStatus()
-    console.log(`[VisionStore] 网络状态: ${isOnline ? '在线' : '离线'}`)
-
     try {
-      if (isOnline) {
-        // 在线模式：从 HuggingFace 加载模型
-        console.log('[VisionStore] 使用在线模型 (HuggingFace)...')
+      // 只使用随安装包提供的本地模型，不再从 HuggingFace 在线下载
+      const localAvailable = await checkLocalModelAvailable()
+      if (localAvailable) {
+        console.log('[VisionStore] 使用本地模型...')
         if (visionStoreRef) {
-          visionStoreRef.detectionMode = 'online'
+          visionStoreRef.detectionMode = 'local'
         }
-        const { pipeline } = await import('@xenova/transformers')
-        yoloDetector = await pipeline('object-detection', 'Xenova/yolov8n')
+        // 使用 onnxruntime-web 加载本地模型
+        const { InferenceSession } = await import('onnxruntime-web')
+        yoloDetector = await InferenceSession.create(LOCAL_MODEL_CONFIG.modelPath)
+        // 包装为统一接口
+        yoloDetector = createLocalDetectorWrapper(yoloDetector)
       } else {
-        // 离线模式：检查本地模型
-        const localAvailable = await checkLocalModelAvailable()
-        if (localAvailable) {
-          console.log('[VisionStore] 使用本地模型...')
-          if (visionStoreRef) {
-            visionStoreRef.detectionMode = 'local'
-          }
-          // 使用 onnxruntime-web 加载本地模型
-          const { InferenceSession } = await import('onnxruntime-web')
-          yoloDetector = await InferenceSession.create(LOCAL_MODEL_CONFIG.modelPath)
-          // 包装为统一接口
-          yoloDetector = createLocalDetectorWrapper(yoloDetector)
-        } else {
-          console.warn('[VisionStore] 本地模型不可用，启用降级模式...')
-          if (visionStoreRef) {
-            visionStoreRef.detectionMode = 'fallback'
-          }
-          // 降级到模拟检测
-          yoloDetector = createFallbackDetector()
+        console.warn('[VisionStore] 本地模型不可用，启用降级模式...')
+        if (visionStoreRef) {
+          visionStoreRef.detectionMode = 'fallback'
         }
+        // 降级到模拟检测
+        yoloDetector = createFallbackDetector()
       }
       console.log('[VisionStore] YOLO 模型加载完成')
     } catch (error) {
@@ -291,7 +278,7 @@ export const useVisionStore = defineStore('vision', {
     finalScore: 0,
     // COCO 数据集配置
     cocoDataset: {
-      localPath: 'F:\\\\coco',
+      localPath: '',
       useLocalDataset: false,
       imageIndex: 0,
       images: []
@@ -1183,18 +1170,8 @@ export const useVisionStore = defineStore('vision', {
 
     // 加载 TensorFlow.js 模型（可选，用于更准确的检测）
     async loadModel() {
-      // 动态加载 TensorFlow.js
-      if (!window.tf) {
-        const script = document.createElement('script')
-        script.src = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js'
-        await new Promise((resolve, reject) => {
-          script.onload = resolve
-          script.onerror = reject
-          document.head.appendChild(script)
-        })
-      }
-
-      return window.tf
+      // 不再从 CDN 动态加载 TensorFlow.js（离线不可用）
+      throw new Error('TensorFlow.js 已移除，请使用 YOLO 检测')
     }
   }
 })

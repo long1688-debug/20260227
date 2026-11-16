@@ -33,11 +33,8 @@ class TauriWebRTCService {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private eventListeners: Map<string, Set<(data: any) => void>> = new Map();
 
-  private defaultIceServers: RTCIceServer[] = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stunserver.org:3478' }
-  ];
+  // 局域网内与本机 ZLMediaKit 直连，不依赖外网 STUN（国内访问 Google STUN 会让 ICE 收集等到超时）
+  private defaultIceServers: RTCIceServer[] = [];
 
   constructor() {
     this.setupEventListeners();
